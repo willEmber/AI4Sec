@@ -1,0 +1,16 @@
+# Netscape HTTP Cookie File
+# https://curl.haxx.se/rfc/cookie_spec.html
+# This is a generated file! Do not edit.
+
+.www.sci-hub.st	TRUE	/	FALSE	1798014125	__ddgid_	WjC708mSezCivX0m
+.www.sci-hub.st	TRUE	/	FALSE	1766564525	__ddgmark_	v7mBIX9I1RSyaNBx
+.sci-hub.st	TRUE	/	FALSE	1766488925	__ddg5_	Brt9RBaHC91Z7cL1
+.sci-hub.st	TRUE	/	FALSE	1798017872	__ddg2_	TcscdSEubHtX2HFQ
+.sci-hub.st	TRUE	/	FALSE	1798014130	__ddg1_	lQUBcrthj2Q4dIuc3DP4
+www.sci-hub.st	FALSE	/	FALSE	0	PHPSESSID	03b3811836cfd982733fcba037377857
+www.sci-hub.st	FALSE	/	FALSE	1774257881	session	a89bd3070ef48422cd0eefc33fc2cf41
+.sci-hub.st	TRUE	/	FALSE	1769589409	__ddg9_	172.96.141.120
+www.sci-hub.st	FALSE	/	FALSE	0	ddg_last_challenge	1766481877410
+www.sci-hub.st	FALSE	/	FALSE	1774257881	refresh	1766481881.0125
+.sci-hub.st	TRUE	/	FALSE	1769589409	__ddg10_	1766481885
+.sci-hub.st	TRUE	/	FALSE	1769589409	__ddg8_	zMdnRQDJE8SskCBm

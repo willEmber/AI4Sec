@@ -1,0 +1,45 @@
+{
+    "code": 200,
+    "msg": "SUCCESS",
+    "data": {
+        "customRank": {
+            "rankInfo": [],
+            "rank": []
+        },
+        "officialRank": {
+            "all": {
+                "sdufe": "特类期刊",
+                "xdu": "1类贡献度",
+                "swjtu": "A+",
+                "hhu": "A类",
+                "nju": "A",
+                "xju": "一区",
+                "cug": "医学T3",
+                "ccf": "B",
+                "sciif": "9.8",
+                "sci": "Q1",
+                "sciBase": "医学1区",
+                "sciUp": "医学1区",
+                "sciUpSmall": "计算机：跨学科应用1区/工程：生物医学1区/工程：电子与电气1区/成像科学与照相技术1区/核医学1区。",
+                "eii": "EI",
+                "scu": "工程技术B",
+                "sciif5": "11.3",
+                "jci": "2.27",
+                "esi": "临床医学",
+                "cpu": "医学学科一流",
+                "sciUpTop": "医学TOP"
+            },
+            "select": {
+                "ccf": "B",
+                "sciif": "9.8",
+                "sci": "Q1",
+                "sciBase": "医学1区",
+                "sciUp": "医学1区",
+                "eii": "EI",
+                "sciif5": "11.3",
+                "jci": "2.27",
+                "sciUpTop": "医学TOP"
+            }
+        }
+    }
+}

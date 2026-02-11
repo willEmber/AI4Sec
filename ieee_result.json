@@ -1,0 +1,3617 @@
+{
+    "total_records": 38321,
+    "total_searched": 7106039,
+    "articles": [
+        {
+            "doi": "10.1109/TMI.2014.2376781",
+            "title": "Apparent Ultra-High $b$-Value Diffusion-Weighted Image Reconstruction via Hidden Conditional Random Fields",
+            "publisher": "IEEE",
+            "issue": "5",
+            "issn": "1558-254X",
+            "rank": 1,
+            "volume": "34",
+            "authors": {
+                "authors": [
+                    {
+                        "affiliation": "Vision and Image Processing (VIP) Research Group, University of Waterloo, Waterloo, ON, Canada",
+                        "authorUrl": "https://ieeexplore.ieee.org/author/37603553900",
+                        "id": 37603553900,
+                        "full_name": "Mohammad Javad Shafiee",
+                        "author_order": 1,
+                        "authorAffiliations": {
+                            "authorAffiliation": [
+                                "Vision and Image Processing (VIP) Research Group, University of Waterloo, Waterloo, ON, Canada"
+                            ]
+                        }
+                    },
+                    {
+                        "affiliation": "Vision and Image Processing (VIP) Research Group, University of Waterloo, Waterloo, ON, Canada",
+                        "authorUrl": "https://ieeexplore.ieee.org/author/37085441632",
+                        "id": 37085441632,
+                        "full_name": "Shahid A. Haider",
+                        "author_order": 2,
+                        "authorAffiliations": {
+                            "authorAffiliation": [
+                                "Vision and Image Processing (VIP) Research Group, University of Waterloo, Waterloo, ON, Canada"
+                            ]
+                        }
+                    },
+                    {
+                        "affiliation": "Vision and Image Processing (VIP) Research Group, University of Waterloo, Waterloo, ON, Canada",
+                        "authorUrl": "https://ieeexplore.ieee.org/author/37286976100",
+                        "id": 37286976100,
+                        "full_name": "Alexander Wong",
+                        "author_order": 3,
+                        "authorAffiliations": {
+                            "authorAffiliation": [
+                                "Vision and Image Processing (VIP) Research Group, University of Waterloo, Waterloo, ON, Canada"
+                            ]
+                        }
+                    },
+                    {
+                        "affiliation": "Vision and Image Processing (VIP) Research Group, University of Waterloo, Waterloo, ON, Canada",
+                        "authorUrl": "https://ieeexplore.ieee.org/author/37085497844",
+                        "id": 37085497844,
+                        "full_name": "Dorothy Lui",
+                        "author_order": 4,
+                        "authorAffiliations": {
+                            "authorAffiliation": [
+                                "Vision and Image Processing (VIP) Research Group, University of Waterloo, Waterloo, ON, Canada"
+                            ]
+                        }
+                    },
+                    {
+                        "affiliation": "Vision and Image Processing (VIP) Research Group, University of Waterloo, Waterloo, ON, Canada",
+                        "authorUrl": "https://ieeexplore.ieee.org/author/38500794500",
+                        "id": 38500794500,
+                        "full_name": "Andrew Cameron",
+                        "author_order": 5,
+                        "authorAffiliations": {
+                            "authorAffiliation": [
+                                "Vision and Image Processing (VIP) Research Group, University of Waterloo, Waterloo, ON, Canada"
+                            ]
+                        }
+                    },
+                    {
+                        "affiliation": "Department of Medical Imaging, Sunnybrook Health Sciences Centre, Toronto, ON, Canada",
+                        "authorUrl": "https://ieeexplore.ieee.org/author/37085568296",
+                        "id": 37085568296,
+                        "full_name": "Ameen Modhafar",
+                        "author_order": 6,
+                        "authorAffiliations": {
+                            "authorAffiliation": [
+                                "Department of Medical Imaging, Sunnybrook Health Sciences Centre, Toronto, ON, Canada"
+                            ]
+                        }
+                    },
+                    {
+                        "affiliation": "Vision and Image Processing (VIP) Research Group, University of Waterloo, Waterloo, ON, Canada",
+                        "authorUrl": "https://ieeexplore.ieee.org/author/37265544300",
+                        "id": 37265544300,
+                        "full_name": "Paul Fieguth",
+                        "author_order": 7,
+                        "authorAffiliations": {
+                            "authorAffiliation": [
+                                "Vision and Image Processing (VIP) Research Group, University of Waterloo, Waterloo, ON, Canada"
+                            ]
+                        }
+                    },
+                    {
+                        "affiliation": "Department of Medical Imaging, Sunnybrook Health Sciences Centre, Toronto, ON, Canada",
+                        "authorUrl": "https://ieeexplore.ieee.org/author/38331800500",
+                        "id": 38331800500,
+                        "full_name": "Masoom A. Haider",
+                        "author_order": 8,
+                        "authorAffiliations": {
+                            "authorAffiliation": [
+                                "Department of Medical Imaging, Sunnybrook Health Sciences Centre, Toronto, ON, Canada"
+                            ]
+                        }
+                    }
+                ]
+            },
+            "access_type": "LOCKED",
+            "content_type": "Journals",
+            "abstract": "A promising, recently explored, alternative to ultra-high b-value diffusion weighted imaging (UHB-DWI) is apparent ultra-high b-value diffusion-weighted image reconstruction (AUHB-DWR), where a computational model is used to assist in the reconstruction of apparent DW images at ultra-high b-values. Firstly, we present a novel approach to AUHB-DWR that aims to improve image quality. We formulate the reconstruction of an apparent DW image as a hidden conditional random field (HCRF) in which tissue model diffusion parameters act as hidden states in this random field. The second contribution of this paper is a new generation of fully connected conditional random fields, called the hidden stochastically fully connected conditional random fields (HSFCRF) that allows for efficient inference with significantly reduced computational complexity via stochastic clique structures. The proposed AUHB-DWR algorithms, HCRF and HSFCRF, are evaluated quantitatively in nine different patient cases using Fisher's criteria, probability of error, and coefficient of variation metrics to validate its effectiveness for the purpose of improving intensity delineation between expert identified suspected cancerous and healthy tissue within the prostate gland. The proposed methods are also examined using a prostate phantom, where the apparent ultra-high b-value DW images reconstructed using the tested AUHB-DWR methods are compared with real captured UHB-DWI. The results illustrate that the proposed AUHB-DWR methods has improved reconstruction quality and improved intensity delineation compared with existing AUHB-DWR approaches.",
+            "article_number": "6971171",
+            "pdf_url": "https://ieeexplore.ieee.org/stamp/stamp.jsp?tp=&arnumber=6971171",
+            "html_url": "https://ieeexplore.ieee.org/document/6971171/",
+            "abstract_url": "https://ieeexplore.ieee.org/document/6971171/",
+            "publication_title": "IEEE Transactions on Medical Imaging",
+            "publication_number": 42,
+            "is_number": 7097751,
+            "publication_year": 2015,
+            "publication_date": "May 2015",
+            "start_page": "1111",
+            "end_page": "1124",
+            "citing_paper_count": 17,
+            "citing_patent_count": 0,
+            "download_count": 8517,
+            "insert_date": "20141202",
+            "index_terms": {
+                "ieee_terms": {
+                    "terms": [
+                        "Computational modeling",
+                        "Image reconstruction",
+                        "Computational complexity",
+                        "Estimation",
+                        "Imaging",
+                        "Noise",
+                        "Hidden Markov models"
+                    ]
+                },
+                "author_terms": {
+                    "terms": [
+                        "Apparent diffusion weighted imaging",
+                        "conditional random field",
+                        "diffusion weighted imaging",
+                        "hidden state",
+                        "magnetic resonance imaging (MRI)",
+                        "prostate cancer imaging",
+                        "stochastically fully connected random field",
+                        "ultra high $b$-value"
+                    ]
+                },
+                "dynamic_index_terms": {
+                    "terms": [
+                        "Random Fields",
+                        "Diffusion Tensor Imaging",
+                        "Diffusion-weighted Imaging",
+                        "Diffusion Tensor",
+                        "Conditional Random Field",
+                        "Hidden Conditional Random Fields",
+                        "Computational Complexity",
+                        "Cancer Tissues",
+                        "Healthy Tissue",
+                        "Error Probability",
+                        "Hidden State",
+                        "Dispersion Parameter",
+                        "Diffusion Parameters",
+                        "Magnetic Resonance Imaging",
+                        "Prostate Cancer",
+                        "Maximum Likelihood Estimation",
+                        "Diffusion Model",
+                        "Tumor Regions",
+                        "Prostate-specific Antigen",
+                        "Reference Signal",
+                        "Short-range Interactions",
+                        "Neighboring Pixels",
+                        "Neighborhood Pixels",
+                        "Markov Random Field",
+                        "Apparent Diffusion Coefficient Values",
+                        "Mono-exponential Model",
+                        "Diffuse Tissue",
+                        "Tissue Dissemination",
+                        "Bi-exponential Model",
+                        "Conditional Random Field Model",
+                        "Rician Distribution",
+                        "Transrectal Ultrasound",
+                        "Transrectal Ultrasonography",
+                        "TRUS",
+                        "Least Squares Approach",
+                        "Healthy Prostate",
+                        "Pairwise Potential"
+                    ]
+                }
+            },
+            "license": "OAPA"
+        },
+        {
+            "doi": "10.1109/TMI.2008.922693",
+            "title": "A Probabilistic Framework Based on Hidden Markov Model for Fiducial Identification in Image-Guided Radiation Treatments",
+            "publisher": "IEEE",
+            "issue": "9",
+            "issn": "1558-254X",
+            "rank": 2,
+            "volume": "27",
+            "authors": {
+                "authors": [
+                    {
+                        "affiliation": "Accuray, Inc., Sunnyvale, CA, USA",
+                        "authorUrl": "https://ieeexplore.ieee.org/author/37340639000",
+                        "id": 37340639000,
+                        "full_name": "Zhiping Mu",
+                        "author_order": 1,
+                        "authorAffiliations": {
+                            "authorAffiliation": [
+                                "Accuray, Inc., Sunnyvale, CA, USA"
+                            ]
+                        }
+                    },
+                    {
+                        "affiliation": "Accuray, Inc., Sunnyvale, CA, USA",
+                        "authorUrl": "https://ieeexplore.ieee.org/author/38037176000",
+                        "id": 38037176000,
+                        "full_name": "Dongshan Fu",
+                        "author_order": 2,
+                        "authorAffiliations": {
+                            "authorAffiliation": [
+                                "Accuray, Inc., Sunnyvale, CA, USA"
+                            ]
+                        }
+                    },
+                    {
+                        "affiliation": "Accuray, Inc., Sunnyvale, CA, USA",
+                        "authorUrl": "https://ieeexplore.ieee.org/author/37390765100",
+                        "id": 37390765100,
+                        "full_name": "Gopinath Kuduvalli",
+                        "author_order": 3,
+                        "authorAffiliations": {
+                            "authorAffiliation": [
+                                "Accuray, Inc., Sunnyvale, CA, USA"
+                            ]
+                        }
+                    }
+                ]
+            },
+            "access_type": "LOCKED",
+            "content_type": "Journals",
+            "abstract": "Fiducial tracking is a common target tracking method widely used in image-guided procedures such as radiotherapy and radiosurgery. In this paper, we present a multifiducial identification method that incorporates context information in the process. We first convert the problem into a state sequence problem by establishing a probabilistic framework based on a hidden Markov model (HMM), where prior probability represents an individual candidate's resemblance to a fiducial; transition probability quantifies the similarity of a candidate set to the fiducials' geometrical configuration; and th.e Viterbi algorithm provides an efficient solution. We then discuss the problem of identifying fiducials using stereo projections, and propose a special, higher order HMM, which consists of two parallel HMMs, connected by an association measure that captures the inherent correlation between the two projections. A novel algorithm, the concurrent viterbi with association (CVA) algorithm, is introduced to efficiently identify fiducials in the two projections simultaneously. This probabilistic framework is highly flexible and provides a buffer to accommodate deformations. A simple implementation of the CVA algorithm is presented to evaluate the efficacy of the framework. Experiments were carried out using clinical images acquired during patient treatments, and several examples are presented to illustrate a variety of clinical situations. In the experiments, the algorithm demonstrated a large tracking range, computational efficiency, ease of use, and robustness that meet the requirements for clinical use.",
+            "article_number": "4483773",
+            "pdf_url": "https://ieeexplore.ieee.org/stamp/stamp.jsp?tp=&arnumber=4483773",
+            "html_url": "https://ieeexplore.ieee.org/document/4483773/",
+            "abstract_url": "https://ieeexplore.ieee.org/document/4483773/",
+            "publication_title": "IEEE Transactions on Medical Imaging",
+            "publication_number": 42,
+            "is_number": 4608888,
+            "publication_year": 2008,
+            "publication_date": "Sept. 2008",
+            "start_page": "1288",
+            "end_page": "1300",
+            "citing_paper_count": 16,
+            "citing_patent_count": 2,
+            "download_count": 350,
+            "insert_date": "20080408",
+            "index_terms": {
+                "ieee_terms": {
+                    "terms": [
+                        "Hidden Markov models",
+                        "Computed tomography",
+                        "Target tracking",
+                        "Medical treatment",
+                        "Ultrasonic imaging",
+                        "Viterbi algorithm",
+                        "Optical imaging",
+                        "Liver neoplasms",
+                        "Lung neoplasms",
+                        "Image converters"
+                    ]
+                },
+                "author_terms": {
+                    "terms": [
+                        "Fiducial tracking",
+                        "hidden Markov model",
+                        "image-guided radiosurgery and radiotherapy",
+                        "viterbi algorithm",
+                        "Image-guided radiosurgery and radiotherapy",
+                        "fiducial tracking",
+                        "Hidden Markov Model",
+                        "Viterbi algorithm"
+                    ]
+                },
+                "dynamic_index_terms": {
+                    "terms": [
+                        "Hidden Markov Model",
+                        "Probabilistic Framework",
+                        "Usability",
+                        "Ease Of Use",
+                        "Transition Probabilities",
+                        "Implementation Of Algorithm",
+                        "Sequence Of States",
+                        "Geometric Configuration",
+                        "Geometry Configuration",
+                        "Computed Tomography",
+                        "Computed Tomography Scan",
+                        "CT Scan",
+                        "Imaging System",
+                        "State Variables",
+                        "Status Variables",
+                        "Live Imaging",
+                        "Image Pairs",
+                        "Robust Algorithm",
+                        "Low Signal-to-noise Ratio",
+                        "Candidate List",
+                        "Image Position",
+                        "Image Guidance",
+                        "Geometric Distribution",
+                        "Search Window",
+                        "Large Regions Of Interest",
+                        "Intraoperative Imaging",
+                        "Patient Setup",
+                        "Imaging Geometry",
+                        "Image-guided System",
+                        "Image Guidance Systems",
+                        "Image-guided Radiotherapy",
+                        "IGRT",
+                        "Image-guided Radiation Therapy",
+                        "X-ray Projection",
+                        "Candidate Pairs",
+                        "Single Image",
+                        "Reference Position"
+                    ]
+                }
+            },
+            "license": "IEEE"
+        },
+        {
+            "doi": "10.1109/ICIP.2007.4379516",
+            "title": "A General Two-Dimensional Hidden Markov Model and its Application in Image Classification",
+            "publisher": "IEEE",
+            "isbn": "978-1-4244-1437-6",
+            "issn": "2381-8549",
+            "partnum": "07CH37925",
+            "rank": 3,
+            "volume": "6",
+            "authors": {
+                "authors": [
+                    {
+                        "affiliation": "Department of Electrical and Computer Engineering, University of Illinois, Chicago, Chicago, IL, USA",
+                        "authorUrl": "https://ieeexplore.ieee.org/author/37405316000",
+                        "id": 37405316000,
+                        "full_name": "Xiang Ma",
+                        "author_order": 1,
+                        "authorAffiliations": {
+                            "authorAffiliation": [
+                                "Department of Electrical and Computer Engineering, University of Illinois, Chicago, Chicago, IL, USA"
+                            ]
+                        }
+                    },
+                    {
+                        "affiliation": "Department of Electrical and Computer Engineering, University of Illinois, Chicago, Chicago, IL, USA",
+                        "authorUrl": "https://ieeexplore.ieee.org/author/37294984500",
+                        "id": 37294984500,
+                        "full_name": "Dan Schonfeld",
+                        "author_order": 2,
+                        "authorAffiliations": {
+                            "authorAffiliation": [
+                                "Department of Electrical and Computer Engineering, University of Illinois, Chicago, Chicago, IL, USA"
+                            ]
+                        }
+                    },
+                    {
+                        "affiliation": "Department of Electrical and Computer Engineering, University of Illinois, Chicago, Chicago, IL, USA",
+                        "authorUrl": "https://ieeexplore.ieee.org/author/37273553800",
+                        "id": 37273553800,
+                        "full_name": "Ashfaq Khokhar",
+                        "author_order": 3,
+                        "authorAffiliations": {
+                            "authorAffiliation": [
+                                "Department of Electrical and Computer Engineering, University of Illinois, Chicago, Chicago, IL, USA"
+                            ]
+                        }
+                    }
+                ]
+            },
+            "access_type": "LOCKED",
+            "content_type": "Conferences",
+            "abstract": "In this paper, we propose a general two-dimensional hidden Markov model (2D-HMM), where dependency of the state transition probability on any state is allowed as long as causality is preserved. The proposed 2D-HMM model can capture, for example, dependency among diagonal states, which can be critical in many image processing applications. A new expectation-maximization (EM) algorithm suitable for estimation of the new model is derived, where a novel general forward-backward (GFB) algorithm is proposed for recursive estimation of the model parameters. A new conditional-independent subset-state sequence structure decomposition is proposed for the 2D Viterbi algorithm. The new model can be applied to many areas such as trajectory classification and image segmentation. Application to aerial image segmentation shows the superiority of our model compared to the existing 2D-HMM model.",
+            "article_number": "4379516",
+            "pdf_url": "https://ieeexplore.ieee.org/stamp/stamp.jsp?tp=&arnumber=4379516",
+            "html_url": "https://ieeexplore.ieee.org/document/4379516/",
+            "abstract_url": "https://ieeexplore.ieee.org/document/4379516/",
+            "publication_title": "2007 IEEE International Conference on Image Processing",
+            "conference_location": "San Antonio, TX, USA",
+            "conference_dates": "16 Sept.-19 Oct. 2007",
+            "publication_number": 4378863,
+            "is_number": 4379494,
+            "publication_year": 2007,
+            "publication_date": "16 Sept.-19 Oct. 2007",
+            "start_page": "VI - 41",
+            "end_page": "VI - 44",
+            "citing_paper_count": 12,
+            "citing_patent_count": 0,
+            "download_count": 962,
+            "insert_date": "20071112",
+            "index_terms": {
+                "ieee_terms": {
+                    "terms": [
+                        "Hidden Markov models",
+                        "Image classification",
+                        "Image segmentation",
+                        "Context modeling",
+                        "Recursive estimation",
+                        "Viterbi algorithm",
+                        "Application software",
+                        "Image processing",
+                        "Classification algorithms",
+                        "Image generation"
+                    ]
+                },
+                "author_terms": {
+                    "terms": [
+                        "Image classification",
+                        "Hidden Markov models",
+                        "Image segmentation"
+                    ]
+                },
+                "dynamic_index_terms": {
+                    "terms": [
+                        "Image Classification",
+                        "Hidden Markov Model",
+                        "Two-dimensional Model",
+                        "Image Segmentation",
+                        "Expectation Maximization",
+                        "EM Algorithm",
+                        "Expectation-maximization Algorithm",
+                        "Aerial Images",
+                        "Aerial Photographs",
+                        "Aerial Photos",
+                        "Aerial Imagery",
+                        "State Transition Probability",
+                        "Image Processing Applications",
+                        "Forward-backward Algorithm",
+                        "Contextual Information",
+                        "Probability Density Function",
+                        "Vertical Direction",
+                        "Training Images",
+                        "Block Size",
+                        "Causal Model",
+                        "Training Algorithm",
+                        "Sequence Of States",
+                        "Maximum A Posteriori",
+                        "Combination Of States",
+                        "Set Of Probabilities",
+                        "Diagonal Direction",
+                        "Posteriori Probability"
+                    ]
+                }
+            },
+            "isbn_formats": {
+                "isbns": [
+                    {
+                        "format": "CD",
+                        "value": "978-1-4244-1437-6",
+                        "isbnType": "Historical"
+                    },
+                    {
+                        "format": "Print ISBN",
+                        "value": "978-1-4244-1436-9",
+                        "isbnType": "New-2005"
+                    }
+                ]
+            },
+            "license": "IEEE"
+        },
+        {
+            "doi": "10.1109/CIE-Radar.2011.6159874",
+            "title": "Image segmentation using Directionlet-domain hidden Markov tree models",
+            "publisher": "IEEE",
+            "isbn": "978-1-4244-8442-3",
+            "issn": "1097-5764",
+            "partnum": "11EX4721",
+            "rank": 4,
+            "volume": "2",
+            "authors": {
+                "authors": [
+                    {
+                        "affiliation": "Key Laboratory of Intelligent Perception and Image Understanding of Ministry of Education of China, Xidian University, Xi'an, China",
+                        "authorUrl": "https://ieeexplore.ieee.org/author/37089500813",
+                        "id": 37089500813,
+                        "full_name": "Jing Bai",
+                        "author_order": 1,
+                        "authorAffiliations": {
+                            "authorAffiliation": [
+                                "Key Laboratory of Intelligent Perception and Image Understanding of Ministry of Education of China, Xidian University, Xi'an, China"
+                            ]
+                        }
+                    },
+                    {
+                        "affiliation": "Key Laboratory of Intelligent Perception and Image Understanding of Ministry of Education of China, Xidian University, Xi'an, China",
+                        "authorUrl": "https://ieeexplore.ieee.org/author/37087373099",
+                        "id": 37087373099,
+                        "full_name": "Jiaqi Zhao",
+                        "author_order": 2,
+                        "authorAffiliations": {
+                            "authorAffiliation": [
+                                "Key Laboratory of Intelligent Perception and Image Understanding of Ministry of Education of China, Xidian University, Xi'an, China"
+                            ]
+                        }
+                    },
+                    {
+                        "affiliation": "Key Laboratory of Intelligent Perception and Image Understanding of Ministry of Education of China, Xidian University, Xi'an, China",
+                        "authorUrl": "https://ieeexplore.ieee.org/author/37895813700",
+                        "id": 37895813700,
+                        "full_name": "LC Jiao",
+                        "author_order": 3,
+                        "authorAffiliations": {
+                            "authorAffiliation": [
+                                "Key Laboratory of Intelligent Perception and Image Understanding of Ministry of Education of China, Xidian University, Xi'an, China"
+                            ]
+                        }
+                    }
+                ]
+            },
+            "access_type": "LOCKED",
+            "content_type": "Conferences",
+            "abstract": "In this paper, we modeled the Directionlet coefficients of an image using hidden Markov tree (HMT) model and obtained the image segmentation results using model parameter training, multi-scale likelihood computation and the background of neighborhood-based maximum posterior probability. We demonstrate the performance of the proposed method with synthetic mosaic images and SAR images. The experiment results showed that our method obtained more exact boundary and uniform regions.",
+            "article_number": "6159874",
+            "pdf_url": "https://ieeexplore.ieee.org/stamp/stamp.jsp?tp=&arnumber=6159874",
+            "html_url": "https://ieeexplore.ieee.org/document/6159874/",
+            "abstract_url": "https://ieeexplore.ieee.org/document/6159874/",
+            "publication_title": "Proceedings of 2011 IEEE CIE International Conference on Radar",
+            "conference_location": "Chengdu, China",
+            "conference_dates": "24-27 Oct. 2011",
+            "publication_number": 6153217,
+            "is_number": 6159713,
+            "publication_year": 2011,
+            "publication_date": "24-27 Oct. 2011",
+            "start_page": "1615",
+            "end_page": "1618",
+            "citing_paper_count": 1,
+            "citing_patent_count": 0,
+            "download_count": 130,
+            "insert_date": "20120301",
+            "index_terms": {
+                "ieee_terms": {
+                    "terms": [
+                        "Hidden Markov models",
+                        "Image segmentation",
+                        "Transforms",
+                        "Computational modeling",
+                        "Image edge detection",
+                        "Synthetic aperture radar",
+                        "Training"
+                    ]
+                },
+                "author_terms": {
+                    "terms": [
+                        "Image segmentation",
+                        "Directionlet",
+                        "Hidden Markov tree(HMT)",
+                        "Contourlet"
+                    ]
+                },
+                "dynamic_index_terms": {
+                    "terms": [
+                        "Image Segmentation",
+                        "Hidden Markov Tree",
+                        "Synthetic Aperture Radar",
+                        "Segmentation Results",
+                        "Synthetic Images",
+                        "Synthetic Aperture Radar Images",
+                        "Exact Boundaries",
+                        "Maximum Posterior Probability",
+                        "Uniform Region",
+                        "Wavelet",
+                        "Mixture Model",
+                        "Gaussian Mixture",
+                        "Conditional Probability",
+                        "Large Coefficient",
+                        "Hidden State",
+                        "Outcome Scale",
+                        "Scale Results",
+                        "Gaussian Mixture Model",
+                        "Subband",
+                        "Homogeneous Regions",
+                        "Regional Homogeneity",
+                        "Image Texture",
+                        "Small States",
+                        "Edge Information",
+                        "Contourlet",
+                        "Background Model",
+                        "Image Segmentation Methods"
+                    ]
+                }
+            },
+            "isbn_formats": {
+                "isbns": [
+                    {
+                        "format": "CD",
+                        "value": "978-1-4244-8442-3",
+                        "isbnType": "New-2005"
+                    },
+                    {
+                        "format": "Print ISBN",
+                        "value": "978-1-4244-8444-7",
+                        "isbnType": "New-2005"
+                    },
+                    {
+                        "format": "Electronic ISBN",
+                        "value": "978-1-4244-8443-0",
+                        "isbnType": "New-2005"
+                    }
+                ]
+            },
+            "license": "IEEE"
+        },
+        {
+            "doi": "10.1109/CICT51604.2020.9312058",
+            "title": "A Reversible Data Hiding Scheme in Encrypted Images by Controlled Pixel Modification",
+            "publisher": "IEEE",
+            "isbn": "978-1-6654-1928-4",
+            "rank": 5,
+            "authors": {
+                "authors": [
+                    {
+                        "affiliation": "Department of Computer Science and Engineering, SRM University-AP, Andhra Pradesh, India",
+                        "authorUrl": "https://ieeexplore.ieee.org/author/37088633564",
+                        "id": 37088633564,
+                        "full_name": "K. Jagruth",
+                        "author_order": 1,
+                        "authorAffiliations": {
+                            "authorAffiliation": [
+                                "Department of Computer Science and Engineering, SRM University-AP, Andhra Pradesh, India"
+                            ]
+                        }
+                    },
+                    {
+                        "affiliation": "Department of Computer Science and Engineering, SRM University-AP, Andhra Pradesh, India",
+                        "authorUrl": "https://ieeexplore.ieee.org/author/37087058429",
+                        "id": 37087058429,
+                        "full_name": "V. M. Manikandan",
+                        "author_order": 2,
+                        "authorAffiliations": {
+                            "authorAffiliation": [
+                                "Department of Computer Science and Engineering, SRM University-AP, Andhra Pradesh, India"
+                            ]
+                        }
+                    }
+                ]
+            },
+            "access_type": "LOCKED",
+            "content_type": "Conferences",
+            "abstract": "Reversible data hiding is widely studied in recent years due to its wide applications in various domains such as medical image transmission and cloud computing. In this manuscript, we propose a novel scheme for performing reversible data hiding in encrypted images. In this scheme, the data hider can embed one-bit additional data bit in a small block ( B × 2 pixels) from the encrypted image. All the non-overlapping regions (blocks) in the encrypted image will be processed by accessing those blocks in a predefined order. To embed a bit value 0 in an encrypted image block, no need to modify any pixel values. If we want to embed bit value 1, all the pixels in the first column of the selected image block will be mapped into a new pixel value based on a predefined function. At the receiver side, the data extraction and image recovery are carried by comparing the closeness between pixels in the adjacent columns of the pixels in each block of the decrypted image.",
+            "article_number": "9312058",
+            "pdf_url": "https://ieeexplore.ieee.org/stamp/stamp.jsp?tp=&arnumber=9312058",
+            "html_url": "https://ieeexplore.ieee.org/document/9312058/",
+            "abstract_url": "https://ieeexplore.ieee.org/document/9312058/",
+            "publication_title": "2020 IEEE 4th Conference on Information & Communication Technology (CICT)",
+            "conference_location": "Chennai, India",
+            "conference_dates": "3-5 Dec. 2020",
+            "publication_number": 9312029,
+            "is_number": 9311919,
+            "publication_year": 2020,
+            "publication_date": "3-5 Dec. 2020",
+            "start_page": "1",
+            "end_page": "6",
+            "citing_paper_count": 2,
+            "citing_patent_count": 0,
+            "download_count": 313,
+            "insert_date": "20210108",
+            "index_terms": {
+                "ieee_terms": {
+                    "terms": [
+                        "Watermarking",
+                        "Cryptography",
+                        "Data mining",
+                        "Receivers",
+                        "Medical diagnostic imaging",
+                        "Authentication",
+                        "Bit error rate"
+                    ]
+                },
+                "author_terms": {
+                    "terms": [
+                        "Reversible data hiding",
+                        "Image encryption",
+                        "Image decryption",
+                        "Secret message transmission",
+                        "Medical image transmission"
+                    ]
+                },
+                "dynamic_index_terms": {
+                    "terms": [
+                        "Image Encryption",
+                        "Reversible Data Hiding",
+                        "Reversible Data Hiding Schemes",
+                        "Medical Imaging",
+                        "Clinical Imaging",
+                        "Diagnostic Imaging",
+                        "Decoding",
+                        "Decryption",
+                        "Cloud Computing",
+                        "Cloud Storage",
+                        "Cloud-based",
+                        "Cloud Server",
+                        "Image Recovery",
+                        "Hidden Information",
+                        "Hidden Data",
+                        "Non-overlapping Regions",
+                        "Image Block",
+                        "Pixel Block",
+                        "Pixel Column",
+                        "Error Rate",
+                        "Image Pixels",
+                        "Image Regions",
+                        "Block Size",
+                        "Airplane",
+                        "Aeroplane",
+                        "Reference Image",
+                        "Bit Error Rate",
+                        "Bit-error-rate",
+                        "Bit Error Ratio",
+                        "Actual Image",
+                        "Digital Watermarking",
+                        "Watermarked Image",
+                        "Bit Error",
+                        "Secret Message",
+                        "Hidden Message",
+                        "Steganography",
+                        "Stego",
+                        "Cover Image",
+                        "Copyright Protection",
+                        "Pixels In The Original Image",
+                        "Message Authentication",
+                        "Authentic Data",
+                        "Mapping Operation",
+                        "Bitrate"
+                    ]
+                }
+            },
+            "isbn_formats": {
+                "isbns": [
+                    {
+                        "format": "USB ISBN",
+                        "value": "978-1-6654-1928-4",
+                        "isbnType": "New-2005"
+                    },
+                    {
+                        "format": "Print on Demand(PoD) ISBN",
+                        "value": "978-1-6654-1929-1",
+                        "isbnType": "New-2005"
+                    },
+                    {
+                        "format": "Electronic ISBN",
+                        "value": "978-0-7381-2447-6",
+                        "isbnType": "New-2005"
+                    }
+                ]
+            },
+            "license": "IEEE"
+        },
+        {
+            "doi": "10.1109/TIP.2006.888350",
+            "title": "Effective Image Retrieval Based on Hidden Concept Discovery in Image Database",
+            "publisher": "IEEE",
+            "issue": "2",
+            "issn": "1941-0042",
+            "rank": 6,
+            "volume": "16",
+            "authors": {
+                "authors": [
+                    {
+                        "affiliation": "Yahoo, Inc., Sunnyvale, CA, USA",
+                        "authorUrl": "https://ieeexplore.ieee.org/author/37274564000",
+                        "id": 37274564000,
+                        "full_name": "Ruofei Zhang",
+                        "author_order": 1,
+                        "authorAffiliations": {
+                            "authorAffiliation": [
+                                "Yahoo, Inc., Sunnyvale, CA, USA"
+                            ]
+                        }
+                    },
+                    {
+                        "affiliation": "Department of Computer Science, State University of New York, Binghamton, Binghamton, NY, USA",
+                        "authorUrl": "https://ieeexplore.ieee.org/author/37279629000",
+                        "id": 37279629000,
+                        "full_name": "Zhongfei Zhang",
+                        "author_order": 2,
+                        "authorAffiliations": {
+                            "authorAffiliation": [
+                                "Department of Computer Science, State University of New York, Binghamton, Binghamton, NY, USA"
+                            ]
+                        }
+                    }
+                ]
+            },
+            "access_type": "LOCKED",
+            "content_type": "Journals",
+            "abstract": "This paper addresses content-based image retrieval in general, and in particular, focuses on developing a hidden semantic concept discovery methodology to address effective semantics-intensive image retrieval. In our approach, each image in the database is segmented into regions associated with homogenous color, texture, and shape features. By exploiting regional statistical information in each image and employing a vector quantization method, a uniform and sparse region-based representation is achieved. With this representation, a probabilistic model based on statistical-hidden-class assumptions of the image database is obtained, to which the expectation-maximization technique is applied to analyze semantic concepts hidden in the database. An elaborated retrieval algorithm is designed to support the probabilistic model. The semantic similarity is measured through integrating the posterior probabilities of the transformed query image, as well as a constructed negative example, to the discovered semantic concepts. The proposed approach has a solid statistical foundation; the experimental evaluations on a database of 10 000 general-purposed images demonstrate its promise and effectiveness",
+            "article_number": "4060959",
+            "pdf_url": "https://ieeexplore.ieee.org/stamp/stamp.jsp?tp=&arnumber=4060959",
+            "html_url": "https://ieeexplore.ieee.org/document/4060959/",
+            "abstract_url": "https://ieeexplore.ieee.org/document/4060959/",
+            "publication_title": "IEEE Transactions on Image Processing",
+            "publication_number": 83,
+            "is_number": 4060925,
+            "publication_year": 2007,
+            "publication_date": "Feb. 2007",
+            "start_page": "562",
+            "end_page": "572",
+            "citing_paper_count": 55,
+            "citing_patent_count": 0,
+            "download_count": 2012,
+            "insert_date": "20070115",
+            "index_terms": {
+                "ieee_terms": {
+                    "terms": [
+                        "Information retrieval",
+                        "Image retrieval",
+                        "Image databases",
+                        "Content based retrieval",
+                        "Spatial databases",
+                        "Image segmentation",
+                        "Shape",
+                        "Vector quantization",
+                        "Image analysis",
+                        "Algorithm design and analysis"
+                    ]
+                },
+                "author_terms": {
+                    "terms": [
+                        "Content-based image search and retrieval",
+                        "hidden concept discovery",
+                        "image databases",
+                        "image region analysis",
+                        "probabilistic retrieval model",
+                        "relevance feedback"
+                    ]
+                },
+                "dynamic_index_terms": {
+                    "terms": [
+                        "Image Database",
+                        "Image Retrieval",
+                        "Image Search",
+                        "Discovery Of Concepts",
+                        "Hidden Concepts",
+                        "Effective Image Retrieval",
+                        "Posterior Probability",
+                        "Posterior Distribution",
+                        "Probabilistic Model",
+                        "Expectation Maximization",
+                        "EM Algorithm",
+                        "Expectation-maximization Algorithm",
+                        "Semantic Similarity",
+                        "Semantic Relatedness",
+                        "Semantic Knowledge",
+                        "Semantic Cognition",
+                        "Semantic Concepts",
+                        "Retrieval Algorithm",
+                        "Query Image",
+                        "Vector Quantization",
+                        "Content-based Image Retrieval",
+                        "Uniform Representation",
+                        "Statistical Models",
+                        "Image Features",
+                        "Imaging Characteristics",
+                        "Similarity Measure",
+                        "Similarity Metrics",
+                        "Image Segmentation",
+                        "Regional Characteristics",
+                        "Regional Features",
+                        "Number Of Concepts",
+                        "Image Regions",
+                        "Relevant Feedback",
+                        "Conceptual Space",
+                        "Retrieval Accuracy",
+                        "Self-organizing Map",
+                        "Kohonen",
+                        "2D Plane",
+                        "Minimum Description Length",
+                        "Image Segmentation Algorithm",
+                        "Expansion Strategy"
+                    ]
+                }
+            },
+            "license": "IEEE"
+        },
+        {
+            "doi": "10.1109/ICICML67980.2025.11333707",
+            "title": "Deep Image Hiding Based on Cross-Attention Mechanism and U-Net Architecture",
+            "publisher": "IEEE",
+            "isbn": "979-8-3315-6582-4",
+            "rank": 7,
+            "authors": {
+                "authors": [
+                    {
+                        "affiliation": "Fuzhou University, Fuzhou, China",
+                        "authorUrl": "https://ieeexplore.ieee.org/author/756335340575751",
+                        "id": 756335340575751,
+                        "full_name": "Hongtao Zhang",
+                        "author_order": 1,
+                        "authorAffiliations": {
+                            "authorAffiliation": [
+                                "Fuzhou University, Fuzhou, China"
+                            ]
+                        }
+                    },
+                    {
+                        "affiliation": "Fuzhou University, Fuzhou, China",
+                        "authorUrl": "https://ieeexplore.ieee.org/author/37085408135",
+                        "id": 37085408135,
+                        "full_name": "Jiaoling Chen",
+                        "author_order": 2,
+                        "authorAffiliations": {
+                            "authorAffiliation": [
+                                "Fuzhou University, Fuzhou, China"
+                            ]
+                        }
+                    },
+                    {
+                        "affiliation": "Fuzhou University, Fuzhou, China",
+                        "authorUrl": "https://ieeexplore.ieee.org/author/37089334334",
+                        "id": 37089334334,
+                        "full_name": "Wenyu Qin",
+                        "author_order": 3,
+                        "authorAffiliations": {
+                            "authorAffiliation": [
+                                "Fuzhou University, Fuzhou, China"
+                            ]
+                        }
+                    },
+                    {
+                        "affiliation": "Fuzhou University, Fuzhou, China",
+                        "authorUrl": "https://ieeexplore.ieee.org/author/168101821617854",
+                        "id": 168101821617854,
+                        "full_name": "Zishun Ni",
+                        "author_order": 4,
+                        "authorAffiliations": {
+                            "authorAffiliation": [
+                                "Fuzhou University, Fuzhou, China"
+                            ]
+                        }
+                    },
+                    {
+                        "affiliation": "Fuzhou University, Fuzhou, China",
+                        "authorUrl": "https://ieeexplore.ieee.org/author/37087885984",
+                        "id": 37087885984,
+                        "full_name": "Yongliang Xu",
+                        "author_order": 5,
+                        "authorAffiliations": {
+                            "authorAffiliation": [
+                                "Fuzhou University, Fuzhou, China"
+                            ]
+                        }
+                    },
+                    {
+                        "affiliation": "Fuzhou University, Fuzhou, China",
+                        "authorUrl": "https://ieeexplore.ieee.org/author/37089335848",
+                        "id": 37089335848,
+                        "full_name": "Yong Zhou",
+                        "author_order": 6,
+                        "authorAffiliations": {
+                            "authorAffiliation": [
+                                "Fuzhou University, Fuzhou, China"
+                            ]
+                        }
+                    }
+                ]
+            },
+            "access_type": "LOCKED",
+            "content_type": "Conferences",
+            "abstract": "Hiding color image within other color image, also referred to deep image hiding, is a core technology in image steganography. Most existing steganography methods only conceal a small amount of binary information, falling short of the requirements for large-capacity steganography. Even though some other methods can achieve large-capacity steganography, the secret image they recover are often severely distorted. To address the above problems, this paper introduces a novel deep image hiding framework CAMU to effectively conceal color image. Specifically, our approach integrates a cross-attention mechanism module into the U-Net for the embedding network design, and then uses the U-Net structure in the decoding network to recover the secret image. Importantly, our framework fulfills the requirement for high-capacity hiding by embedding a color secret image within a color cover image of the same size. Additionally, the integration of the cross-attention mechanism enhances invisibility, ensuring more seamless hiding. The decoder, which employs a U-Net architecture, is tailored to enhance the visual fidelity of the reconstruction. Experimental results prove that the proposed method holds a significant edge in terms of invisibility when compared to current methods in deep image hiding.",
+            "article_number": "11333707",
+            "pdf_url": "https://ieeexplore.ieee.org/stamp/stamp.jsp?tp=&arnumber=11333707",
+            "html_url": "https://ieeexplore.ieee.org/document/11333707/",
+            "abstract_url": "https://ieeexplore.ieee.org/document/11333707/",
+            "publication_title": "2025 4th International Conference on Image Processing, Computer Vision and Machine Learning (ICICML)",
+            "conference_location": "Chongqing, China",
+            "conference_dates": "21-23 Nov. 2025",
+            "publication_number": 11333084,
+            "is_number": 11333085,
+            "publication_year": 2025,
+            "publication_date": "21-23 Nov. 2025",
+            "start_page": "698",
+            "end_page": "703",
+            "citing_paper_count": 0,
+            "citing_patent_count": 0,
+            "download_count": 0,
+            "insert_date": "20260119",
+            "index_terms": {
+                "ieee_terms": {
+                    "terms": [
+                        "Steganography",
+                        "Visualization",
+                        "Computer vision",
+                        "Attention mechanisms",
+                        "Image color analysis",
+                        "Image edge detection",
+                        "Computer architecture",
+                        "Color",
+                        "Decoding",
+                        "Image reconstruction"
+                    ]
+                },
+                "author_terms": {
+                    "terms": [
+                        "Deep image hiding",
+                        "Cross-attention",
+                        "U-Net",
+                        "Image steganography",
+                        "Invisibility"
+                    ]
+                },
+                "dynamic_index_terms": {
+                    "terms": [
+                        "U-Net Architecture",
+                        "Cross-attention Mechanism",
+                        "Invisible",
+                        "Color Images",
+                        "Network Embedding",
+                        "Cover Image",
+                        "Image Steganography",
+                        "Image Coding",
+                        "U-Net Structure",
+                        "Loss Function",
+                        "Loss-of-function",
+                        "Decoding",
+                        "Decryption",
+                        "Attention Mechanism",
+                        "Multi-head Attention",
+                        "Image Pairs",
+                        "Generative Adversarial Networks",
+                        "Adversarial Learning",
+                        "Binary Image",
+                        "Bit Error Rate",
+                        "Bit Error Ratio",
+                        "Peak Signal-to-noise Ratio",
+                        "PSNR",
+                        "Bit Error",
+                        "Hidden Information",
+                        "Hidden Data",
+                        "Least Significant Bit",
+                        "Low Bit",
+                        "Convolution Module",
+                        "U-Net Network",
+                        "Secret Information",
+                        "Residual Module",
+                        "Discrete Cosine Transform",
+                        "Pixel Loss",
+                        "COCO Dataset",
+                        "Perceptual Loss",
+                        "Peak Signal-to-noise Ratio Values",
+                        "Encoder Network",
+                        "Extraction Network"
+                    ]
+                }
+            },
+            "isbn_formats": {
+                "isbns": [
+                    {
+                        "format": "Print on Demand(PoD) ISBN",
+                        "value": "979-8-3315-6582-4",
+                        "isbnType": "New-2005"
+                    },
+                    {
+                        "format": "USB ISBN",
+                        "value": "979-8-3315-6580-0",
+                        "isbnType": "New-2005"
+                    },
+                    {
+                        "format": "Electronic ISBN",
+                        "value": "979-8-3315-6581-7",
+                        "isbnType": "New-2005"
+                    }
+                ]
+            },
+            "license": "IEEE"
+        },
+        {
+            "doi": "10.1109/ICASSP.2011.5946501",
+            "title": "Contour-based hidden Markov model to segment 2D ultrasound images",
+            "publisher": "IEEE",
+            "isbn": "978-1-4577-0537-3",
+            "issn": "1520-6149",
+            "partnum": "11CH38870",
+            "rank": 8,
+            "authors": {
+                "authors": [
+                    {
+                        "affiliation": "Department of Computer Science & Engineering, University of South Florida, Tampa, FL, USA",
+                        "authorUrl": "https://ieeexplore.ieee.org/author/37085378724",
+                        "id": 37085378724,
+                        "full_name": "Xiaoning Qian",
+                        "author_order": 1,
+                        "authorAffiliations": {
+                            "authorAffiliation": [
+                                "Department of Computer Science & Engineering, University of South Florida, Tampa, FL, USA"
+                            ]
+                        }
+                    },
+                    {
+                        "affiliation": "Department of Electrical & Computer Engineering, Texas A and M University, College Station, TX, USA",
+                        "authorUrl": "https://ieeexplore.ieee.org/author/37273556100",
+                        "id": 37273556100,
+                        "full_name": "Byung-Jun Yoon",
+                        "author_order": 2,
+                        "authorAffiliations": {
+                            "authorAffiliation": [
+                                "Department of Electrical & Computer Engineering, Texas A and M University, College Station, TX, USA"
+                            ]
+                        }
+                    }
+                ]
+            },
+            "access_type": "LOCKED",
+            "content_type": "Conferences",
+            "abstract": "The segmentation of ultrasound images is challenging due to the difficulty of appropriate modeling of their appearance variations including speckle as well as signal dropout. We propose a novel automatic segmentation method for 2D cardiac ultrasound images based on hidden Markov models (HMMs). By directly exploiting the local image characteristics around contour points in images and integrating them into contour-based HMMs, we solve the segmentation problem by graph matching using an efficient dynamic programming algorithm. Due to the direct integration of local properties in our HMMs, our segmentation method automatically deals with inhomogeneity but avoids the complexities of explicit appearance modeling in classical Maximum A Posteriori (MAP) approaches. The optimization for contour extraction is straightforward and guarantees the global optimal results. We implemented our method to segment the endocardium in short-axis cardiac ultrasound images successfully. The method can also be used for other image modalities with the presence of image inhomogeneity.",
+            "article_number": "5946501",
+            "pdf_url": "https://ieeexplore.ieee.org/stamp/stamp.jsp?tp=&arnumber=5946501",
+            "html_url": "https://ieeexplore.ieee.org/document/5946501/",
+            "abstract_url": "https://ieeexplore.ieee.org/document/5946501/",
+            "publication_title": "2011 IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP)",
+            "conference_location": "Prague, Czech Republic",
+            "conference_dates": "22-27 May 2011",
+            "publication_number": 5916934,
+            "is_number": 5946226,
+            "publication_year": 2011,
+            "publication_date": "22-27 May 2011",
+            "start_page": "705",
+            "end_page": "708",
+            "citing_paper_count": 5,
+            "citing_patent_count": 0,
+            "download_count": 234,
+            "insert_date": "20110711",
+            "index_terms": {
+                "ieee_terms": {
+                    "terms": [
+                        "Hidden Markov models",
+                        "Image segmentation",
+                        "Ultrasonic imaging",
+                        "Image edge detection",
+                        "Nonhomogeneous media",
+                        "Pixel",
+                        "Imaging"
+                    ]
+                },
+                "author_terms": {
+                    "terms": [
+                        "Image segmentation",
+                        "hidden Markov model (HMM)",
+                        "contour finding",
+                        "ultrasound images"
+                    ]
+                },
+                "dynamic_index_terms": {
+                    "terms": [
+                        "Hidden Markov Model",
+                        "Ultrasound Imaging",
+                        "Local Features",
+                        "Local Characteristics",
+                        "Image Segmentation",
+                        "Endocarditis",
+                        "Explicit Model",
+                        "Local Image",
+                        "Cardiac Imaging",
+                        "Efficient Programs",
+                        "Maximum A Posteriori",
+                        "Appearance Variations",
+                        "Dynamic Programming Algorithm",
+                        "Graph Matching",
+                        "Short-axis Images",
+                        "Local Image Features",
+                        "Signal Dropout",
+                        "Contour Points",
+                        "Training Set",
+                        "Pairing",
+                        "Image Pixels",
+                        "Pair Of States",
+                        "Contour Model",
+                        "Transition Probabilities",
+                        "Hidden State",
+                        "Scale-invariant Feature Transform",
+                        "Speeded Up Robust Features",
+                        "Neighborhood System",
+                        "Gap Penalty",
+                        "Geometric Variables",
+                        "Maximum Response"
+                    ]
+                }
+            },
+            "isbn_formats": {
+                "isbns": [
+                    {
+                        "format": "Online ISBN",
+                        "value": "978-1-4577-0537-3",
+                        "isbnType": "New-2005"
+                    },
+                    {
+                        "format": "Print ISBN",
+                        "value": "978-1-4577-0538-0",
+                        "isbnType": "New-2005"
+                    },
+                    {
+                        "format": "Electronic ISBN",
+                        "value": "978-1-4577-0539-7",
+                        "isbnType": "New-2005"
+                    }
+                ]
+            },
+            "license": "IEEE"
+        },
+        {
+            "doi": "10.1109/ICIP.2009.5413711",
+            "title": "High capacity, reversible data hiding in medical images",
+            "publisher": "IEEE",
+            "isbn": "978-1-4244-5655-0",
+            "issn": "2381-8549",
+            "partnum": "09CH38192",
+            "rank": 9,
+            "authors": {
+                "authors": [
+                    {
+                        "affiliation": "Universitat Oberta de Catalunya, Spain",
+                        "authorUrl": "https://ieeexplore.ieee.org/author/38231754600",
+                        "id": 38231754600,
+                        "full_name": "M. Fallahpour",
+                        "author_order": 1,
+                        "authorAffiliations": {
+                            "authorAffiliation": [
+                                "Universitat Oberta de Catalunya, Spain"
+                            ]
+                        }
+                    },
+                    {
+                        "affiliation": "Universitat Oberta de Catalunya, Spain",
+                        "authorUrl": "https://ieeexplore.ieee.org/author/38286011500",
+                        "id": 38286011500,
+                        "full_name": "D. Megias",
+                        "author_order": 2,
+                        "authorAffiliations": {
+                            "authorAffiliation": [
+                                "Universitat Oberta de Catalunya, Spain"
+                            ]
+                        }
+                    },
+                    {
+                        "affiliation": "University of Essex, UK",
+                        "authorUrl": "https://ieeexplore.ieee.org/author/37269041200",
+                        "id": 37269041200,
+                        "full_name": "M. Ghanbari",
+                        "author_order": 3,
+                        "authorAffiliations": {
+                            "authorAffiliation": [
+                                "University of Essex, UK"
+                            ]
+                        }
+                    }
+                ]
+            },
+            "access_type": "LOCKED",
+            "content_type": "Conferences",
+            "abstract": "In this paper we introduce a highly efficient reversible data hiding technique. It is based on dividing the image into tiles and shifting the histograms of each image tile between its minimum and maximum frequency. Data are then inserted at the pixel level with the largest frequency to maximize data hiding capacity. It exploits the special properties of medical images, where the histogram of their non-overlapping image tiles mostly peak around some gray values and the rest of the spectrum is mainly empty. The zeros (or minima) and peaks (maxima) of the histograms of the image tiles are then relocated to embed the data. The grey values of some pixels are therefore modified. High capacity, high fidelity, reversibility and multiple data insertions are the key requirements of data hiding in medical images. We show how histograms of image tiles of medical images can be exploited to achieve these requirements. Compared with data hiding method in the whole image, our scheme can result in 30%-200% capacity improvement with still better image quality, depending on the medical image content.",
+            "article_number": "5413711",
+            "pdf_url": "https://ieeexplore.ieee.org/stamp/stamp.jsp?tp=&arnumber=5413711",
+            "html_url": "https://ieeexplore.ieee.org/document/5413711/",
+            "abstract_url": "https://ieeexplore.ieee.org/document/5413711/",
+            "publication_title": "2009 16th IEEE International Conference on Image Processing (ICIP)",
+            "conference_location": "Cairo, Egypt",
+            "conference_dates": "7-10 Nov. 2009",
+            "publication_number": 5403221,
+            "is_number": 5413332,
+            "publication_year": 2009,
+            "publication_date": "7-10 Nov. 2009",
+            "start_page": "4241",
+            "end_page": "4244",
+            "citing_paper_count": 19,
+            "citing_patent_count": 0,
+            "download_count": 602,
+            "insert_date": "20100217",
+            "index_terms": {
+                "ieee_terms": {
+                    "terms": [
+                        "Data encapsulation",
+                        "Biomedical imaging",
+                        "Watermarking",
+                        "Tiles",
+                        "Histograms",
+                        "Image quality",
+                        "Pixel",
+                        "Frequency conversion",
+                        "Authentication",
+                        "Interference"
+                    ]
+                },
+                "author_terms": {
+                    "terms": [
+                        "data hiding",
+                        "Image watermark",
+                        "medical images"
+                    ]
+                },
+                "dynamic_index_terms": {
+                    "terms": [
+                        "High Capacity",
+                        "High Capacitance",
+                        "Medical Imaging",
+                        "Clinical Imaging",
+                        "Diagnostic Imaging",
+                        "Hidden Information",
+                        "Hidden Data",
+                        "Reversible Data Hiding",
+                        "Image Quality",
+                        "Minimum Frequency",
+                        "Image Tiles",
+                        "Mean Square Error",
+                        "Mean Square Deviation",
+                        "Maximum And Minimum",
+                        "Stationary Point",
+                        "Extreme Values",
+                        "Extremal",
+                        "Grayscale",
+                        "Greyscale",
+                        "Gray Level",
+                        "Subjective Quality",
+                        "Human Visual System",
+                        "Image Histogram",
+                        "Grayscale Histogram",
+                        "Intensity Histogram",
+                        "Extra Capacity",
+                        "Digital Watermarking",
+                        "Watermarked Image"
+                    ]
+                }
+            },
+            "isbn_formats": {
+                "isbns": [
+                    {
+                        "format": "Online ISBN",
+                        "value": "978-1-4244-5655-0",
+                        "isbnType": "New-2005"
+                    },
+                    {
+                        "format": "Print ISBN",
+                        "value": "978-1-4244-5653-6",
+                        "isbnType": "New-2005"
+                    },
+                    {
+                        "format": "Electronic ISBN",
+                        "value": "978-1-4244-5654-3",
+                        "isbnType": "New-2005"
+                    }
+                ]
+            },
+            "license": "IEEE"
+        },
+        {
+            "doi": "10.1109/NCC56989.2023.10067978",
+            "title": "A Random-key Based Second-level Encryption for Reversible Data Hiding in Encrypted Images",
+            "publisher": "IEEE",
+            "isbn": "978-1-6654-5626-5",
+            "rank": 10,
+            "authors": {
+                "authors": [
+                    {
+                        "affiliation": "SRM University-AP, Andhra Pradesh, India",
+                        "authorUrl": "https://ieeexplore.ieee.org/author/37089012678",
+                        "id": 37089012678,
+                        "full_name": "Shaiju Panchikkil",
+                        "author_order": 1,
+                        "authorAffiliations": {
+                            "authorAffiliation": [
+                                "SRM University-AP, Andhra Pradesh, India"
+                            ]
+                        }
+                    },
+                    {
+                        "affiliation": "SRM University-AP, Andhra Pradesh, India",
+                        "authorUrl": "https://ieeexplore.ieee.org/author/37089770118",
+                        "id": 37089770118,
+                        "full_name": "Vaibav Reddy Malpeddi",
+                        "author_order": 2,
+                        "authorAffiliations": {
+                            "authorAffiliation": [
+                                "SRM University-AP, Andhra Pradesh, India"
+                            ]
+                        }
+                    },
+                    {
+                        "affiliation": "SRM University-AP, Andhra Pradesh, India",
+                        "authorUrl": "https://ieeexplore.ieee.org/author/37087058429",
+                        "id": 37087058429,
+                        "full_name": "V. M. Manikandan",
+                        "author_order": 3,
+                        "authorAffiliations": {
+                            "authorAffiliation": [
+                                "SRM University-AP, Andhra Pradesh, India"
+                            ]
+                        }
+                    }
+                ]
+            },
+            "access_type": "LOCKED",
+            "content_type": "Conferences",
+            "abstract": "Reversible data hiding is an area explored widely in recent days due to its scope of applications in secure message transmission by embedding it in images. The existing RDH schemes in the encrypted image are lagging in terms of embedding rate. In this paper, we propose a new RDH scheme in encrypted images that will ensure the embedding rate without compromising the bit error rate or image recovery. In the proposed scheme, the encrypted image pixels will be classified into black-and-white pixels based on a checkerboard pattern. During the data hiding phase, the sender will select 8 unique random integer sequences S, that form the data keys and whose values are within the range 0 to 255. Data hiding is performed by performing bit-XOR with the white pixels in an image block (size B $\\times$ B pixels) using one integer sequence from the 8 keys. Each key is correlated to a 3-bit sequence from the secret message. The receiver must have the data keys and the decryption key to extract the hidden message and recover the original image. A smoothness measure between adjacent pixels is defined and used for data extraction and image recovery. The experimental results show that the proposed scheme performs well on the standard image data set (USC-SIPI).",
+            "article_number": "10067978",
+            "pdf_url": "https://ieeexplore.ieee.org/stamp/stamp.jsp?tp=&arnumber=10067978",
+            "html_url": "https://ieeexplore.ieee.org/document/10067978/",
+            "abstract_url": "https://ieeexplore.ieee.org/document/10067978/",
+            "publication_title": "2023 National Conference on Communications (NCC)",
+            "conference_location": "Guwahati, India",
+            "conference_dates": "23-26 Feb. 2023",
+            "publication_number": 10067865,
+            "is_number": 10067872,
+            "publication_year": 2023,
+            "publication_date": "23-26 Feb. 2023",
+            "start_page": "1",
+            "end_page": "6",
+            "citing_paper_count": 1,
+            "citing_patent_count": 0,
+            "download_count": 373,
+            "insert_date": "20230321",
+            "index_terms": {
+                "ieee_terms": {
+                    "terms": [
+                        "Satellites",
+                        "Image communication",
+                        "Bit error rate",
+                        "Receivers",
+                        "Encryption",
+                        "Data mining",
+                        "Standards"
+                    ]
+                },
+                "author_terms": {
+                    "terms": [
+                        "Image encryption",
+                        "Reversible data hiding",
+                        "Data extraction and image recovery",
+                        "Information hiding"
+                    ]
+                },
+                "dynamic_index_terms": {
+                    "terms": [
+                        "Image Encryption",
+                        "Reversible Data Hiding",
+                        "Error Rate",
+                        "Decoding",
+                        "Decryption",
+                        "Image Pixels",
+                        "Block Size",
+                        "Bit Error Rate",
+                        "Bit-error-rate",
+                        "Bit Error Ratio",
+                        "Bit Error",
+                        "Checkers",
+                        "Chequered",
+                        "Checkerboard Pattern",
+                        "Adjacent Pixels",
+                        "Image Recovery",
+                        "White Pixels",
+                        "Pixel Block",
+                        "Secret Message",
+                        "Hidden Message",
+                        "Decryption Key",
+                        "Peak Signal-to-noise Ratio",
+                        "Peak Signal To Noise Ratio",
+                        "PSNR",
+                        "Public Key",
+                        "Key Pair",
+                        "Public-key",
+                        "Hidden Information",
+                        "Hidden Data",
+                        "Least Significant Bit",
+                        "Low Bit",
+                        "Image Histogram",
+                        "Grayscale Histogram",
+                        "Cover Image",
+                        "Image Entropy",
+                        "Data Embedding",
+                        "Secret Information",
+                        "Lossless Compression",
+                        "Lossless Data Compression",
+                        "Black Pixels",
+                        "Well-known Image",
+                        "Similar Pixels",
+                        "Pixel Difference",
+                        "8-bit Grayscale Images",
+                        "8-bit Greyscale Images",
+                        "8-bit Gray Scale Images"
+                    ]
+                }
+            },
+            "isbn_formats": {
+                "isbns": [
+                    {
+                        "format": "Print on Demand(PoD) ISBN",
+                        "value": "978-1-6654-5626-5",
+                        "isbnType": "New-2005"
+                    },
+                    {
+                        "format": "Electronic ISBN",
+                        "value": "978-1-6654-5625-8",
+                        "isbnType": "New-2005"
+                    }
+                ]
+            },
+            "license": "IEEE"
+        },
+        {
+            "doi": "10.1109/SCORED.2014.7072963",
+            "title": "Detecting brain tumor in Magnetic Resonance Images using Hidden Markov Random Fields and Threshold techniques",
+            "publisher": "IEEE",
+            "isbn": "978-1-4799-6427-7",
+            "rank": 11,
+            "authors": {
+                "authors": [
+                    {
+                        "affiliation": "Department of Physics, College of Education Al-Qadisiya, Iraq",
+                        "authorUrl": "https://ieeexplore.ieee.org/author/37085564860",
+                        "id": 37085564860,
+                        "full_name": "Hayder Saad Abdulbaqi",
+                        "author_order": 1,
+                        "authorAffiliations": {
+                            "authorAffiliation": [
+                                "Department of Physics, College of Education Al-Qadisiya, Iraq",
+                                "School of Physics, Universiti Sains Malaysia, Penang, Malaysia"
+                            ]
+                        }
+                    },
+                    {
+                        "affiliation": "School of Physics, Universiti Sains Malaysia, Minden, Pulau Pinang, MY",
+                        "authorUrl": "https://ieeexplore.ieee.org/author/37088518064",
+                        "id": 37088518064,
+                        "full_name": "Mohd Zubir Mat",
+                        "author_order": 2,
+                        "authorAffiliations": {
+                            "authorAffiliation": [
+                                "School of Physics, Universiti Sains Malaysia, Minden, Pulau Pinang, MY"
+                            ]
+                        }
+                    },
+                    {
+                        "affiliation": "School of Physics, Universiti Sains Malaysia, Penang, Malaysia",
+                        "authorUrl": "https://ieeexplore.ieee.org/author/38189218200",
+                        "id": 38189218200,
+                        "full_name": "Ahmad Fairuz Omar",
+                        "author_order": 3,
+                        "authorAffiliations": {
+                            "authorAffiliation": [
+                                "School of Physics, Universiti Sains Malaysia, Penang, Malaysia"
+                            ]
+                        }
+                    },
+                    {
+                        "affiliation": "School of Physics, Universiti Sains Malaysia, Minden, Pulau Pinang, MY",
+                        "authorUrl": "https://ieeexplore.ieee.org/author/37088515671",
+                        "id": 37088515671,
+                        "full_name": "Iskandar Shahrim Bin Mustafa",
+                        "author_order": 4,
+                        "authorAffiliations": {
+                            "authorAffiliation": [
+                                "School of Physics, Universiti Sains Malaysia, Minden, Pulau Pinang, MY"
+                            ]
+                        }
+                    },
+                    {
+                        "affiliation": "Department of Computer Science, College of Science University of Baghdad, Baghdad, Iraq",
+                        "authorUrl": "https://ieeexplore.ieee.org/author/37085563021",
+                        "id": 37085563021,
+                        "full_name": "Loay Kadom Abood",
+                        "author_order": 5,
+                        "authorAffiliations": {
+                            "authorAffiliation": [
+                                "Department of Computer Science, College of Science University of Baghdad, Baghdad, Iraq"
+                            ]
+                        }
+                    }
+                ]
+            },
+            "access_type": "LOCKED",
+            "content_type": "Conferences",
+            "abstract": "Brain tumors are created by abnormal and uncontrolled cell division inside the brain. The segmentation of brain tumors which is carried out manually from MRI is a crucial and time consuming task. The accuracy of detecting brain tumor location and size takes the most important role in the successful diagnosis and treatment of tumors. So the detection of brain tumor needs to be fast and accurate. Brain tumor detection is considered a challenging mission in medical image processing. This paper concerns presenting an approach which will be useful for improved detection of brain tumor using Hidden Markov Random Fields (HMRF) and Threshold methods. The proposed method has been developed in this research in order to construct hybrid method. The aim of this paper is to introduce a scheme for tumor detection in Magnetic Resonance Imaging (MRI) images using (HMRF) and Threshold techniques. These methods have been applied on 3 different patient data sets. They have the property of organizing their soothing effect on the final segment of brain tumor homogeneous tissue regions, while the edges between different tissues constituents are better kept.",
+            "article_number": "7072963",
+            "pdf_url": "https://ieeexplore.ieee.org/stamp/stamp.jsp?tp=&arnumber=7072963",
+            "html_url": "https://ieeexplore.ieee.org/document/7072963/",
+            "abstract_url": "https://ieeexplore.ieee.org/document/7072963/",
+            "publication_title": "2014 IEEE Student Conference on Research and Development",
+            "conference_location": "Penang, Malaysia",
+            "conference_dates": "16-17 Dec. 2014",
+            "publication_number": 7063710,
+            "is_number": 7072937,
+            "publication_year": 2014,
+            "publication_date": "16-17 Dec. 2014",
+            "start_page": "1",
+            "end_page": "5",
+            "citing_paper_count": 35,
+            "citing_patent_count": 0,
+            "download_count": 912,
+            "insert_date": "20150402",
+            "index_terms": {
+                "ieee_terms": {
+                    "terms": [
+                        "Image segmentation",
+                        "Tumors",
+                        "Hidden Markov models",
+                        "Image edge detection",
+                        "Magnetic resonance imaging",
+                        "Brain models"
+                    ]
+                },
+                "author_terms": {
+                    "terms": [
+                        "Brain Tumor",
+                        "Detection",
+                        "Magnetic Resonance Images",
+                        "Hidden Markov random fields",
+                        "Threshold"
+                    ]
+                },
+                "dynamic_index_terms": {
+                    "terms": [
+                        "Magnetic Resonance Imaging",
+                        "Random Fields",
+                        "Markov Random Field",
+                        "Thresholding Technique",
+                        "Brain Tumor Detection",
+                        "Hidden Markov Random Field",
+                        "Medical Imaging",
+                        "Clinical Imaging",
+                        "Diagnostic Imaging",
+                        "Threshold Method",
+                        "Hybrid Method",
+                        "Research In Order",
+                        "Final Segmentation",
+                        "Medical Image Processing",
+                        "Brain Tumor Segmentation",
+                        "Cerebrospinal Fluid",
+                        "Grayscale",
+                        "Greyscale",
+                        "Gray Level",
+                        "Gray Matter",
+                        "Image Segmentation",
+                        "Brain Magnetic Resonance Imaging",
+                        "Brain MRI",
+                        "Expectation Maximization",
+                        "EM Algorithm",
+                        "Expectation-maximization Algorithm",
+                        "Hidden Markov Model",
+                        "Magnetic Resonance Imaging Images",
+                        "Gray-level Images",
+                        "Future Tumor",
+                        "Gray-level Values",
+                        "Canny Edge Detection",
+                        "Binary Image",
+                        "Markov Random Field Model",
+                        "Threshold Segmentation",
+                        "Image Segmentation Methods",
+                        "Posterior Mode",
+                        "Map Estimation",
+                        "Maximum A Posteriori Estimate"
+                    ]
+                }
+            },
+            "isbn_formats": {
+                "isbns": [
+                    {
+                        "format": "CD",
+                        "value": "978-1-4799-6427-7",
+                        "isbnType": "New-2005"
+                    },
+                    {
+                        "format": "Electronic ISBN",
+                        "value": "978-1-4799-6428-4",
+                        "isbnType": "New-2005"
+                    }
+                ]
+            },
+            "license": "IEEE"
+        },
+        {
+            "doi": "10.1109/APSAR.2009.5374126",
+            "title": "Unsupervised image segmentation based on Nonsubsampled Contourlet hidden Markov trees model",
+            "publisher": "IEEE",
+            "isbn": "978-1-4244-2732-1",
+            "partnum": "09EX2475",
+            "rank": 12,
+            "authors": {
+                "authors": [
+                    {
+                        "affiliation": "Key Laboratory of Intelligent Perception and Image Understanding of Ministry of Education of China, Institute of Intelligent Information Processing, Xidian University, Xi'an, China",
+                        "authorUrl": "https://ieeexplore.ieee.org/author/37395672400",
+                        "id": 37395672400,
+                        "full_name": "Fangfang Xin",
+                        "author_order": 1,
+                        "authorAffiliations": {
+                            "authorAffiliation": [
+                                "Key Laboratory of Intelligent Perception and Image Understanding of Ministry of Education of China, Institute of Intelligent Information Processing, Xidian University, Xi'an, China"
+                            ]
+                        }
+                    },
+                    {
+                        "affiliation": "Key Laboratory of Intelligent Perception and Image Understanding of Ministry of Education of China, Institute of Intelligent Information Processing, Xidian University, Xi'an, China",
+                        "authorUrl": "https://ieeexplore.ieee.org/author/37276095000",
+                        "id": 37276095000,
+                        "full_name": "LiCheng Jiao",
+                        "author_order": 2,
+                        "authorAffiliations": {
+                            "authorAffiliation": [
+                                "Key Laboratory of Intelligent Perception and Image Understanding of Ministry of Education of China, Institute of Intelligent Information Processing, Xidian University, Xi'an, China"
+                            ]
+                        }
+                    },
+                    {
+                        "affiliation": "Key Laboratory of Intelligent Perception and Image Understanding of Ministry of Education of China, Institute of Intelligent Information Processing, Xidian University, Xi'an, China",
+                        "authorUrl": "https://ieeexplore.ieee.org/author/37666221700",
+                        "id": 37666221700,
+                        "full_name": "Honglin Wan",
+                        "author_order": 3,
+                        "authorAffiliations": {
+                            "authorAffiliation": [
+                                "Key Laboratory of Intelligent Perception and Image Understanding of Ministry of Education of China, Institute of Intelligent Information Processing, Xidian University, Xi'an, China"
+                            ]
+                        }
+                    }
+                ]
+            },
+            "access_type": "LOCKED",
+            "content_type": "Conferences",
+            "abstract": "Based on the shift invariance and multidirectional expansion properties of nonsubsampled contourlet transform, a new image segmentation combining hidden Markov trees model with Bayesian approaches is proposed here. The training blocks can be got in pre-segmentation by using histogram approximation. To integrated use the information of different scales, we use the contextual model to segment raw segmentations and fuse them to get the final image. We compared our result with wavelet domain HMTseg method and contourlet domain HMTseg method, the result shows that our method has better performance in edges but lower missed classed probability. The simulation results of synthetic mosaic image, aerial image and SAR image are showed to prove the generalization of this method.",
+            "article_number": "5374126",
+            "pdf_url": "https://ieeexplore.ieee.org/stamp/stamp.jsp?tp=&arnumber=5374126",
+            "html_url": "https://ieeexplore.ieee.org/document/5374126/",
+            "abstract_url": "https://ieeexplore.ieee.org/document/5374126/",
+            "publication_title": "2009 2nd Asian-Pacific Conference on Synthetic Aperture Radar",
+            "conference_location": "Xi'an, China",
+            "conference_dates": "26-30 Oct. 2009",
+            "publication_number": 5367683,
+            "is_number": 5374088,
+            "publication_year": 2009,
+            "publication_date": "26-30 Oct. 2009",
+            "start_page": "485",
+            "end_page": "488",
+            "citing_paper_count": 4,
+            "citing_patent_count": 0,
+            "download_count": 127,
+            "insert_date": "20100108",
+            "index_terms": {
+                "ieee_terms": {
+                    "terms": [
+                        "Hidden Markov models",
+                        "Image segmentation",
+                        "Filter bank",
+                        "Wavelet domain",
+                        "Wavelet transforms",
+                        "Laplace equations",
+                        "Context modeling",
+                        "Linear approximation",
+                        "Anisotropic magnetoresistance",
+                        "Bayesian methods"
+                    ]
+                },
+                "author_terms": {
+                    "terms": [
+                        "Nonsubsampled Contourlet",
+                        "Hidden Markov Trees",
+                        "Image segmentation"
+                    ]
+                },
+                "dynamic_index_terms": {
+                    "terms": [
+                        "Image Segmentation",
+                        "Non-subsampled Contourlet",
+                        "Aerial Images",
+                        "Aerial Photographs",
+                        "Aerial Photos",
+                        "Aerial Imagery",
+                        "SAR Images",
+                        "Wavelet Domain",
+                        "Hidden Markov Model",
+                        "Wavelet Transform",
+                        "Wavelet Coefficients",
+                        "Error Probability",
+                        "Statistical Information",
+                        "Trainable Parameters",
+                        "Root Node",
+                        "Parent Node",
+                        "Segmentation Algorithm",
+                        "Segmentation Results",
+                        "Fusion Process",
+                        "Gaussian Mixture Model",
+                        "Image Texture",
+                        "Image Edge",
+                        "Child Nodes",
+                        "Children Nodes",
+                        "Image Block",
+                        "Image Segmentation Methods",
+                        "Curvelet",
+                        "Finest Scale",
+                        "Clear Edges",
+                        "Laplacian Pyramid",
+                        "Directional Filter"
+                    ]
+                }
+            },
+            "isbn_formats": {
+                "isbns": [
+                    {
+                        "format": "CD",
+                        "value": "978-1-4244-2732-1",
+                        "isbnType": "New-2005"
+                    },
+                    {
+                        "format": "Print ISBN",
+                        "value": "978-1-4244-2731-4",
+                        "isbnType": "New-2005"
+                    }
+                ]
+            },
+            "license": "IEEE"
+        },
+        {
+            "doi": "10.1109/ICCCNT51525.2021.9580010",
+            "title": "A New Reversible Data hiding Scheme in Encrypted Images using Predefined Pixel Mapping",
+            "publisher": "IEEE",
+            "isbn": "978-1-7281-8596-5",
+            "rank": 13,
+            "authors": {
+                "authors": [
+                    {
+                        "affiliation": "Department of Computer Science and Engineering, SRM University-AP, Andhra Pradesh, India",
+                        "authorUrl": "https://ieeexplore.ieee.org/author/37089012091",
+                        "id": 37089012091,
+                        "full_name": "Nikhila Korivi",
+                        "author_order": 1,
+                        "authorAffiliations": {
+                            "authorAffiliation": [
+                                "Department of Computer Science and Engineering, SRM University-AP, Andhra Pradesh, India"
+                            ]
+                        }
+                    },
+                    {
+                        "affiliation": "Department of Computer Science and Engineering, SRM University-AP, Andhra Pradesh, India",
+                        "authorUrl": "https://ieeexplore.ieee.org/author/37087058429",
+                        "id": 37087058429,
+                        "full_name": "V. M. Manikandan",
+                        "author_order": 2,
+                        "authorAffiliations": {
+                            "authorAffiliation": [
+                                "Department of Computer Science and Engineering, SRM University-AP, Andhra Pradesh, India"
+                            ]
+                        }
+                    }
+                ]
+            },
+            "access_type": "LOCKED",
+            "content_type": "Conferences",
+            "abstract": "One of the universally studied research topics is a reversible data hiding approach because of its wide applications in medical image transmission, cloud computing as well as in military services. In the introduced scheme stated in this paper, a new RDH scheme in encrypted images is proposed which ensures a good embedding rate without compromising the bit error rate. The scheme introduced in this manuscript uses a new measure that is computationally efficient and ensures real-time performance. In the proposed scheme, the original image is divided into blocks and in each block, one secret message bit is hidden by the data hider. All the pixels in the image block are categorized into two classes: black pixels and white pixels based on the predefined checkerboard pattern. The data hiding is performed by mapping the pixel values in the white position to a new value, only if the data hider wants to hide a secret bit 1. At the time of data extraction and image recovery, the closeness between the adjacent pixels is analyzed by considering a pair of adjacent black pixels and white pixels from the quantized image blocks. The overall experimental study of the proposed scheme is carried out using the standard images from the USC-SIPI image dataset managed by the University of Southern California.",
+            "article_number": "9580010",
+            "pdf_url": "https://ieeexplore.ieee.org/stamp/stamp.jsp?tp=&arnumber=9580010",
+            "html_url": "https://ieeexplore.ieee.org/document/9580010/",
+            "abstract_url": "https://ieeexplore.ieee.org/document/9580010/",
+            "publication_title": "2021 12th International Conference on Computing Communication and Networking Technologies (ICCCNT)",
+            "conference_location": "Kharagpur, India",
+            "conference_dates": "6-8 July 2021",
+            "publication_number": 9579467,
+            "is_number": 9579470,
+            "publication_year": 2021,
+            "publication_date": "6-8 July 2021",
+            "start_page": "1",
+            "end_page": "6",
+            "citing_paper_count": 0,
+            "citing_patent_count": 0,
+            "download_count": 138,
+            "insert_date": "20211103",
+            "index_terms": {
+                "ieee_terms": {
+                    "terms": [
+                        "Cloud computing",
+                        "Military computing",
+                        "Image communication",
+                        "Bit error rate",
+                        "Real-time systems",
+                        "Entropy",
+                        "Computational efficiency"
+                    ]
+                },
+                "author_terms": {
+                    "terms": [
+                        "closeness measure",
+                        "image encryption",
+                        "image decryption",
+                        "reversible data hiding"
+                    ]
+                },
+                "dynamic_index_terms": {
+                    "terms": [
+                        "Image Encryption",
+                        "Reversible Data Hiding",
+                        "Reversible Data Hiding Schemes",
+                        "Error Rate",
+                        "Medical Imaging",
+                        "Clinical Imaging",
+                        "Diagnostic Imaging",
+                        "Computational Efficiency",
+                        "Cloud Computing",
+                        "Cloud Storage",
+                        "Cloud-based",
+                        "Cloud Server",
+                        "Bit Error Rate",
+                        "Bit-error-rate",
+                        "Bit Error Ratio",
+                        "Bit Error",
+                        "Checkers",
+                        "Chequered",
+                        "Checkerboard Pattern",
+                        "Adjacent Pixels",
+                        "Image Recovery",
+                        "Hidden Information",
+                        "Hidden Data",
+                        "White Pixels",
+                        "Black Pixels",
+                        "Image Block",
+                        "Secret Message",
+                        "Hidden Message",
+                        "Image Pixels",
+                        "Block Size",
+                        "Steganography",
+                        "Stego",
+                        "Well-known Image",
+                        "Decryption Key",
+                        "Cover Image",
+                        "Message Length",
+                        "Message Lengths",
+                        "Pre-defined Function",
+                        "Final Image",
+                        "Entropy Analysis",
+                        "Study Preparation"
+                    ]
+                }
+            },
+            "isbn_formats": {
+                "isbns": [
+                    {
+                        "format": "Print on Demand(PoD) ISBN",
+                        "value": "978-1-7281-8596-5",
+                        "isbnType": "New-2005"
+                    },
+                    {
+                        "format": "Electronic ISBN",
+                        "value": "978-1-7281-8595-8",
+                        "isbnType": "New-2005"
+                    }
+                ]
+            },
+            "license": "IEEE"
+        },
+        {
+            "doi": "10.1109/ICIIP.2011.6108904",
+            "title": "Lossless data hiding for halftone images",
+            "publisher": "IEEE",
+            "isbn": "978-1-61284-860-0",
+            "partnum": "11EX5302",
+            "rank": 14,
+            "authors": {
+                "authors": [
+                    {
+                        "affiliation": "Department of Computer Science and Engineering, Indian Institute of Technology, Kharagpur, India",
+                        "authorUrl": "https://ieeexplore.ieee.org/author/38235053000",
+                        "id": 38235053000,
+                        "full_name": "Ruchira Naskar",
+                        "author_order": 1,
+                        "authorAffiliations": {
+                            "authorAffiliation": [
+                                "Department of Computer Science and Engineering, Indian Institute of Technology, Kharagpur, India"
+                            ]
+                        }
+                    },
+                    {
+                        "affiliation": "Department of Computer Science and Engineering, Indian Institute of Technology, Kharagpur, India",
+                        "authorUrl": "https://ieeexplore.ieee.org/author/37529667700",
+                        "id": 37529667700,
+                        "full_name": "Rajat Subhra Chakraborty",
+                        "author_order": 2,
+                        "authorAffiliations": {
+                            "authorAffiliation": [
+                                "Department of Computer Science and Engineering, Indian Institute of Technology, Kharagpur, India"
+                            ]
+                        }
+                    }
+                ]
+            },
+            "access_type": "LOCKED",
+            "content_type": "Conferences",
+            "abstract": "Lossless data hiding is the act of hiding some secret information into a cover data in such a way that after extraction of the hidden data, the cover data can be recovered bit-by-bit. In this paper we propose a novel method of lossless data hiding for halftone color images. Halftone images are widely used in the printing and publishing industries. Digital rights management of such images is an important issue. The proposed method can embed information in the form of a binary bit sequence into halftone color images with negligible change in their perceptual quality, as well as recover the unmodified original cover image after the hidden information has been extracted. The proposed method can be applied in reversible watermarking and steganography for authentication and content protection of colored halftone images.",
+            "article_number": "6108904",
+            "pdf_url": "https://ieeexplore.ieee.org/stamp/stamp.jsp?tp=&arnumber=6108904",
+            "html_url": "https://ieeexplore.ieee.org/document/6108904/",
+            "abstract_url": "https://ieeexplore.ieee.org/document/6108904/",
+            "publication_title": "2011 International Conference on Image Information Processing",
+            "conference_location": "Shimla, India",
+            "conference_dates": "3-5 Nov. 2011",
+            "publication_number": 6096321,
+            "is_number": 6108829,
+            "publication_year": 2011,
+            "publication_date": "3-5 Nov. 2011",
+            "start_page": "1",
+            "end_page": "6",
+            "citing_paper_count": 0,
+            "citing_patent_count": 0,
+            "download_count": 327,
+            "insert_date": "20111222",
+            "index_terms": {
+                "ieee_terms": {
+                    "terms": [
+                        "Color",
+                        "Image color analysis",
+                        "Payloads",
+                        "Watermarking",
+                        "Image coding",
+                        "Gray-scale",
+                        "Information processing"
+                    ]
+                },
+                "author_terms": {
+                    "terms": [
+                        "Halftone image",
+                        "Lossless data hiding",
+                        "steganography",
+                        "Watermarking"
+                    ]
+                },
+                "dynamic_index_terms": {
+                    "terms": [
+                        "Halftone Image",
+                        "Color Images",
+                        "Cover Data",
+                        "Perception Of Quality",
+                        "Hidden Information",
+                        "Hidden Data",
+                        "Cover Image",
+                        "Secret Information",
+                        "Publishing Industry",
+                        "Steganography",
+                        "Stego",
+                        "Contralateral",
+                        "Ipsilateral",
+                        "Image Quality",
+                        "Digital Images",
+                        "Image Pixels",
+                        "Maximum Capacity",
+                        "Grayscale Images",
+                        "Greyscale Images",
+                        "Standard Imaging",
+                        "Color Space",
+                        "Color Components",
+                        "Quantization Error",
+                        "Amount Of Error",
+                        "Human Visual System",
+                        "Component Of Image",
+                        "Black Pixels",
+                        "Blue Pixels",
+                        "Lossless Compression",
+                        "Lossless Data Compression",
+                        "Digital Watermarking",
+                        "Watermarked Image",
+                        "Least Significant Bit",
+                        "Low Bit",
+                        "Arithmetic Coding",
+                        "Arithmetic Encoder",
+                        "Coding Tree",
+                        "Huffman Coding",
+                        "Contrast Sensitivity Function",
+                        "Original Color"
+                    ]
+                }
+            },
+            "isbn_formats": {
+                "isbns": [
+                    {
+                        "format": "CD",
+                        "value": "978-1-61284-860-0",
+                        "isbnType": "New-2005"
+                    },
+                    {
+                        "format": "Print ISBN",
+                        "value": "978-1-61284-859-4",
+                        "isbnType": "New-2005"
+                    },
+                    {
+                        "format": "Electronic ISBN",
+                        "value": "978-1-61284-861-7",
+                        "isbnType": "New-2005"
+                    }
+                ]
+            },
+            "license": "IEEE"
+        },
+        {
+            "title": "Automatic Recovery of Hidden Image from Image Steganography Using DNN and Local Entropy Features",
+            "publisher": "IEEE",
+            "isbn": "978-1-7281-9848-4",
+            "rank": 15,
+            "authors": {
+                "authors": [
+                    {
+                        "affiliation": "Department of Computer and Software, Hanyang University, Seoul, Republic of Korea",
+                        "authorUrl": "https://ieeexplore.ieee.org/author/37089262931",
+                        "id": 37089262931,
+                        "full_name": "J. H. Lee",
+                        "author_order": 1,
+                        "authorAffiliations": {
+                            "authorAffiliation": [
+                                "Department of Computer and Software, Hanyang University, Seoul, Republic of Korea"
+                            ]
+                        }
+                    },
+                    {
+                        "affiliation": "Department of Computer and Software, Hanyang University, Seoul, Republic of Korea",
+                        "authorUrl": "https://ieeexplore.ieee.org/author/37088493173",
+                        "id": 37088493173,
+                        "full_name": "D. Y. Kang",
+                        "author_order": 2,
+                        "authorAffiliations": {
+                            "authorAffiliation": [
+                                "Department of Computer and Software, Hanyang University, Seoul, Republic of Korea"
+                            ]
+                        }
+                    },
+                    {
+                        "affiliation": "Department of Computer and Software, Hanyang University, Seoul, Republic of Korea",
+                        "authorUrl": "https://ieeexplore.ieee.org/author/37088493914",
+                        "id": 37088493914,
+                        "full_name": "J. E. Lee",
+                        "author_order": 3,
+                        "authorAffiliations": {
+                            "authorAffiliation": [
+                                "Department of Computer and Software, Hanyang University, Seoul, Republic of Korea"
+                            ]
+                        }
+                    },
+                    {
+                        "affiliation": "Institude of New Media and Communication, Seoul National University, Seoul, Republic of Korea",
+                        "authorUrl": "https://ieeexplore.ieee.org/author/37293420800",
+                        "id": 37293420800,
+                        "full_name": "S. H. Lee",
+                        "author_order": 4,
+                        "authorAffiliations": {
+                            "authorAffiliation": [
+                                "Institude of New Media and Communication, Seoul National University, Seoul, Republic of Korea"
+                            ]
+                        }
+                    },
+                    {
+                        "affiliation": "Department of Computer and Software, Hanyang University, Seoul, Republic of Korea",
+                        "authorUrl": "https://ieeexplore.ieee.org/author/37293298200",
+                        "id": 37293298200,
+                        "full_name": "J.-I. Park",
+                        "author_order": 5,
+                        "authorAffiliations": {
+                            "authorAffiliation": [
+                                "Department of Computer and Software, Hanyang University, Seoul, Republic of Korea"
+                            ]
+                        }
+                    }
+                ]
+            },
+            "access_type": "LOCKED",
+            "content_type": "Conferences",
+            "abstract": "Image steganography hides secret information in an image called cover image so naturally that the other users can not recognize the existence of information in the revealed image. This paper deals with an approach to recover the hidden image information from image steganography. The proposed approach investigates that the decoded hidden image information is a normal image or not. The normal and incorrectly decoded abnormal images have been trained using a deep neural network model and entropy features. The discrimination is processed with image patches since the information may be partially embedded in the cover image. The experiments are performed with respect to the various data capacities. The proposed approach discriminates and recovers the hidden image information automatically from a tremendously large number of steganography encoding methods.",
+            "article_number": "9183136",
+            "pdf_url": "https://ieeexplore.ieee.org/stamp/stamp.jsp?tp=&arnumber=9183136",
+            "html_url": "https://ieeexplore.ieee.org/document/9183136/",
+            "abstract_url": "https://ieeexplore.ieee.org/document/9183136/",
+            "publication_title": "2020 35th International Technical Conference on Circuits/Systems, Computers and Communications (ITC-CSCC)",
+            "conference_location": "Nagoya, Japan",
+            "conference_dates": "3-6 July 2020",
+            "publication_number": 9179648,
+            "is_number": 9182785,
+            "publication_year": 2020,
+            "publication_date": "3-6 July 2020",
+            "start_page": "440",
+            "end_page": "445",
+            "citing_paper_count": 0,
+            "citing_patent_count": 0,
+            "download_count": 266,
+            "insert_date": "20200901",
+            "index_terms": {
+                "ieee_terms": {
+                    "terms": [
+                        "Entropy",
+                        "Image coding",
+                        "Training",
+                        "Libraries",
+                        "Image recognition",
+                        "Support vector machines",
+                        "Media"
+                    ]
+                },
+                "author_terms": {
+                    "terms": [
+                        "Image steganography",
+                        "Data hiding",
+                        "Steganalysis",
+                        "Image entropy",
+                        "Deep neural network"
+                    ]
+                },
+                "dynamic_index_terms": {
+                    "terms": [
+                        "Deep Neural Network",
+                        "Entropy Features",
+                        "Entropy Characteristics",
+                        "Image Steganography",
+                        "Image Coding",
+                        "Deep Neural Network Features",
+                        "Hidden Image",
+                        "Image Information",
+                        "Image Patches",
+                        "Deep Neural Network Model",
+                        "Normal Images",
+                        "Imaging Abnormalities",
+                        "Hidden Information",
+                        "Hidden Data",
+                        "Cover Image",
+                        "Existence Of Information",
+                        "False Positive",
+                        "False-positive",
+                        "False Negative",
+                        "False-negative",
+                        "Support Vector Machine",
+                        "Specific Information",
+                        "Structural Abnormalities",
+                        "Spatial Domain",
+                        "Specific Imaging",
+                        "Deep Neural Network Classifier",
+                        "ResNet Model",
+                        "Complex Image",
+                        "Least Significant Bit",
+                        "Low Bit",
+                        "Discrete Cosine Transform",
+                        "Information Bits",
+                        "Image Recovery",
+                        "Information Capacity"
+                    ]
+                }
+            },
+            "isbn_formats": {
+                "isbns": [
+                    {
+                        "format": "Print on Demand(PoD) ISBN",
+                        "value": "978-1-7281-9848-4",
+                        "isbnType": "New-2005"
+                    },
+                    {
+                        "format": "Electronic ISBN",
+                        "value": "978-4-88552-328-1",
+                        "isbnType": "New-2005"
+                    }
+                ]
+            }
+        },
+        {
+            "doi": "10.1109/TIP.2005.864165",
+            "title": "Quality-aware images",
+            "publisher": "IEEE",
+            "issue": "6",
+            "issn": "1941-0042",
+            "rank": 16,
+            "volume": "15",
+            "authors": {
+                "authors": [
+                    {
+                        "affiliation": "Center for Neural Science, New York University, New York, NY, USA",
+                        "authorUrl": "https://ieeexplore.ieee.org/author/37087148113",
+                        "id": 37087148113,
+                        "full_name": "Zhou Wang",
+                        "author_order": 1,
+                        "authorAffiliations": {
+                            "authorAffiliation": [
+                                "Center for Neural Science, New York University, New York, NY, USA",
+                                "Department of Electrical Engineering, University of Texas, Arlington, Arlington, TX, USA"
+                            ]
+                        }
+                    },
+                    {
+                        "affiliation": "Department of Electrical and Computer Engineering, University of Waterloo, Waterloo, ONT, Canada",
+                        "authorUrl": "https://ieeexplore.ieee.org/author/37087795389",
+                        "id": 37087795389,
+                        "full_name": "Guixing Wu",
+                        "author_order": 2,
+                        "authorAffiliations": {
+                            "authorAffiliation": [
+                                "Department of Electrical and Computer Engineering, University of Waterloo, Waterloo, ONT, Canada"
+                            ]
+                        }
+                    },
+                    {
+                        "affiliation": "Texas Instruments, Inc., Dallas, TX, USA",
+                        "authorUrl": "https://ieeexplore.ieee.org/author/37283476500",
+                        "id": 37283476500,
+                        "full_name": "H.R. Sheikh",
+                        "author_order": 3,
+                        "authorAffiliations": {
+                            "authorAffiliation": [
+                                "Texas Instruments, Inc., Dallas, TX, USA"
+                            ]
+                        }
+                    },
+                    {
+                        "affiliation": "Center for Neural Science and the Courant Institute for Mathematical Sciences, New York University, New York, NY, USA",
+                        "authorUrl": "https://ieeexplore.ieee.org/author/37295258800",
+                        "id": 37295258800,
+                        "full_name": "E.P. Simoncelli",
+                        "author_order": 4,
+                        "authorAffiliations": {
+                            "authorAffiliation": [
+                                "Center for Neural Science and the Courant Institute for Mathematical Sciences, New York University, New York, NY, USA"
+                            ]
+                        }
+                    },
+                    {
+                        "affiliation": "Department of Electrical and Computer Engineering, University of Waterloo, Waterloo, ONT, Canada",
+                        "authorUrl": "https://ieeexplore.ieee.org/author/37086997768",
+                        "id": 37086997768,
+                        "full_name": "En-Hui Yang",
+                        "author_order": 5,
+                        "authorAffiliations": {
+                            "authorAffiliation": [
+                                "Department of Electrical and Computer Engineering, University of Waterloo, Waterloo, ONT, Canada"
+                            ]
+                        }
+                    },
+                    {
+                        "affiliation": "Department of Electrical and Computer Engineering, University of Texas, Austin, Austin, TX, USA",
+                        "authorUrl": "https://ieeexplore.ieee.org/author/37283451200",
+                        "id": 37283451200,
+                        "full_name": "A.C. Bovik",
+                        "author_order": 6,
+                        "authorAffiliations": {
+                            "authorAffiliation": [
+                                "Department of Electrical and Computer Engineering, University of Texas, Austin, Austin, TX, USA"
+                            ]
+                        }
+                    }
+                ]
+            },
+            "access_type": "LOCKED",
+            "content_type": "Journals",
+            "abstract": "We propose the concept of quality-aware image , in which certain extracted features of the original (high-quality) image are embedded into the image data as invisible hidden messages. When a distorted version of such an image is received, users can decode the hidden messages and use them to provide an objective measure of the quality of the distorted image. To demonstrate the idea, we build a practical quality-aware image encoding, decoding and quality analysis system, which employs: 1) a novel reduced-reference image quality assessment algorithm based on a statistical model of natural images and 2) a previously developed quantization watermarking-based data hiding technique in the wavelet transform domain.",
+            "article_number": "1632220",
+            "pdf_url": "https://ieeexplore.ieee.org/stamp/stamp.jsp?tp=&arnumber=1632220",
+            "html_url": "https://ieeexplore.ieee.org/document/1632220/",
+            "abstract_url": "https://ieeexplore.ieee.org/document/1632220/",
+            "publication_title": "IEEE Transactions on Image Processing",
+            "publication_number": 83,
+            "is_number": 34228,
+            "publication_year": 2006,
+            "publication_date": "June 2006",
+            "start_page": "1680",
+            "end_page": "1689",
+            "citing_paper_count": 233,
+            "citing_patent_count": 1,
+            "download_count": 1712,
+            "insert_date": "20060515",
+            "index_terms": {
+                "ieee_terms": {
+                    "terms": [
+                        "Decoding",
+                        "Data mining",
+                        "Feature extraction",
+                        "Distortion measurement",
+                        "Image coding",
+                        "Image analysis",
+                        "Algorithm design and analysis",
+                        "Image quality",
+                        "Quantization",
+                        "Watermarking"
+                    ]
+                },
+                "author_terms": {
+                    "terms": [
+                        "Generalized Gaussian density (GGD)",
+                        "image communication",
+                        "image quality assessment",
+                        "image watermarking",
+                        "information hiding",
+                        "natural image statistics",
+                        "quality-aware image",
+                        "reduced-reference image quality assessment"
+                    ]
+                },
+                "dynamic_index_terms": {
+                    "terms": [
+                        "Distortion",
+                        "Statistical Models",
+                        "Quality Assessment",
+                        "Imaging Data",
+                        "Image Quality",
+                        "Wavelet Transform",
+                        "Wavelet Coefficients",
+                        "Natural Images",
+                        "Hidden Information",
+                        "Hidden Data",
+                        "Concept Of Image",
+                        "Decoding Analysis",
+                        "Secret Message",
+                        "Hidden Message",
+                        "White Noise",
+                        "Performance Of Algorithm",
+                        "Reference Image",
+                        "Peak Signal-to-noise Ratio",
+                        "PSNR",
+                        "Quality Degradation",
+                        "Image Database",
+                        "Information Bits",
+                        "Receiver Side",
+                        "Objective Scores",
+                        "Distortion Types",
+                        "Cyclic Redundancy Check",
+                        "Kullback-Leibler Distance",
+                        "KL Distance",
+                        "Image Compression",
+                        "Distortion Levels",
+                        "Quality Assessment Methods",
+                        "Information Embedding",
+                        "Digital Watermarking",
+                        "Watermarked Image",
+                        "JPEG Compression",
+                        "Natural Scene Statistics",
+                        "Natural Image Statistics"
+                    ]
+                }
+            },
+            "license": "IEEE"
+        },
+        {
+            "doi": "10.1109/ICIP.2007.4379294",
+            "title": "Lossless Data Hiding for Medical Images with Patient Information",
+            "publisher": "IEEE",
+            "isbn": "978-1-4244-1437-6",
+            "issn": "2381-8549",
+            "partnum": "07CH37925",
+            "rank": 17,
+            "volume": "3",
+            "authors": {
+                "authors": [
+                    {
+                        "affiliation": "Electronics and Telecommunications Research Institute, Daejeon, South Korea",
+                        "authorUrl": "https://ieeexplore.ieee.org/author/37293443700",
+                        "id": 37293443700,
+                        "full_name": "Sang-Kwang Lee",
+                        "author_order": 1,
+                        "authorAffiliations": {
+                            "authorAffiliation": [
+                                "Electronics and Telecommunications Research Institute, Daejeon, South Korea"
+                            ]
+                        }
+                    },
+                    {
+                        "affiliation": "Electronics and Telecommunications Research Institute, Daejeon, South Korea",
+                        "authorUrl": "https://ieeexplore.ieee.org/author/37835754800",
+                        "id": 37835754800,
+                        "full_name": "Seong-Jae Lim",
+                        "author_order": 2,
+                        "authorAffiliations": {
+                            "authorAffiliation": [
+                                "Electronics and Telecommunications Research Institute, Daejeon, South Korea"
+                            ]
+                        }
+                    },
+                    {
+                        "affiliation": "Electronics and Telecommunications Research Institute, Daejeon, South Korea",
+                        "authorUrl": "https://ieeexplore.ieee.org/author/37287447700",
+                        "id": 37287447700,
+                        "full_name": "Young-Ho Suh",
+                        "author_order": 3,
+                        "authorAffiliations": {
+                            "authorAffiliation": [
+                                "Electronics and Telecommunications Research Institute, Daejeon, South Korea"
+                            ]
+                        }
+                    },
+                    {
+                        "affiliation": "Gwangju Institute of Science and Technology, Gwangju, South Korea",
+                        "authorUrl": "https://ieeexplore.ieee.org/author/37289814300",
+                        "id": 37289814300,
+                        "full_name": "Yo-Sung Ho",
+                        "author_order": 4,
+                        "authorAffiliations": {
+                            "authorAffiliation": [
+                                "Gwangju Institute of Science and Technology, Gwangju, South Korea"
+                            ]
+                        }
+                    }
+                ]
+            },
+            "access_type": "LOCKED",
+            "content_type": "Conferences",
+            "abstract": "This paper presents a lossless data hiding algorithm for medical images, where we embed the patient information into the segmented liver region of the CT image. This algorithm utilizes the characteristics of difference images and modifies pixel values slightly to embed a large amount of data while keeping high visual quality.",
+            "article_number": "4379294",
+            "pdf_url": "https://ieeexplore.ieee.org/stamp/stamp.jsp?tp=&arnumber=4379294",
+            "html_url": "https://ieeexplore.ieee.org/document/4379294/",
+            "abstract_url": "https://ieeexplore.ieee.org/document/4379294/",
+            "publication_title": "2007 IEEE International Conference on Image Processing",
+            "conference_location": "San Antonio, TX, USA",
+            "conference_dates": "16 Sept.-19 Oct. 2007",
+            "publication_number": 4378863,
+            "is_number": 4379219,
+            "publication_year": 2007,
+            "publication_date": "16 Sept.-19 Oct. 2007",
+            "start_page": "III - 253",
+            "end_page": "III - 256",
+            "citing_paper_count": 2,
+            "citing_patent_count": 0,
+            "download_count": 131,
+            "insert_date": "20071112",
+            "index_terms": {
+                "ieee_terms": {
+                    "terms": [
+                        "Data encapsulation",
+                        "Biomedical imaging",
+                        "Liver",
+                        "Image segmentation",
+                        "Computed tomography",
+                        "Histograms",
+                        "Pixel",
+                        "Biomedical monitoring",
+                        "Image storage",
+                        "Biomedical image processing"
+                    ]
+                },
+                "author_terms": {
+                    "terms": [
+                        "Lossless data hiding",
+                        "biomedical image processing"
+                    ]
+                },
+                "dynamic_index_terms": {
+                    "terms": [
+                        "Patient Information",
+                        "Hidden Information",
+                        "Hidden Data",
+                        "Computed Tomography",
+                        "Computed Tomography Scan",
+                        "CT Scan",
+                        "Lossless",
+                        "Segmented Regions",
+                        "Imaging Algorithm",
+                        "High Visual Quality",
+                        "Less Than Or Equal",
+                        "Greater Than Or Equal",
+                        "Image Pixels",
+                        "Value Of Image",
+                        "Data Retrieval",
+                        "Image Properties",
+                        "Image Attributes",
+                        "Secret Key",
+                        "Private Key",
+                        "Marked Regions",
+                        "Data Recovery",
+                        "Peak Point",
+                        "Procedure Group",
+                        "Image Histogram",
+                        "Grayscale Histogram",
+                        "Watershed Segmentation",
+                        "Watershed Segmentation Algorithm",
+                        "Watershed Transform",
+                        "Watershed Algorithm",
+                        "Data Embedding",
+                        "Morphological Filtering"
+                    ]
+                }
+            },
+            "isbn_formats": {
+                "isbns": [
+                    {
+                        "format": "CD",
+                        "value": "978-1-4244-1437-6",
+                        "isbnType": "Historical"
+                    },
+                    {
+                        "format": "Print ISBN",
+                        "value": "978-1-4244-1436-9",
+                        "isbnType": "New-2005"
+                    }
+                ]
+            },
+            "license": "IEEE"
+        },
+        {
+            "doi": "10.1109/ICIP.2007.4378981",
+            "title": "Detecting Hidden Messages Using Image Power Spectrum",
+            "publisher": "IEEE",
+            "isbn": "978-1-4244-1437-6",
+            "issn": "2381-8549",
+            "partnum": "07CH37925",
+            "rank": 18,
+            "volume": "1",
+            "authors": {
+                "authors": [
+                    {
+                        "affiliation": "Department of Electrical and Computer Engineering, Stevens Institute of Technology, Hoboken, NJ, USA",
+                        "authorUrl": "https://ieeexplore.ieee.org/author/37288496000",
+                        "id": 37288496000,
+                        "full_name": "Palak Amin",
+                        "author_order": 1,
+                        "authorAffiliations": {
+                            "authorAffiliation": [
+                                "Department of Electrical and Computer Engineering, Stevens Institute of Technology, Hoboken, NJ, USA"
+                            ]
+                        }
+                    },
+                    {
+                        "affiliation": "Department of Electrical and Computer Engineering, Stevens Institute of Technology, Hoboken, NJ, USA",
+                        "authorUrl": "https://ieeexplore.ieee.org/author/37298407200",
+                        "id": 37298407200,
+                        "full_name": "K. P. Subbalakshmi",
+                        "author_order": 2,
+                        "authorAffiliations": {
+                            "authorAffiliation": [
+                                "Department of Electrical and Computer Engineering, Stevens Institute of Technology, Hoboken, NJ, USA"
+                            ]
+                        }
+                    }
+                ]
+            },
+            "access_type": "LOCKED",
+            "content_type": "Conferences",
+            "abstract": "In this paper we present a study of the effects of data hiding on the power spectra of digital images. Several imperceptible data hiding techniques have been proposed that provide strong visual security and robustness. Although imperceptible to the human visual system, the hidden data affects the natural qualities of the image, such as the image power spectrum. In this study, we classify a large image database into a number of categories. For each category, we calculate the slope of the power spectra for the marked and unmarked images. We note that in the case of spatial data hiding the average slope of the power spectra of marked images is 54.93% higher compared to that of the unmarked images. Also in the cases of transform domain data hiding we note that the average slope of the power spectra of the images marked using a discrete cosine (wavelet) transform (DC(W)T) based technique is higher by 9.12% (38.39%). We also test a commercially available data hiding software namely Digimarc Corp.'s MyPictureMarc 2005 VI.0. In this case the average power spectra of the marked images is 35.99% higher. Hence we see that the proposed scheme is a tool for universal steganalysis with varying degrees of success depending on the type of embedding.",
+            "article_number": "4378981",
+            "pdf_url": "https://ieeexplore.ieee.org/stamp/stamp.jsp?tp=&arnumber=4378981",
+            "html_url": "https://ieeexplore.ieee.org/document/4378981/",
+            "abstract_url": "https://ieeexplore.ieee.org/document/4378981/",
+            "publication_title": "2007 IEEE International Conference on Image Processing",
+            "conference_location": "San Antonio, TX, USA",
+            "conference_dates": "16 Sept.-19 Oct. 2007",
+            "publication_number": 4378863,
+            "is_number": 4378864,
+            "publication_year": 2007,
+            "publication_date": "16 Sept.-19 Oct. 2007",
+            "start_page": "I - 421",
+            "end_page": "I - 424",
+            "citing_paper_count": 3,
+            "citing_patent_count": 0,
+            "download_count": 306,
+            "insert_date": "20071112",
+            "index_terms": {
+                "ieee_terms": {
+                    "terms": [
+                        "Data encapsulation",
+                        "Discrete wavelet transforms",
+                        "Digital images",
+                        "Data security",
+                        "Power system security",
+                        "Robustness",
+                        "Humans",
+                        "Visual system",
+                        "Image databases",
+                        "Wavelet domain"
+                    ]
+                },
+                "author_terms": {
+                    "terms": [
+                        "Steganalysis",
+                        "power spectra",
+                        "data-hiding",
+                        "water-marking"
+                    ]
+                },
+                "dynamic_index_terms": {
+                    "terms": [
+                        "Power Spectrum",
+                        "Secret Message",
+                        "Hidden Message",
+                        "Average Spectrum",
+                        "Imperceptible",
+                        "Image Database",
+                        "Human Visual System",
+                        "Spectrum Imaging",
+                        "Hidden Information",
+                        "Hidden Data",
+                        "Image Object",
+                        "Final Image",
+                        "Image Categories",
+                        "Images In Each Category",
+                        "Discrete Cosine Transform",
+                        "Gain Factor",
+                        "Image Block",
+                        "Pseudo-random Sequence",
+                        "Spatial Block"
+                    ]
+                }
+            },
+            "isbn_formats": {
+                "isbns": [
+                    {
+                        "format": "CD",
+                        "value": "978-1-4244-1437-6",
+                        "isbnType": "Historical"
+                    },
+                    {
+                        "format": "Print ISBN",
+                        "value": "978-1-4244-1436-9",
+                        "isbnType": "New-2005"
+                    }
+                ]
+            },
+            "license": "IEEE"
+        },
+        {
+            "doi": "10.1109/VCIP63160.2024.10849797",
+            "title": "A Novel Reversible Data Hiding Scheme in Compressible Encrypted Grayscale-Based Images",
+            "publisher": "IEEE",
+            "isbn": "979-8-3315-2955-0",
+            "issn": "1018-8770",
+            "rank": 19,
+            "authors": {
+                "authors": [
+                    {
+                        "affiliation": "Department of Computer Science, Tokyo Metropolitan University, Tokyo, Japan",
+                        "authorUrl": "https://ieeexplore.ieee.org/author/37088768001",
+                        "id": 37088768001,
+                        "full_name": "Ruifeng Li",
+                        "author_order": 1,
+                        "authorAffiliations": {
+                            "authorAffiliation": [
+                                "Department of Computer Science, Tokyo Metropolitan University, Tokyo, Japan"
+                            ]
+                        }
+                    },
+                    {
+                        "affiliation": "Department of Computer Science, Tokyo Metropolitan University, Tokyo, Japan",
+                        "authorUrl": "https://ieeexplore.ieee.org/author/37301593600",
+                        "id": 37301593600,
+                        "full_name": "Masaaki Fujiyoshi",
+                        "author_order": 2,
+                        "authorAffiliations": {
+                            "authorAffiliation": [
+                                "Department of Computer Science, Tokyo Metropolitan University, Tokyo, Japan"
+                            ]
+                        }
+                    }
+                ]
+            },
+            "access_type": "LOCKED",
+            "content_type": "Conferences",
+            "abstract": "In recent years, the proliferation of cloud services, particularly social media, has spurred research on encryption-then-compression (EtC) systems for secure and efficient multi-media transmission. EtC systems compress encrypted images or provide compression-resilient encryption. To address the need for embedding authentication, copyright data, or tags to images in cloud services, this paper introduces a novel data hiding scheme for the EtC system. The EtC system which this paper focuses on converts an RGB color image to the YCbCr color image, followed by horizontally joining three color component images to form a grayscale image, and encrypts this grayscale image in non-overlapping blocks using block permutation, block rotation/inversion, and brightness inversion. The proposed data hiding scheme conceals data in unencrypted images and can extract it from encrypted images by manipulating diagonal pixel values within blocks. Sorting keys, generated from intra-block pixel value characteristics, ensure correct data sequence recovery. Moreover, the proposed scheme is reversible, allowing for the removal of embedded information, and uses different pixels within the same block for dual embeddings to increase payload. Compared to conventional schemes for the EtC system, the proposed scheme leverages all three visual encryption processes and considers the RGB-to-YCbCr conversion. Performance evaluation results confirm the effectiveness of the proposed scheme.",
+            "article_number": "10849797",
+            "pdf_url": "https://ieeexplore.ieee.org/stamp/stamp.jsp?tp=&arnumber=10849797",
+            "html_url": "https://ieeexplore.ieee.org/document/10849797/",
+            "abstract_url": "https://ieeexplore.ieee.org/document/10849797/",
+            "publication_title": "2024 IEEE International Conference on Visual Communications and Image Processing (VCIP)",
+            "conference_location": "Tokyo, Japan",
+            "conference_dates": "8-11 Dec. 2024",
+            "publication_number": 10849624,
+            "is_number": 10849781,
+            "publication_year": 2024,
+            "publication_date": "8-11 Dec. 2024",
+            "start_page": "1",
+            "end_page": "5",
+            "citing_paper_count": 0,
+            "citing_patent_count": 0,
+            "download_count": 102,
+            "insert_date": "20250127",
+            "index_terms": {
+                "ieee_terms": {
+                    "terms": [
+                        "Performance evaluation",
+                        "Visualization",
+                        "Image coding",
+                        "Image color analysis",
+                        "Visual communication",
+                        "Social networking (online)",
+                        "Color",
+                        "Gray-scale",
+                        "Encryption",
+                        "Sorting"
+                    ]
+                },
+                "author_terms": {
+                    "terms": [
+                        "reversible data hiding in encrypted images",
+                        "parameter memorization-free data hiding",
+                        "block-based visual encryption",
+                        "perceptual encryption",
+                        "color transformation"
+                    ]
+                },
+                "dynamic_index_terms": {
+                    "terms": [
+                        "Reversible Data Hiding",
+                        "Reversible Data Hiding Schemes",
+                        "Social Media",
+                        "Social Platforms",
+                        "Cloud Computing",
+                        "Cloud Storage",
+                        "Cloud-based",
+                        "Cloud Server",
+                        "Color Images",
+                        "Grayscale Images",
+                        "Greyscale Images",
+                        "Color Space",
+                        "Color Components",
+                        "Conventional Scheme",
+                        "Encryption Process",
+                        "Image Encryption",
+                        "Non-overlapping Blocks",
+                        "RGB Color Images",
+                        "Image Quality",
+                        "Information Capacity",
+                        "Pseudo-random Number Generator",
+                        "Lossless Compression",
+                        "Lossless Data Compression",
+                        "Pixel Block",
+                        "Pixel Correlation",
+                        "Color Conversion"
+                    ]
+                }
+            },
+            "isbn_formats": {
+                "isbns": [
+                    {
+                        "format": "Print on Demand(PoD) ISBN",
+                        "value": "979-8-3315-2955-0",
+                        "isbnType": "New-2005"
+                    },
+                    {
+                        "format": "Electronic ISBN",
+                        "value": "979-8-3315-2954-3",
+                        "isbnType": "New-2005"
+                    }
+                ]
+            },
+            "license": "IEEE"
+        },
+        {
+            "doi": "10.1109/ISEA-ISAP54304.2021.9688572",
+            "title": "A Novel Prediction Error Histogram Shifting-based Reversible Data Hiding Scheme for Medical Image Transmission",
+            "publisher": "IEEE",
+            "isbn": "978-1-6654-2018-1",
+            "rank": 20,
+            "authors": {
+                "authors": [
+                    {
+                        "affiliation": "Department of Computer Science and Engineering, SRM University-AP, Andhra Pradesh, India",
+                        "authorUrl": "https://ieeexplore.ieee.org/author/37089255143",
+                        "id": 37089255143,
+                        "full_name": "Buggaveeti Padmaja",
+                        "author_order": 1,
+                        "authorAffiliations": {
+                            "authorAffiliation": [
+                                "Department of Computer Science and Engineering, SRM University-AP, Andhra Pradesh, India"
+                            ]
+                        }
+                    },
+                    {
+                        "affiliation": "Department of Computer Science and Engineering, SRM University-AP, Andhra Pradesh, India",
+                        "authorUrl": "https://ieeexplore.ieee.org/author/37087058429",
+                        "id": 37087058429,
+                        "full_name": "V. M. Manikandan",
+                        "author_order": 2,
+                        "authorAffiliations": {
+                            "authorAffiliation": [
+                                "Department of Computer Science and Engineering, SRM University-AP, Andhra Pradesh, India"
+                            ]
+                        }
+                    }
+                ]
+            },
+            "access_type": "LOCKED",
+            "content_type": "Conferences",
+            "abstract": "Reversible data hiding (RDH) is an actively emerging area in the domain of Information Security having wide applications in clinical data transmission along with medical images. In our research, we came up with a new RDH scheme to keep clinical data in the medical image to ensure secure data transmission. Histogram shifting-based RDH schemes are widely explored for RDH in images. The conventional histogram shifting-based RDH schemes have two major concerns: low embedding rate and overflow or underflow. In this approach, we discuss a prediction error histogram shifting-based approach with an improved overflow handling technique. The pixels in the images are divided into two different categories: black and white. The classification of the pixels has been carried out based on the checkerboard pattern. As we know that as per the checkerboard pattern, a black pixel will have four 4-neighbourhood pixels (left, right, top and bottom). To predict the black pixel value in the middle we used the average of three pixels out of 4-neighbourhood which are very close to the central pixel value. By considering the predicted pixel value and the actual pixel value, we have computed the prediction error. The histogram of prediction error is generated based on the prediction error corresponds to all the black pixels in the image. The prediction error histogram is considered for further data hiding through the histogram shifting approach. The overflow/underflow is a critical issue in the histogram shifting-based RDH scheme, so we have came up with an improved overflow/underflow handling technique in this approach. We have validated the results after carrying out the proposed scheme on medical and natural images.",
+            "article_number": "9688572",
+            "pdf_url": "https://ieeexplore.ieee.org/stamp/stamp.jsp?tp=&arnumber=9688572",
+            "html_url": "https://ieeexplore.ieee.org/document/9688572/",
+            "abstract_url": "https://ieeexplore.ieee.org/document/9688572/",
+            "publication_title": "2021 4th International Conference on Security and Privacy (ISEA-ISAP)",
+            "conference_location": "Dhanbad, India",
+            "conference_dates": "27-30 Oct. 2021",
+            "publication_number": 9688569,
+            "is_number": 9688571,
+            "publication_year": 2021,
+            "publication_date": "27-30 Oct. 2021",
+            "start_page": "1",
+            "end_page": "6",
+            "citing_paper_count": 3,
+            "citing_patent_count": 0,
+            "download_count": 215,
+            "insert_date": "20220126",
+            "index_terms": {
+                "ieee_terms": {
+                    "terms": [
+                        "Histograms",
+                        "Data privacy",
+                        "Image communication",
+                        "Information security",
+                        "Data communication",
+                        "Biomedical imaging"
+                    ]
+                },
+                "author_terms": {
+                    "terms": [
+                        "Reversible data hiding",
+                        "Medical image transmission",
+                        "Clinical report",
+                        "Image recovery",
+                        "Prediction error",
+                        "Histogram shifting"
+                    ]
+                },
+                "dynamic_index_terms": {
+                    "terms": [
+                        "Medical Imaging",
+                        "Clinical Imaging",
+                        "Diagnostic Imaging",
+                        "Prediction Error",
+                        "Reversible Data Hiding",
+                        "Reversible Data Hiding Schemes",
+                        "Prediction-error Histogram",
+                        "Prediction Error Histogram",
+                        "Medical Image Transmission",
+                        "Image Pixels",
+                        "Natural Images",
+                        "Information Security",
+                        "InfoSec",
+                        "Information Systems Security",
+                        "Checkers",
+                        "Chequered",
+                        "Checkerboard Pattern",
+                        "Pixel Classification",
+                        "Black Pixels",
+                        "Domain Area",
+                        "Image Quality",
+                        "Image Reconstruction",
+                        "Iterative Reconstruction",
+                        "Tomographic Reconstruction",
+                        "Time Complexity",
+                        "Clinical Reports",
+                        "Grayscale Images",
+                        "Greyscale Images",
+                        "Visual Quality",
+                        "Bit Error Rate",
+                        "Bit-error-rate",
+                        "Bit Error Ratio",
+                        "Secret Information",
+                        "Image Quality Measures",
+                        "Receiver Side",
+                        "Bit Error",
+                        "Low-quality Images",
+                        "Low Image Quality",
+                        "Informative Markers",
+                        "Image Histogram",
+                        "Grayscale Histogram",
+                        "Secret Message",
+                        "Hidden Message"
+                    ]
+                }
+            },
+            "isbn_formats": {
+                "isbns": [
+                    {
+                        "format": "Print on Demand(PoD) ISBN",
+                        "value": "978-1-6654-2018-1",
+                        "isbnType": "New-2005"
+                    },
+                    {
+                        "format": "Electronic ISBN",
+                        "value": "978-1-6654-2017-4",
+                        "isbnType": "New-2005"
+                    }
+                ]
+            },
+            "license": "IEEE"
+        },
+        {
+            "doi": "10.1109/83.551706",
+            "title": "Color image retrieval based on hidden Markov models",
+            "publisher": "IEEE",
+            "issue": "2",
+            "issn": "1941-0042",
+            "rank": 21,
+            "volume": "6",
+            "authors": {
+                "authors": [
+                    {
+                        "affiliation": "Department of Computer Science, National Tsing Hua University, Hsinchu, Taiwan",
+                        "authorUrl": "https://ieeexplore.ieee.org/author/37087456160",
+                        "id": 37087456160,
+                        "full_name": "Hsin-Chih Lin",
+                        "author_order": 1,
+                        "authorAffiliations": {
+                            "authorAffiliation": [
+                                "Department of Computer Science, National Tsing Hua University, Hsinchu, Taiwan"
+                            ]
+                        }
+                    },
+                    {
+                        "affiliation": "Department of Computer Science, National Tsing Hua University, Hsinchu, Taiwan",
+                        "authorUrl": "https://ieeexplore.ieee.org/author/37087455736",
+                        "id": 37087455736,
+                        "full_name": "Ling-Ling Wang",
+                        "author_order": 2,
+                        "authorAffiliations": {
+                            "authorAffiliation": [
+                                "Department of Computer Science, National Tsing Hua University, Hsinchu, Taiwan"
+                            ]
+                        }
+                    },
+                    {
+                        "affiliation": "Department of Computer Science, National Tsing Hua University, Hsinchu, Taiwan",
+                        "authorUrl": "https://ieeexplore.ieee.org/author/37086989505",
+                        "id": 37086989505,
+                        "full_name": "Shi-Nine Yang",
+                        "author_order": 3,
+                        "authorAffiliations": {
+                            "authorAffiliation": [
+                                "Department of Computer Science, National Tsing Hua University, Hsinchu, Taiwan"
+                            ]
+                        }
+                    }
+                ]
+            },
+            "access_type": "LOCKED",
+            "content_type": "Journals",
+            "abstract": "In this correspondence, a new approach to retrieving images from a color image database is proposed. Each image in the database is represented by a two-dimensional pseudo-hidden Markov model (2-D PHMM), which characterizes the chromatic and spatial information about the image. In addition, a flexible pictorial querying method is used, by which users can paint the rough content of the desired images in a query picture. Image matching is achieved by comparing the query picture with each 2-D PHMM in the database. Experimental results show that the proposed approach is indeed effective.",
+            "article_number": "551706",
+            "pdf_url": "https://ieeexplore.ieee.org/stamp/stamp.jsp?tp=&arnumber=551706",
+            "html_url": "https://ieeexplore.ieee.org/document/551706/",
+            "abstract_url": "https://ieeexplore.ieee.org/document/551706/",
+            "publication_title": "IEEE Transactions on Image Processing",
+            "publication_number": 83,
+            "is_number": 11966,
+            "publication_year": 1997,
+            "publication_date": "Feb. 1997",
+            "start_page": "332",
+            "end_page": "339",
+            "citing_paper_count": 41,
+            "citing_patent_count": 0,
+            "download_count": 185,
+            "insert_date": "20020806",
+            "license": "IEEE"
+        },
+        {
+            "doi": "10.1109/TIP.2007.899612",
+            "title": "Image Segmentation Using Hidden Markov Gauss Mixture Models",
+            "publisher": "IEEE",
+            "issue": "7",
+            "issn": "1941-0042",
+            "rank": 22,
+            "volume": "16",
+            "authors": {
+                "authors": [
+                    {
+                        "affiliation": "Information Systems Laboratory (ISL), Department of Electrical Engineering, University of Stanford, Stanford, CA, USA",
+                        "authorUrl": "https://ieeexplore.ieee.org/author/37337657800",
+                        "id": 37337657800,
+                        "full_name": "Kyungsuk Pyun",
+                        "author_order": 1,
+                        "authorAffiliations": {
+                            "authorAffiliation": [
+                                "Information Systems Laboratory (ISL), Department of Electrical Engineering, University of Stanford, Stanford, CA, USA",
+                                "Imaging and Printing Group (IPG), Hewlett Packard Company, San Diego, CA, USA"
+                            ]
+                        }
+                    },
+                    {
+                        "affiliation": "Department of Applied Statistics, Yonsei University, Seoul, South Korea",
+                        "authorUrl": "https://ieeexplore.ieee.org/author/37631314300",
+                        "id": 37631314300,
+                        "full_name": "Johan Lim",
+                        "author_order": 2,
+                        "authorAffiliations": {
+                            "authorAffiliation": [
+                                "Department of Applied Statistics, Yonsei University, Seoul, South Korea"
+                            ]
+                        }
+                    },
+                    {
+                        "affiliation": "Department of Electronic Engineering, Dongguk University, Seoul, South Korea",
+                        "authorUrl": "https://ieeexplore.ieee.org/author/37087219796",
+                        "id": 37087219796,
+                        "full_name": "Chee Sun Won",
+                        "author_order": 3,
+                        "authorAffiliations": {
+                            "authorAffiliation": [
+                                "Department of Electronic Engineering, Dongguk University, Seoul, South Korea"
+                            ]
+                        }
+                    },
+                    {
+                        "affiliation": "Information Systems Laboratory (ISL), Department of Electrical Engineering, University of Stanford, Stanford, CA, USA",
+                        "authorUrl": "https://ieeexplore.ieee.org/author/37286924700",
+                        "id": 37286924700,
+                        "full_name": "Robert M. Gray",
+                        "author_order": 4,
+                        "authorAffiliations": {
+                            "authorAffiliation": [
+                                "Information Systems Laboratory (ISL), Department of Electrical Engineering, University of Stanford, Stanford, CA, USA"
+                            ]
+                        }
+                    }
+                ]
+            },
+            "access_type": "LOCKED",
+            "content_type": "Journals",
+            "abstract": " Image segmentation is an important tool in image processing and can serve as an efficient front end to sophisticated algorithms and thereby simplify subsequent processing. We develop a multiclass image segmentation method using hidden Markov Gauss mixture models (HMGMMs) and provide examples of segmentation of aerial images and textures. HMGMMs incorporate supervised learning, fitting the observation probability distribution given each class by a Gauss mixture estimated using vector quantization with a minimum discrimination information (MDI) distortion. We formulate the image segmentation problem using a maximum a posteriori criteria and find the hidden states that maximize the posterior density given the observation. We estimate both the hidden Markov parameter and hidden states using a stochastic expectation-maximization algorithm. Our results demonstrate that HMGMM provides better classification in terms of Bayes risk and spatial homogeneity of the classified objects than do several popular methods, including classification and regression trees, learning vector quantization, causal hidden Markov models (HMMs), and multiresolution HMMs. The computational load of HMGMM is similar to that of the causal HMM. ",
+            "article_number": "4237207",
+            "pdf_url": "https://ieeexplore.ieee.org/stamp/stamp.jsp?tp=&arnumber=4237207",
+            "html_url": "https://ieeexplore.ieee.org/document/4237207/",
+            "abstract_url": "https://ieeexplore.ieee.org/document/4237207/",
+            "publication_title": "IEEE Transactions on Image Processing",
+            "publication_number": 83,
+            "is_number": 4237185,
+            "publication_year": 2007,
+            "publication_date": "July 2007",
+            "start_page": "1902",
+            "end_page": "1911",
+            "citing_paper_count": 41,
+            "citing_patent_count": 0,
+            "download_count": 1392,
+            "insert_date": "20070618",
+            "index_terms": {
+                "ieee_terms": {
+                    "terms": [
+                        "Hidden Markov models",
+                        "Image segmentation",
+                        "Gaussian processes",
+                        "Classification tree analysis",
+                        "Vector quantization",
+                        "Image processing",
+                        "Supervised learning",
+                        "Probability distribution",
+                        "Gaussian distribution",
+                        "State estimation"
+                    ]
+                },
+                "author_terms": {
+                    "terms": [
+                        "Bond-percolation (BP) model",
+                        "Gauss mixture models (GMMs)",
+                        "Gauss mixture vector quantizer (GMVQ)",
+                        "image classification",
+                        "image segmentation",
+                        "parameter estimation",
+                        "2-D hidden Markov models (HMMs)"
+                    ]
+                },
+                "dynamic_index_terms": {
+                    "terms": [
+                        "Image Segmentation",
+                        "Gauss Mixture",
+                        "Supervised Learning",
+                        "Supervised Classification",
+                        "Supervised Machine Learning",
+                        "Expectation Maximization",
+                        "EM Algorithm",
+                        "Expectation-maximization Algorithm",
+                        "Hidden Markov Model",
+                        "Regression Tree",
+                        "Aerial Images",
+                        "Aerial Photographs",
+                        "Aerial Photos",
+                        "Aerial Imagery",
+                        "Causal Model",
+                        "Hidden State",
+                        "Stochastic Algorithm",
+                        "Maximum A Posteriori",
+                        "Segmentation Problem",
+                        "Spatial Homogeneity",
+                        "Vector Quantization",
+                        "Image Processing Tools",
+                        "Monte Carlo Simulation",
+                        "Monte Carlo Method",
+                        "Covariance Matrix",
+                        "Covariance Matrices",
+                        "Image Classification",
+                        "Random Fields",
+                        "Autoregressive Model",
+                        "AR Model",
+                        "Autoregressive Process",
+                        "Posterior Mode",
+                        "Map Estimation",
+                        "Maximum A Posteriori Estimate",
+                        "Markov Random Field",
+                        "Codeword",
+                        "Training Images",
+                        "Raw Images",
+                        "Non-causal",
+                        "Markov Chain Monte Carlo",
+                        "Conditional Expectation"
+                    ]
+                }
+            },
+            "license": "IEEE"
+        },
+        {
+            "doi": "10.1109/IIH-MSP.2015.70",
+            "title": "Improving Visual Quality of Reversible Data Hiding in Medical Image with Texture Area Contrast Enhancement",
+            "publisher": "IEEE",
+            "isbn": "978-1-5090-0187-3",
+            "rank": 23,
+            "authors": {
+                "authors": [
+                    {
+                        "affiliation": "School of Electronics and Information Engineering, Anhui University, Hefei, China",
+                        "authorUrl": "https://ieeexplore.ieee.org/author/37085743155",
+                        "id": 37085743155,
+                        "full_name": "Yang Yang",
+                        "author_order": 1,
+                        "authorAffiliations": {
+                            "authorAffiliation": [
+                                "School of Electronics and Information Engineering, Anhui University, Hefei, China",
+                                "CAS Key Laboratory of Electro-magnetic Space Information, University of Science and Technology of China, Hefei, China"
+                            ]
+                        }
+                    },
+                    {
+                        "affiliation": "CAS Key Laboratory of Electro-magnetic Space Information, University of Science and Technology of China, Hefei, China",
+                        "authorUrl": "https://ieeexplore.ieee.org/author/37291408100",
+                        "id": 37291408100,
+                        "full_name": "Weiming Zhang",
+                        "author_order": 2,
+                        "authorAffiliations": {
+                            "authorAffiliation": [
+                                "CAS Key Laboratory of Electro-magnetic Space Information, University of Science and Technology of China, Hefei, China"
+                            ]
+                        }
+                    },
+                    {
+                        "affiliation": "CAS Key Laboratory of Electro-magnetic Space Information, University of Science and Technology of China, Hefei, China",
+                        "authorUrl": "https://ieeexplore.ieee.org/author/37394112700",
+                        "id": 37394112700,
+                        "full_name": "Nenghai Yu",
+                        "author_order": 3,
+                        "authorAffiliations": {
+                            "authorAffiliation": [
+                                "CAS Key Laboratory of Electro-magnetic Space Information, University of Science and Technology of China, Hefei, China"
+                            ]
+                        }
+                    }
+                ]
+            },
+            "access_type": "LOCKED",
+            "content_type": "Conferences",
+            "abstract": "Opposite to most state-of-the-art reversible data hiding (RDH) methods which usually embed data into smooth area for pursuing high PSNR values of the marked image, we propose a new RDH method for improving visual quality of the details information in medical image instead of pursuing high PSNR. The proposed method embeds data into the texture area preferential by the histogram shifting (HS) method and contrast enhancement method to enhance contrast of texture area and improve the image quality in subjective perception. Our experimental results on medical images show that the proposed method can improve image quality when compared with other HS based RDH method.",
+            "article_number": "7415763",
+            "pdf_url": "https://ieeexplore.ieee.org/stamp/stamp.jsp?tp=&arnumber=7415763",
+            "html_url": "https://ieeexplore.ieee.org/document/7415763/",
+            "abstract_url": "https://ieeexplore.ieee.org/document/7415763/",
+            "publication_title": "2015 International Conference on Intelligent Information Hiding and Multimedia Signal Processing (IIH-MSP)",
+            "conference_location": "Adelaide, SA, Australia",
+            "conference_dates": "23-25 Sept. 2015",
+            "publication_number": 7401391,
+            "is_number": 7415733,
+            "publication_year": 2015,
+            "publication_date": "23-25 Sept. 2015",
+            "start_page": "81",
+            "end_page": "84",
+            "citing_paper_count": 5,
+            "citing_patent_count": 0,
+            "download_count": 343,
+            "insert_date": "20160225",
+            "index_terms": {
+                "ieee_terms": {
+                    "terms": [
+                        "Histograms",
+                        "Biomedical imaging",
+                        "Visualization",
+                        "Image quality",
+                        "Image coding",
+                        "Data mining",
+                        "Image restoration"
+                    ]
+                },
+                "author_terms": {
+                    "terms": [
+                        "Reversible Data Hiding",
+                        "Visual Quality",
+                        "Contrast Enhancement",
+                        "Histogram Shifting"
+                    ]
+                },
+                "dynamic_index_terms": {
+                    "terms": [
+                        "Medical Imaging",
+                        "Clinical Imaging",
+                        "Diagnostic Imaging",
+                        "Contrast Agent",
+                        "Contrast Enhancement",
+                        "Contrast Medium",
+                        "Visual Quality",
+                        "Texture Areas",
+                        "Reversible Data Hiding",
+                        "Subjective Perception",
+                        "Improve Image Quality",
+                        "Smooth Area",
+                        "PSNR Values",
+                        "Smoothing",
+                        "Predictive Value",
+                        "Prediction Error",
+                        "Local Map",
+                        "Image Distortion",
+                        "Lens Distortion",
+                        "Radial Distortion",
+                        "Image Deformation",
+                        "Lossless",
+                        "Size Of Map",
+                        "Area Information",
+                        "Embedding Process",
+                        "Cover Image",
+                        "Medical Image Processing",
+                        "Payload Size",
+                        "Set Of Dots",
+                        "Global Contrast",
+                        "Decoding Scheme",
+                        "Decoding Strategy"
+                    ]
+                }
+            },
+            "isbn_formats": {
+                "isbns": [
+                    {
+                        "format": "CD",
+                        "value": "978-1-5090-0187-3",
+                        "isbnType": "New-2005"
+                    },
+                    {
+                        "format": "Electronic ISBN",
+                        "value": "978-1-5090-0188-0",
+                        "isbnType": "New-2005"
+                    }
+                ]
+            },
+            "license": "IEEE"
+        },
+        {
+            "doi": "10.1109/ISIE.2006.295522",
+            "title": "Boiler Flame Image Classification Based on Hidden Markov Model",
+            "publisher": "IEEE",
+            "isbn": "1-4244-0496-7",
+            "issn": "2163-5145",
+            "rank": 24,
+            "volume": "1",
+            "authors": {
+                "authors": [
+                    {
+                        "affiliation": "Automation Department, North China Electric Power University, Baoding, China",
+                        "authorUrl": "https://ieeexplore.ieee.org/author/37273434600",
+                        "id": 37273434600,
+                        "full_name": "Pu Han",
+                        "author_order": 1,
+                        "authorAffiliations": {
+                            "authorAffiliation": [
+                                "Automation Department, North China Electric Power University, Baoding, China"
+                            ]
+                        }
+                    },
+                    {
+                        "affiliation": "Automation Department, North China Electric Power University, Baoding, China",
+                        "authorUrl": "https://ieeexplore.ieee.org/author/37405033400",
+                        "id": 37405033400,
+                        "full_name": "Xin Zhang",
+                        "author_order": 2,
+                        "authorAffiliations": {
+                            "authorAffiliation": [
+                                "Automation Department, North China Electric Power University, Baoding, China",
+                                "College of Electronics and Information Engineering, Hebei University, Baoding, China"
+                            ]
+                        }
+                    },
+                    {
+                        "affiliation": "Automation Department, North China Electric Power University, Baoding, China",
+                        "authorUrl": "https://ieeexplore.ieee.org/author/37407910800",
+                        "id": 37407910800,
+                        "full_name": "Chenggang Zhen",
+                        "author_order": 3,
+                        "authorAffiliations": {
+                            "authorAffiliation": [
+                                "Automation Department, North China Electric Power University, Baoding, China"
+                            ]
+                        }
+                    },
+                    {
+                        "affiliation": "College of Mathematics and Computer Science, Hebei University, Baoding, China",
+                        "authorUrl": "https://ieeexplore.ieee.org/author/37696519600",
+                        "id": 37696519600,
+                        "full_name": "Bing Wang",
+                        "author_order": 4,
+                        "authorAffiliations": {
+                            "authorAffiliation": [
+                                "College of Mathematics and Computer Science, Hebei University, Baoding, China"
+                            ]
+                        }
+                    }
+                ]
+            },
+            "access_type": "LOCKED",
+            "content_type": "Conferences",
+            "abstract": "The classification is an important domain in boiler flame image processing and is a preliminary step toward detection, recognition and understanding of combustion condition. In this paper, a hidden Markov model (HMM) approach is introduced into boiler flame image classification. Firstly, we define a feature vector for each flame image including 5 feature elements, which are the brightness of flame, the area of the high temperature flame, the brightness of high temperature flame, the rate of area of the high temperature flame, the offset of the flame centroid respectively. Next, for classification and recognition of the flame image, a method of the maximum posterior marginal (MPM) based on the hidden Markov random field model, which is described as a probabilistic framework for learning probability distribution defined on the sample space, is introduced. Then, we construct a sample space including 63 flame images, parts of which are used to train the model. Finally, the entire samples are recognized and classified. Experiments prove this method is effective for classification of boiler flame images",
+            "article_number": "4077991",
+            "pdf_url": "https://ieeexplore.ieee.org/stamp/stamp.jsp?tp=&arnumber=4077991",
+            "html_url": "https://ieeexplore.ieee.org/document/4077991/",
+            "abstract_url": "https://ieeexplore.ieee.org/document/4077991/",
+            "publication_title": "2006 IEEE International Symposium on Industrial Electronics",
+            "conference_location": "Montreal, QC, Canada",
+            "conference_dates": "9-13 July 2006",
+            "publication_number": 4035454,
+            "is_number": 4077881,
+            "publication_year": 2006,
+            "publication_date": "9-13 July 2006",
+            "start_page": "575",
+            "end_page": "578",
+            "citing_paper_count": 9,
+            "citing_patent_count": 0,
+            "download_count": 210,
+            "insert_date": "20070129",
+            "index_terms": {
+                "ieee_terms": {
+                    "terms": [
+                        "Boilers",
+                        "Fires",
+                        "Image classification",
+                        "Hidden Markov models",
+                        "Temperature",
+                        "Image recognition",
+                        "Brightness",
+                        "Image processing",
+                        "Combustion",
+                        "Probability distribution"
+                    ]
+                },
+                "author_terms": {
+                    "terms": [
+                        "Hidden Markov model",
+                        "maximum posterior marginal",
+                        "flame image",
+                        "image classification"
+                    ]
+                },
+                "dynamic_index_terms": {
+                    "terms": [
+                        "Image Classification",
+                        "Hidden Markov Model",
+                        "Flame Images",
+                        "Image Processing",
+                        "Sample Space",
+                        "Image Recognition",
+                        "Important Domains",
+                        "Characteristics Of Elements",
+                        "Feature Elements",
+                        "Markov Random Field",
+                        "Combustion Conditions",
+                        "Burning Conditions",
+                        "Combustion State",
+                        "Hidden Markov Model Approach",
+                        "Random Variables",
+                        "Posterior Probability",
+                        "Posterior Distribution",
+                        "Cost Function",
+                        "Energy Function",
+                        "Finite Set",
+                        "Conditional Independence",
+                        "Independent State",
+                        "Regularization Parameter",
+                        "Normalization Factor",
+                        "Practical Situations",
+                        "Gibbs Sampling",
+                        "Ith Sample",
+                        "Posteriori Probability",
+                        "Normal Class",
+                        "Neighboring Pixels",
+                        "Neighborhood Pixels"
+                    ]
+                }
+            },
+            "isbn_formats": {
+                "isbns": [
+                    {
+                        "format": "Print ISBN",
+                        "value": "1-4244-0496-7",
+                        "isbnType": "Historical"
+                    },
+                    {
+                        "format": "CD",
+                        "value": "1-4244-0497-5",
+                        "isbnType": "Historical"
+                    }
+                ]
+            },
+            "license": "IEEE"
+        },
+        {
+            "doi": "10.1109/GET.2016.7916783",
+            "title": "A novel remote sensing image classification algorithm based on PCA and hidden Markov random field theory",
+            "publisher": "IEEE",
+            "isbn": "978-1-5090-4557-0",
+            "rank": 25,
+            "authors": {
+                "authors": [
+                    {
+                        "affiliation": "Quanzhou Institute of Equipment Manufacturing, Chinese Academy of Sciences (CAS), Quanzhou",
+                        "authorUrl": "https://ieeexplore.ieee.org/author/37087496972",
+                        "id": 37087496972,
+                        "full_name": "Jun Li",
+                        "author_order": 1,
+                        "authorAffiliations": {
+                            "authorAffiliation": [
+                                "Quanzhou Institute of Equipment Manufacturing, Chinese Academy of Sciences (CAS), Quanzhou"
+                            ]
+                        }
+                    }
+                ]
+            },
+            "access_type": "LOCKED",
+            "content_type": "Conferences",
+            "abstract": "In this paper, we propose the novel remote sensing image classification algorithm based on the PCA and hidden Markov random field theory. Remote sensing image classification method based on the pattern recognition theory at home and abroad, many experts have done a lot of research work, machine learning has been in study of remote sensing image classification and information extraction has been widely used. Because of the image data is two-dimensional, so the probability of system introduced a special state, in the state relies on the observation system in horizontal and vertical two directions of the adjacent state. Therefore, we apply the expanded hidden Markov model for the image classification while the classifier task is of structure of this article from the training data estimate two-dimensional hidden Markov model. Through the experimental analysis and the corresponding test, we verify the feasibility of the algorithm.",
+            "article_number": "7916783",
+            "pdf_url": "https://ieeexplore.ieee.org/stamp/stamp.jsp?tp=&arnumber=7916783",
+            "html_url": "https://ieeexplore.ieee.org/document/7916783/",
+            "abstract_url": "https://ieeexplore.ieee.org/document/7916783/",
+            "publication_title": "2016 Online International Conference on Green Engineering and Technologies (IC-GET)",
+            "conference_location": "Coimbatore",
+            "conference_dates": "19-19 Nov. 2016",
+            "publication_number": 7912173,
+            "is_number": 7916604,
+            "publication_year": 2016,
+            "publication_date": "19-19 Nov. 2016",
+            "start_page": "1",
+            "end_page": "5",
+            "citing_paper_count": 1,
+            "citing_patent_count": 0,
+            "download_count": 174,
+            "insert_date": "20170504",
+            "index_terms": {
+                "ieee_terms": {
+                    "terms": [
+                        "Hidden Markov models",
+                        "Principal component analysis",
+                        "Remote sensing",
+                        "Image classification",
+                        "Feature extraction",
+                        "Classification algorithms",
+                        "Indexes"
+                    ]
+                },
+                "author_terms": {
+                    "terms": [
+                        "Remote Sensing",
+                        "Image Classification",
+                        "PCA",
+                        "Statistical Model",
+                        "Hidden Markov Random Field"
+                    ]
+                },
+                "dynamic_index_terms": {
+                    "terms": [
+                        "Image Classification",
+                        "Remote Sensing",
+                        "Markov Random Field",
+                        "Remote Sensing Images",
+                        "Remote Sensing Image Classification",
+                        "Hidden Markov Random Field",
+                        "Machine Learning",
+                        "Classification Methods",
+                        "Information Extraction",
+                        "Hidden Markov Model",
+                        "Two-dimensional Model",
+                        "Lot Of Research Work",
+                        "Normal Distribution",
+                        "Gaussian Distribution",
+                        "Statistical Models",
+                        "Image Processing",
+                        "Covariance Matrix",
+                        "Covariance Matrices",
+                        "Markov Chain",
+                        "Markov Process",
+                        "Supervised Learning",
+                        "Supervised Classification",
+                        "Supervised Machine Learning",
+                        "Feature Space",
+                        "Transition Probabilities",
+                        "Principal Component Cluster",
+                        "Digital Image Correlation",
+                        "Image Correlation",
+                        "Fuzzy Classification",
+                        "Markov Property",
+                        "Markov Assumption",
+                        "Markov Condition",
+                        "Multispectral Images",
+                        "Multispectral Imagery",
+                        "Feature Vector Space",
+                        "Component Of Image",
+                        "Principal Component Analysis Method",
+                        "Maximum A Posteriori",
+                        "Principal Component Scores"
+                    ]
+                }
+            },
+            "isbn_formats": {
+                "isbns": [
+                    {
+                        "format": "Print on Demand(PoD) ISBN",
+                        "value": "978-1-5090-4557-0",
+                        "isbnType": "New-2005"
+                    },
+                    {
+                        "format": "Electronic ISBN",
+                        "value": "978-1-5090-4556-3",
+                        "isbnType": "New-2005"
+                    }
+                ]
+            },
+            "license": "IEEE"
+        }
+    ]
+}

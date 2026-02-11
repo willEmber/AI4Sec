@@ -1,0 +1,16 @@
+[project]
+name = "paper-search-standalone"
+version = "0.1.0"
+description = "PaperSearch: multi-platform academic paper search (standalone extract)"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+  "requests>=2.31.0",
+]
+
+[project.scripts]
+paper-search = "paper_search.__main__:main"
+
+[tool.setuptools.packages.find]
+include = ["paper_search*"]
+
