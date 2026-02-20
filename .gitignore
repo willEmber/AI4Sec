@@ -1,0 +1,34 @@
+# === Secrets & env ===
+.env
+.env.local
+
+# === Python ===
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.venv/
+
+# === Node.js ===
+node_modules/
+.next/
+
+# === Docker persistent data ===
+docker-data/
+
+# === IDE ===
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# === OS ===
+.DS_Store
+Thumbs.db
+
+# === Logs ===
+*.log
+
+# === Test artifacts ===
+test_doc/

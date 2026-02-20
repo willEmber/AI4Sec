@@ -16,16 +16,6 @@ ARXIV_QUERY_ENDPOINTS = (
 )
 
 
-def _arxiv_pdf_url(arxiv_abs_url: str) -> str | None:
-    url = (arxiv_abs_url or "").strip()
-    if "/abs/" not in url:
-        return None
-    arxiv_id = url.split("/abs/", 1)[1].strip()
-    if not arxiv_id:
-        return None
-    return f"https://arxiv.org/pdf/{arxiv_id}.pdf"
-
-
 async def search_arxiv(
     client: HTTPClient, *, query: str, limit: int, settings: Settings
 ) -> list[Paper]:
@@ -62,7 +52,8 @@ async def search_arxiv(
                 author_names.append(name)
         authors = "; ".join(author_names)
 
-        p = Paper(
+        papers.append(
+            Paper(
             title=title,
             abstract=abstract,
             url=abs_url,
@@ -70,6 +61,5 @@ async def search_arxiv(
             authors=authors,
             source_platform="arXiv",
         )
-        p.oa_paper_url = _arxiv_pdf_url(abs_url) or ""
-        papers.append(p)
+        )
     return papers

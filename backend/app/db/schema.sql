@@ -1,0 +1,86 @@
+-- Scholar Platform Database Schema
+
+CREATE TABLE IF NOT EXISTS papers (
+    paper_id   TEXT PRIMARY KEY,             -- sha1(pdf_bytes)
+    file_path  TEXT NOT NULL,                -- relative to data_dir
+    title      TEXT DEFAULT '',
+    doi        TEXT DEFAULT '',
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS mineru_parses (
+    parse_id   TEXT PRIMARY KEY,
+    paper_id   TEXT NOT NULL REFERENCES papers(paper_id),
+    backend    TEXT NOT NULL DEFAULT 'vlm',  -- vlm | pipeline
+    status     TEXT NOT NULL DEFAULT 'pending',  -- pending | running | done | failed
+    output_dir TEXT DEFAULT '',
+    error_msg  TEXT DEFAULT '',
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_mineru_parses_paper ON mineru_parses(paper_id);
+
+CREATE TABLE IF NOT EXISTS blocks (
+    block_id     INTEGER PRIMARY KEY AUTOINCREMENT,
+    paper_id     TEXT NOT NULL REFERENCES papers(paper_id),
+    type         TEXT NOT NULL DEFAULT '',    -- text | title | table | image | equation | code | list | ref_text ...
+    sub_type     TEXT DEFAULT '',
+    page_idx     INTEGER DEFAULT 0,
+    bbox_json    TEXT DEFAULT '[]',           -- [x0, y0, x1, y1]
+    text         TEXT DEFAULT '',
+    section_path TEXT DEFAULT '',             -- e.g. "2.Method/2.1 Model"
+    order_idx    INTEGER DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_blocks_paper ON blocks(paper_id);
+CREATE INDEX IF NOT EXISTS idx_blocks_type  ON blocks(paper_id, type);
+
+CREATE TABLE IF NOT EXISTS runs (
+    run_id      TEXT PRIMARY KEY,
+    paper_id    TEXT NOT NULL REFERENCES papers(paper_id),
+    mode        TEXT NOT NULL DEFAULT 'snap', -- snap | lens | sphere
+    llm_model   TEXT DEFAULT '',
+    status      TEXT NOT NULL DEFAULT 'pending',  -- pending | running | done | failed
+    error_msg   TEXT DEFAULT '',
+    started_at  TEXT NOT NULL DEFAULT (datetime('now')),
+    finished_at TEXT DEFAULT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_runs_paper ON runs(paper_id);
+
+CREATE TABLE IF NOT EXISTS run_outputs (
+    run_id   TEXT PRIMARY KEY REFERENCES runs(run_id),
+    markdown TEXT DEFAULT '',
+    json_data TEXT DEFAULT '{}'
+);
+
+CREATE TABLE IF NOT EXISTS sphere_nodes (
+    node_id TEXT NOT NULL,
+    run_id  TEXT NOT NULL REFERENCES runs(run_id),
+    doi     TEXT DEFAULT '',
+    arxiv_id TEXT DEFAULT '',
+    openalex_id TEXT DEFAULT '',
+    s2_paper_id TEXT DEFAULT '',
+    title   TEXT DEFAULT '',
+    year    INTEGER DEFAULT 0,
+    venue   TEXT DEFAULT '',
+    authors TEXT DEFAULT '',
+    abstract_text TEXT DEFAULT '',
+    cited_by_count INTEGER DEFAULT 0,
+    pdf_path TEXT DEFAULT '',
+    mineru_parsed INTEGER DEFAULT 0,
+    source  TEXT DEFAULT 'seed_ref',
+    score_total REAL DEFAULT 0.0,
+    layer   INTEGER DEFAULT 0,
+    cluster_id INTEGER DEFAULT -1,
+    PRIMARY KEY (node_id, run_id)
+);
+CREATE INDEX IF NOT EXISTS idx_sphere_nodes_run ON sphere_nodes(run_id);
+
+CREATE TABLE IF NOT EXISTS sphere_edges (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_id TEXT NOT NULL REFERENCES runs(run_id),
+    source_node_id TEXT NOT NULL,
+    target_node_id TEXT NOT NULL,
+    edge_type TEXT NOT NULL DEFAULT 'cites',
+    weight REAL DEFAULT 1.0
+);
+CREATE INDEX IF NOT EXISTS idx_sphere_edges_run ON sphere_edges(run_id);

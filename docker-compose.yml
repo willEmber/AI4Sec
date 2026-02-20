@@ -1,0 +1,36 @@
+services:
+  backend:
+    build:
+      context: ./backend
+      args:
+        REGISTRY_MIRROR: ${REGISTRY_MIRROR:-docker.1ms.run}
+    container_name: scholar-backend
+    env_file: .env
+    environment:
+      - CORS_ORIGINS=["http://localhost:3000"]
+    volumes:
+      - ./docker-data:/app/data
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/docs')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        REGISTRY_MIRROR: ${REGISTRY_MIRROR:-docker.1ms.run}
+    container_name: scholar-frontend
+    environment:
+      - BACKEND_URL=http://backend:8000
+    ports:
+      - "3000:3000"
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped

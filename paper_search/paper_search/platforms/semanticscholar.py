@@ -12,7 +12,7 @@ async def search_semanticscholar(
     params = {
         "query": query,
         "limit": str(int(limit)),
-        "fields": "title,abstract,authors,url,externalIds,openAccessPdf",
+        "fields": "title,abstract,authors,url,externalIds",
     }
     headers = {}
     if settings.semantic_api_key:
@@ -38,15 +38,14 @@ async def search_semanticscholar(
             if normalize_whitespace(a.get("name") or "")
         )
 
-        p = Paper(
-            title=title,
-            abstract=abstract,
-            url=url,
-            doi=doi,
-            authors=authors,
-            source_platform="SemanticScholar",
+        papers.append(
+            Paper(
+                title=title,
+                abstract=abstract,
+                url=url,
+                doi=doi,
+                authors=authors,
+                source_platform="SemanticScholar",
+            )
         )
-        open_access = item.get("openAccessPdf") or {}
-        p.oa_paper_url = normalize_whitespace(open_access.get("url") or "")
-        papers.append(p)
     return papers

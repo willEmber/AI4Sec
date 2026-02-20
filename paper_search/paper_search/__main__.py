@@ -13,7 +13,7 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument(
         "--platforms",
         default="arXiv",
-        help='Comma-separated platforms, e.g. "arXiv,OpenAlex,PubMed".',
+        help='Comma-separated platforms, e.g. "arXiv,OpenAlex,Crossref".',
     )
     parser.add_argument(
         "--fields",

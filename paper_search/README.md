@@ -1,6 +1,6 @@
 # PaperSearch（Standalone）
 
-从本仓库抽离出来的 **PaperSearch 学术搜索**模块：聚合多个平台（OpenAlex / Semantic Scholar / arXiv / PubMed / Crossref / InfoXMed / IEEE Xplore），并提供可选的 LLM 重排序。
+从本仓库抽离出来的 **PaperSearch 学术搜索**模块：聚合多个平台（OpenAlex / Semantic Scholar / arXiv / Crossref / IEEE Xplore），并提供可选的 LLM 重排序。
 
 ## 目录结构
 
@@ -33,7 +33,7 @@ pip install -e ./paper_search_standalone
 安装后可用：
 
 ```bash
-paper-search -q "transformer attention" --platforms "arXiv,OpenAlex,PubMed"
+paper-search -q "transformer attention" --platforms "arXiv,OpenAlex,Crossref"
 ```
 
 ## 配置（环境变量）
@@ -68,7 +68,7 @@ cp paper_search_standalone/.env.example .env
 ### 1) CLI
 
 ```bash
-python -m paper_search -q "large language model retrieval" --platforms "OpenAlex,SemanticScholar,arXiv,PubMed"
+python -m paper_search -q "large language model retrieval" --platforms "OpenAlex,SemanticScholar,arXiv,Crossref,IEEE Xplore"
 ```
 
 #### 控制返回字段（CLI）
@@ -94,7 +94,7 @@ from paper_search import search_papers
 async def main() -> None:
     out = await search_papers(
         query="transformer attention",
-        platforms=["OpenAlex", "SemanticScholar", "arXiv", "PubMed", "Crossref", "InfoXMed", "IEEE Xplore"],
+        platforms=["OpenAlex", "SemanticScholar", "arXiv", "Crossref", "IEEE Xplore"],
         final_limit=10,
         # 可选：控制返回字段（仅返回你关心的字段，减少输出体积）
         # fields=["title", "doi", "url", "source_platform"],
@@ -114,9 +114,7 @@ if __name__ == "__main__":
 - `OpenAlex`
 - `SemanticScholar`
 - `arXiv`
-- `PubMed`
 - `Crossref`
-- `InfoXMed`
 - `IEEE Xplore`
 
 ### 去重与排序

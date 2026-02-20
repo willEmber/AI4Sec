@@ -7,9 +7,8 @@ from paper_search import search_papers
 async def main() -> None:
     out = await search_papers(
         query="transformer attention",
-        platforms=["OpenAlex", "SemanticScholar", "arXiv", "PubMed", "Crossref"],
+        platforms=["OpenAlex", "SemanticScholar", "arXiv", "Crossref", "IEEE Xplore"],
         final_limit=5,
-        summary_enabled=False,
     )
     papers = json.loads(out)
     for i, p in enumerate(papers, start=1):
@@ -18,4 +17,3 @@ async def main() -> None:
 
 if __name__ == "__main__":
     asyncio.run(main())
-

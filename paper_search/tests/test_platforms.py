@@ -18,10 +18,8 @@ from paper_search.models import Paper
 from paper_search.platforms import resolve_platform
 from paper_search.platforms.arxiv import search_arxiv
 from paper_search.platforms.crossref import search_crossref
-from paper_search.platforms.infoxmed import search_infoxmed
 from paper_search.platforms.ieeexplore import search_ieeexplore
 from paper_search.platforms.openalex import search_openalex
-from paper_search.platforms.pubmed import search_pubmed
 from paper_search.platforms.semanticscholar import search_semanticscholar
 
 
@@ -75,10 +73,10 @@ class PlatformsTest(unittest.IsolatedAsyncioTestCase):
         self.assertIsNotNone(resolve_platform("OpenAlex"))
         self.assertIsNotNone(resolve_platform("SemanticScholar"))
         self.assertIsNotNone(resolve_platform("arXiv"))
-        self.assertIsNotNone(resolve_platform("PubMed"))
         self.assertIsNotNone(resolve_platform("Crossref"))
-        self.assertIsNotNone(resolve_platform("InfoXMed"))
         self.assertIsNotNone(resolve_platform("IEEE Xplore"))
+        self.assertIsNone(resolve_platform("PubMed"))
+        self.assertIsNone(resolve_platform("InfoXMed"))
         # GoogleScholar is intentionally disabled/hidden in standalone.
         self.assertIsNone(resolve_platform("GoogleScholar"))
 
@@ -139,7 +137,6 @@ class PlatformsTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(p.url, "https://www.semanticscholar.org/paper/x")
         self.assertEqual(p.doi, "10.5555/xyz")
         self.assertEqual(p.authors, "A; B")
-        self.assertEqual(p.oa_paper_url, "https://oa.example/paper.pdf")
         self.assertEqual(p.source_platform, "SemanticScholar")
 
     async def test_ieeexplore_parse(self) -> None:
@@ -210,57 +207,7 @@ class PlatformsTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(p.url, "http://arxiv.org/abs/1234.5678")
         self.assertEqual(p.doi, "10.1000/xyz")
         self.assertEqual(p.authors, "John Doe; Jane Roe")
-        self.assertEqual(p.oa_paper_url, "https://arxiv.org/pdf/1234.5678.pdf")
         self.assertEqual(p.source_platform, "arXiv")
-
-    async def test_pubmed_parse(self) -> None:
-        xml = """<?xml version="1.0" encoding="UTF-8"?>
-<PubmedArticleSet>
-  <PubmedArticle>
-    <MedlineCitation>
-      <PMID>12345</PMID>
-      <Article>
-        <ArticleTitle> Pub Title </ArticleTitle>
-        <Abstract>
-          <AbstractText> Pub Abstract </AbstractText>
-        </Abstract>
-        <AuthorList>
-          <Author>
-            <ForeName>A</ForeName>
-            <LastName>B</LastName>
-          </Author>
-        </AuthorList>
-      </Article>
-    </MedlineCitation>
-    <PubmedData>
-      <ArticleIdList>
-        <ArticleId IdType="doi">10.1/DOI</ArticleId>
-      </ArticleIdList>
-    </PubmedData>
-  </PubmedArticle>
-</PubmedArticleSet>
-"""
-        client = FakeHTTPClient(
-            json_by_url_prefix={
-                "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi": {
-                    "esearchresult": {"idlist": ["12345"]}
-                }
-            },
-            text_by_url_prefix={
-                "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi": xml,
-            },
-        )
-
-        settings = Settings()
-        papers = await search_pubmed(client, query="x", limit=5, settings=settings)
-        self.assertEqual(len(papers), 1)
-        p = papers[0]
-        self.assertEqual(p.title, "Pub Title")
-        self.assertEqual(p.abstract, "Pub Abstract")
-        self.assertEqual(p.doi, "10.1/doi")
-        self.assertEqual(p.url, "https://pubmed.ncbi.nlm.nih.gov/12345/")
-        self.assertEqual(p.authors, "A B")
-        self.assertEqual(p.source_platform, "PubMed")
 
     async def test_crossref_parse(self) -> None:
         client = FakeHTTPClient(
@@ -290,35 +237,3 @@ class PlatformsTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(p.url, "https://doi.org/10.2/doi")
         self.assertEqual(p.authors, "X Y")
         self.assertEqual(p.source_platform, "Crossref")
-
-    async def test_infoxmed_parse(self) -> None:
-        client = FakeHTTPClient(
-            post_json_by_url_prefix={
-                "https://api.infox-med.com/search/home/keywords": {
-                    "code": "0",
-                    "data": {
-                        "records": [
-                            {
-                                "docTitleZh": "中文标题",
-                                "docTitle": "English Title",
-                                "docAbstractZh": "中文摘要",
-                                "docAbstract": "English abstract",
-                                "docDoi": "10.3/DOI",
-                                "pmid": "",
-                                "docAuthor": "A;B",
-                            }
-                        ]
-                    },
-                }
-            }
-        )
-        settings = replace(Settings(), infoxmed_category=0)
-        papers = await search_infoxmed(client, query="x", limit=5, settings=settings)
-        self.assertEqual(len(papers), 1)
-        p = papers[0]
-        self.assertEqual(p.title, "中文标题")
-        self.assertEqual(p.abstract, "中文摘要")
-        self.assertEqual(p.doi, "10.3/doi")
-        self.assertEqual(p.url, "https://doi.org/10.3/doi")
-        self.assertEqual(p.authors, "A;B")
-        self.assertEqual(p.source_platform, "InfoXMed")

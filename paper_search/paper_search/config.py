@@ -144,9 +144,6 @@ class Settings:
     tool_name: str = "papersearch"
     email_pick_strategy: str = "round_robin"  # first | round_robin | random
 
-    # PubMed
-    ncbi_api_key: str = ""
-
     # Semantic Scholar
     semantic_api_key: str = ""
 
@@ -155,21 +152,9 @@ class Settings:
     ieee_per_second_limit: int = 10
     ieee_daily_limit: int = 200
 
-    # CORE (Connecting Repositories)
-    core_api_key: str = ""
-
-    # Unpaywall
-    unpaywall_emails: tuple[str, ...] = ()
-
     # OpenAlex/Crossref
     openalex_mailtos: tuple[str, ...] = ()
     crossref_mailtos: tuple[str, ...] = ()
-
-    # InfoXMed
-    infoxmed_category: int = 0  # 0=all, 1=PubMed, 2=guidelines, 3=zh_journal
-    infoxmed_field: str = ""
-    infoxmed_filter: str = ""
-    infoxmed_sort: str = ""
 
     # LLM (OpenAI-compatible)
     llm_base_url: str = ""
@@ -177,28 +162,17 @@ class Settings:
     rank_model: str = ""
     embed_model: str = ""
     rerank_model: str = ""
-    summary_model: str = ""
-
-    # LLM runtime controls
-    llm_max_concurrency: int = 1
-    llm_max_retries: int = 5
-    llm_retry_base_delay: float = 1.0
-    llm_retry_max_delay: float = 30.0
 
     # Rerank controls
     rerank_timeout_s: float = 30.0
     rerank_max_retries: int = 1
     rerank_max_doc_chars: int = 2000
 
-    # Summary behavior controls (performance knobs)
-    summary_enabled: bool = True
-    summary_max_concurrency: int = 1
-    summary_batch_size: int = 1
-    summary_max_papers: int = 10
-    summary_abstract_max_chars: int = 3000
-
-    # OA URL discovery knobs
-    oa_max_concurrency: int = 5
+    # LLM runtime controls
+    llm_max_concurrency: int = 1
+    llm_max_retries: int = 5
+    llm_retry_base_delay: float = 1.0
+    llm_retry_max_delay: float = 30.0
 
     # DOI enrichment knobs (Crossref)
     doi_enrich_enabled: bool = True
@@ -208,10 +182,6 @@ class Settings:
     # Storage
     storage_dir: Path = Path("storage")
     pdf_dirname: str = "pdfs"
-
-    # Internal "pdf_url" string template
-    internal_pdf_url_template: str = "/rootAgent/api/download_paper?doi={doi}"
-    internal_pdf_url_no_doi_template: str = "/rootAgent/api/download_paper?title_hash={title_hash}"
 
     @property
     def pdf_dir(self) -> Path:
@@ -233,9 +203,6 @@ class Settings:
     def pick_crossref_mailto(self) -> str:
         return _pick_from_pool(self.crossref_mailtos, key="crossref_mailto", strategy=self.email_pick_strategy)
 
-    def pick_unpaywall_email(self) -> str:
-        return _pick_from_pool(self.unpaywall_emails, key="unpaywall_email", strategy=self.email_pick_strategy)
-
     @staticmethod
     def from_env() -> "Settings":
         email_pick_strategy = (os.getenv("PAPERSEARCH_EMAIL_PICK_STRATEGY") or "").strip() or "round_robin"
@@ -253,18 +220,12 @@ class Settings:
             _parse_csv(os.getenv("PAPERSEARCH_CROSSREF_MAILTO") or "")
             + _parse_csv(os.getenv("PAPERSEARCH_CROSSREF_MAILTOS") or "")
         )
-        unpaywall_emails = _dedupe_keep_order(
-            _parse_csv(os.getenv("PAPERSEARCH_UNPAYWALL_EMAIL") or "")
-            + _parse_csv(os.getenv("PAPERSEARCH_UNPAYWALL_EMAILS") or "")
-        )
 
         # Fallback to the global contact email pool when per-service pool is not provided.
         if not openalex_mailtos:
             openalex_mailtos = contact_emails
         if not crossref_mailtos:
             crossref_mailtos = contact_emails
-        if not unpaywall_emails:
-            unpaywall_emails = contact_emails
 
         storage_dir = Path(os.getenv("PAPERSEARCH_STORAGE_DIR", "storage")).expanduser()
 
@@ -282,11 +243,6 @@ class Settings:
         platforms_max = _env_int("PAPERSEARCH_PLATFORMS_MAX", 10)
 
         llm_max_concurrency = _env_int("PAPERSEARCH_LLM_MAX_CONCURRENCY", 1)
-        summary_max_concurrency = _env_int("PAPERSEARCH_SUMMARY_MAX_CONCURRENCY", llm_max_concurrency)
-        summary_batch_size = _env_int("PAPERSEARCH_SUMMARY_BATCH_SIZE", 1)
-        summary_max_papers = _env_int("PAPERSEARCH_SUMMARY_MAX_PAPERS", final_limit)
-        summary_abstract_max_chars = _env_int("PAPERSEARCH_SUMMARY_ABSTRACT_MAX_CHARS", 3000)
-        oa_max_concurrency = _env_int("PAPERSEARCH_OA_MAX_CONCURRENCY", 5)
         doi_enrich_enabled = _env_bool("PAPERSEARCH_DOI_ENRICH_ENABLED", True)
         doi_enrich_timeout_s = _env_float("PAPERSEARCH_DOI_ENRICH_TIMEOUT_S", 5.0)
         doi_enrich_max_concurrency = _env_int("PAPERSEARCH_DOI_ENRICH_MAX_CONCURRENCY", 2)
@@ -325,12 +281,9 @@ class Settings:
             "PAPERSEARCH_PLATFORM_LIMIT_OPENALEX": "openalex",
             "PAPERSEARCH_PLATFORM_LIMIT_SEMANTICSCHOLAR": "semanticscholar",
             "PAPERSEARCH_PLATFORM_LIMIT_ARXIV": "arxiv",
-            "PAPERSEARCH_PLATFORM_LIMIT_PUBMED": "pubmed",
             "PAPERSEARCH_PLATFORM_LIMIT_CROSSREF": "crossref",
-            "PAPERSEARCH_PLATFORM_LIMIT_INFOXMED": "infoxmed",
             "PAPERSEARCH_PLATFORM_LIMIT_IEEE": "ieeexplore",
             "PAPERSEARCH_PLATFORM_LIMIT_IEEEXPLORE": "ieeexplore",
-            "PAPERSEARCH_PLATFORM_LIMIT_GOOGLESCHOLAR": "googlescholar",
         }
         for env_key, platform_key in explicit_limits.items():
             v = _maybe_env_int(env_key)
@@ -347,25 +300,17 @@ class Settings:
             contact_emails=contact_emails,
             tool_name=(os.getenv("PAPERSEARCH_TOOL_NAME") or "papersearch").strip() or "papersearch",
             email_pick_strategy=email_pick_strategy,
-            ncbi_api_key=(os.getenv("PAPERSEARCH_NCBI_API_KEY") or "").strip(),
             semantic_api_key=(os.getenv("PAPERSEARCH_SEMANTICSCHOLAR_API_KEY") or "").strip(),
             ieee_api_key=(os.getenv("PAPERSEARCH_IEEE_API_KEY") or "").strip(),
             ieee_per_second_limit=max(int(ieee_per_second_limit), 1),
             ieee_daily_limit=max(int(ieee_daily_limit), 1),
-            core_api_key=(os.getenv("PAPERSEARCH_CORE_API_KEY") or "").strip(),
-            unpaywall_emails=unpaywall_emails,
             openalex_mailtos=openalex_mailtos,
             crossref_mailtos=crossref_mailtos,
-            infoxmed_category=_env_int("PAPERSEARCH_INFOXMED_CATEGORY", 0),
-            infoxmed_field=(os.getenv("PAPERSEARCH_INFOXMED_FIELD") or "").strip(),
-            infoxmed_filter=(os.getenv("PAPERSEARCH_INFOXMED_FILTER") or "").strip(),
-            infoxmed_sort=(os.getenv("PAPERSEARCH_INFOXMED_SORT") or "").strip(),
             llm_base_url=(os.getenv("PAPERSEARCH_LLM_BASEURL") or "").strip(),
             llm_api_key=(os.getenv("PAPERSEARCH_LLM_APIKEY") or "").strip(),
             rank_model=(os.getenv("PAPERSEARCH_RANK_MODELNAME") or "").strip(),
             embed_model=(os.getenv("PAPERSEARCH_EMBED_MODELNAME") or "").strip(),
             rerank_model=(os.getenv("PAPERSEARCH_RERANK_MODELNAME") or "").strip(),
-            summary_model=(os.getenv("PAPERSEARCH_SUMMARY_MODELNAME") or "").strip(),
             llm_max_concurrency=llm_max_concurrency,
             llm_max_retries=_env_int("PAPERSEARCH_LLM_MAX_RETRIES", 5),
             llm_retry_base_delay=_env_float("PAPERSEARCH_LLM_RETRY_BASE_DELAY", 1.0),
@@ -373,18 +318,8 @@ class Settings:
             rerank_timeout_s=max(float(rerank_timeout_s), 0.1),
             rerank_max_retries=max(int(rerank_max_retries), 0),
             rerank_max_doc_chars=max(int(rerank_max_doc_chars), 200),
-            summary_enabled=_env_bool("PAPERSEARCH_SUMMARY_ENABLED", True),
-            summary_max_concurrency=summary_max_concurrency,
-            summary_batch_size=summary_batch_size,
-            summary_max_papers=summary_max_papers,
-            summary_abstract_max_chars=summary_abstract_max_chars,
-            oa_max_concurrency=max(int(oa_max_concurrency), 1),
             doi_enrich_enabled=bool(doi_enrich_enabled),
             doi_enrich_timeout_s=max(float(doi_enrich_timeout_s), 0.1),
             doi_enrich_max_concurrency=max(int(doi_enrich_max_concurrency), 1),
             storage_dir=storage_dir,
-            internal_pdf_url_template=(os.getenv("PAPERSEARCH_INTERNAL_PDF_URL_TEMPLATE") or "").strip()
-            or "/rootAgent/api/download_paper?doi={doi}",
-            internal_pdf_url_no_doi_template=(os.getenv("PAPERSEARCH_INTERNAL_PDF_URL_NO_DOI_TEMPLATE") or "").strip()
-            or "/rootAgent/api/download_paper?title_hash={title_hash}",
         )

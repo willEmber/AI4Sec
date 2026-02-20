@@ -1,0 +1,2262 @@
+{
+  "paper_id": "a9a80ac8254204a36f29b48a28d874f531023177",
+  "title": "Edge-Constrained Controllable Stable Diffusion Watermarking",
+  "sections": [
+    {
+      "path": "Edge-Constrained Controllable Stable Diffusion Watermarking",
+      "title": "Edge-Constrained Controllable Stable Diffusion Watermarking ",
+      "level": 1,
+      "blocks": [
+        {
+          "type": "title",
+          "sub_type": "",
+          "page_idx": 0,
+          "bbox": [
+            119.0,
+            70.0,
+            879.0,
+            137.0
+          ],
+          "text": "Edge-Constrained Controllable Stable Diffusion Watermarking ",
+          "section_path": "Edge-Constrained Controllable Stable Diffusion Watermarking",
+          "order_idx": 0
+        },
+        {
+          "type": "text",
+          "sub_type": "",
+          "page_idx": 0,
+          "bbox": [
+            450.0,
+            143.0,
+            545.0,
+            157.0
+          ],
+          "text": "Yuxuan Song * ",
+          "section_path": "Edge-Constrained Controllable Stable Diffusion Watermarking",
+          "order_idx": 1
+        },
+        {
+          "type": "text",
+          "sub_type": "",
+          "page_idx": 0,
+          "bbox": [
+            165.0,
+            159.0,
+            828.0,
+            172.0
+          ],
+          "text": "Department of Cyberspace Security and Information Security, Zhengzhou University (ZZU), Zhengzhou, China ",
+          "section_path": "Edge-Constrained Controllable Stable Diffusion Watermarking",
+          "order_idx": 2
+        },
+        {
+          "type": "text",
+          "sub_type": "",
+          "page_idx": 0,
+          "bbox": [
+            398.0,
+            175.0,
+            596.0,
+            189.0
+          ],
+          "text": "*e-mail: 16611695070@163.com ",
+          "section_path": "Edge-Constrained Controllable Stable Diffusion Watermarking",
+          "order_idx": 3
+        },
+        {
+          "type": "text",
+          "sub_type": "",
+          "page_idx": 0,
+          "bbox": [
+            70.0,
+            208.0,
+            483.0,
+            455.0
+          ],
+          "text": "Abstract—Existing diffusion-based watermarking methods often experience latent distribution shifts, leading to structural distortions in the generated images. To tackle this issue, we propose the Edge-Constrained Controllable Stable Diffusion Watermarking (EC-CSW) framework, which incorporates edge features as geometric priors. This framework integrates multiscale edge features from the original, watermark-free images as geometric constraints, dynamically guiding the denoising process of the diffusion model. This method effectively balances the concealment of the watermark with the visual plausibility of the generated images. Experimental results, validated using 1,000 diverse text-image pairs based on the Stable Diffusion-v2 model, show that the proposed framework significantly mitigates the problems of unreasonable images caused by watermark embedding. This research offers innovative insights into the application of diffusion models in the field of watermarking, achieving a dual optimization of copyright protection and visual quality, and holds significant theoretical and practical implications. ",
+          "section_path": "Edge-Constrained Controllable Stable Diffusion Watermarking",
+          "order_idx": 4
+        }
+      ]
+    },
+    {
+      "path": "Keywords-Watermark; Stable Diffusion; Edge features;",
+      "title": "Keywords-Watermark; Stable Diffusion; Edge features; ",
+      "level": 1,
+      "blocks": [
+        {
+          "type": "title",
+          "sub_type": "",
+          "page_idx": 0,
+          "bbox": [
+            93.0,
+            469.0,
+            431.0,
+            483.0
+          ],
+          "text": "Keywords-Watermark; Stable Diffusion; Edge features; ",
+          "section_path": "Keywords-Watermark; Stable Diffusion; Edge features;",
+          "order_idx": 5
+        }
+      ]
+    },
+    {
+      "path": "I. INTRODUCTION",
+      "title": "I. INTRODUCTION ",
+      "level": 1,
+      "blocks": [
+        {
+          "type": "title",
+          "sub_type": "",
+          "page_idx": 0,
+          "bbox": [
+            205.0,
+            492.0,
+            343.0,
+            506.0
+          ],
+          "text": "I. INTRODUCTION ",
+          "section_path": "I. INTRODUCTION",
+          "order_idx": 6
+        },
+        {
+          "type": "text",
+          "sub_type": "",
+          "page_idx": 0,
+          "bbox": [
+            70.0,
+            511.0,
+            485.0,
+            760.0
+          ],
+          "text": "With the rapid development of Artificial Intelligence Generated Content (AIGC) and digital media ecosystems, digital copyright protection faces heightened demands. Traditional encryption technologies ensure information security through ciphertext conversion, but their explicit protection mechanisms risk exposing data value. In contrast, digital watermarking technology, which implicitly embeds copyright information into carriers (spatial/frequency domains) while preserving visual quality, has emerged as a core technology for medical privacy [1], e-commerce authentication [2], and secure cloud transmission [3]. Current research focuses on multi-objective collaborative optimization: balancing the triangular trade-off among watermark embedding capacity, undetectability, and anti-attack robustness while simultaneously optimizing generative image quality and watermark extraction accuracy . Achieving dynamic unification of high-fidelity media preservation and watermark reversibility remains a critical challenge in information hiding. ",
+          "section_path": "I. INTRODUCTION",
+          "order_idx": 7
+        },
+        {
+          "type": "text",
+          "sub_type": "",
+          "page_idx": 0,
+          "bbox": [
+            70.0,
+            767.0,
+            486.0,
+            864.0
+          ],
+          "text": "Traditional watermarking algorithms primarily rely on spatial domain (e.g., LSB [4]) or frequency domain (DCT [5]/DWT [7]) embedding strategies, with their core dilemma lying in the trade-off among embedding capacity, robustness, and visual fidelity. Although adaptive methods (e.g., WOW [16], HUGO [15]) enhance concealment by optimizing embedding locations or dynamic adjustment strategies, they remain ",
+          "section_path": "I. INTRODUCTION",
+          "order_idx": 8
+        },
+        {
+          "type": "text",
+          "sub_type": "",
+          "page_idx": 0,
+          "bbox": [
+            513.0,
+            208.0,
+            926.0,
+            290.0
+          ],
+          "text": "constrained by low embedding capacity and insufficient antiattack capabilities. Early deep learning techniques (e.g., end-toend CNN [9], autoencoders [8], reversible neural networks [6][17]) advanced the co-optimization of capacity and robustness, yet their modification-based embedding inherently introduces statistically detectable traces. ",
+          "section_path": "I. INTRODUCTION",
+          "order_idx": 9
+        },
+        {
+          "type": "text",
+          "sub_type": "",
+          "page_idx": 0,
+          "bbox": [
+            513.0,
+            297.0,
+            926.0,
+            589.0
+          ],
+          "text": "The advent of AIGC has driven the evolution of generative watermarking, where watermarks are fused into the image generation pipeline through in-process embedding, eliminating the need for post-generation modification. GAN-based methods (e.g., DCGAN [10], WGAN-GP [11], CycleGAN [12]) encode watermarks into latent features but suffer from decoding errors caused by mode collapse and feature coupling interference. Addressing this, Liu et al. [13] proposed an Image Disentangled Autoencoder (IDEAS) to enhance robustness by decoupling structural and texture features, albeit with low watermark conversion efficiency. Zhou et al. [14] achieved reversible secret-to-image mapping (S2IRT) via the Glow model, improving capacity but exhibiting weak anti-attack performance. Recently, diffusion models, leveraging high-fidelity generation and mode coverage capabilities, have introduced new paradigms for covert watermark embedding. Existing methods (e.g., Fourier domain embedding [18], latent diffusion coupling [19], ZoDiAc [20]) inject watermarks through pre-trained models, yet the embedded watermarks disrupt original latent distributions, leading to structural distortion in generated images and degraded watermark reliability. ",
+          "section_path": "I. INTRODUCTION",
+          "order_idx": 10
+        },
+        {
+          "type": "text",
+          "sub_type": "",
+          "page_idx": 0,
+          "bbox": [
+            513.0,
+            595.0,
+            926.0,
+            650.0
+          ],
+          "text": "To address latent distribution shifts caused by existing diffusion-based techniques, which induce structural distortions, this paper proposes an innovative solution with the following core contributions: ",
+          "section_path": "I. INTRODUCTION",
+          "order_idx": 11
+        },
+        {
+          "type": "text",
+          "sub_type": "",
+          "page_idx": 0,
+          "bbox": [
+            513.0,
+            657.0,
+            926.0,
+            755.0
+          ],
+          "text": "1.We propose a novel watermarking framework that deeply integrates geometric edge priors with the diffusion process. By establishing an implicit geometric constraint mechanism, we achieve multi-objective co-optimization of watermark embedding and image generation, overcoming the limitations of unsupervised perturbation in latent space distributions inherent to existing methods. ",
+          "section_path": "I. INTRODUCTION",
+          "order_idx": 12
+        },
+        {
+          "type": "text",
+          "sub_type": "",
+          "page_idx": 0,
+          "bbox": [
+            513.0,
+            762.0,
+            926.0,
+            872.0
+          ],
+          "text": "2.The framework comprises three core modules: 1)Annular Frequency-Domain Watermark Embedding Module: Embeds rotation-resistant watermarks in the Fourier domain for robustness. 2)Edge-Aware Multi-Scale Feature Extraction Module: Extracts structural priors via an enhanced Canny operator.3)Dynamic Feature Fusion: Adaptively adjusts edge constraints during denoising to align with the original distribution. ",
+          "section_path": "I. INTRODUCTION",
+          "order_idx": 13
+        },
+        {
+          "type": "aside_text",
+          "sub_type": "",
+          "page_idx": 0,
+          "bbox": [
+            11.0,
+            104.0,
+            32.0,
+            892.0
+          ],
+          "text": "2025 2nd International Conference on Digital Image Processing and Computer Applications (DIPCA) | 979-8-3315-3450-9/25/$31.00 ©2025 IEEE | DOI: 10.1109/DIPCA65051.2025.11042830 ",
+          "section_path": "I. INTRODUCTION",
+          "order_idx": 15
+        },
+        {
+          "type": "image",
+          "sub_type": "",
+          "page_idx": 1,
+          "bbox": [
+            178.0,
+            65.0,
+            844.0,
+            330.0
+          ],
+          "text": "[image]",
+          "section_path": "I. INTRODUCTION",
+          "order_idx": 19
+        },
+        {
+          "type": "text",
+          "sub_type": "",
+          "page_idx": 1,
+          "bbox": [
+            66.0,
+            373.0,
+            486.0,
+            444.0
+          ],
+          "text": "3.Experimental results demonstrate that our framework effectively mitigates structural distortion caused by distribution shifts, advancing the application of diffusion models in watermarking and achieving synergistic optimization of image rationality and watermark concealment. ",
+          "section_path": "I. INTRODUCTION",
+          "order_idx": 20
+        },
+        {
+          "type": "text",
+          "sub_type": "",
+          "page_idx": 1,
+          "bbox": [
+            66.0,
+            449.0,
+            486.0,
+            492.0
+          ],
+          "text": "This work provides a novel direction for reconciling highfidelity generation with imperceptible watermark integration, addressing critical challenges in the field of information hiding. ",
+          "section_path": "I. INTRODUCTION",
+          "order_idx": 21
+        }
+      ]
+    },
+    {
+      "path": "II.METHODS",
+      "title": "II.METHODS ",
+      "level": 1,
+      "blocks": [
+        {
+          "type": "title",
+          "sub_type": "",
+          "page_idx": 1,
+          "bbox": [
+            223.0,
+            501.0,
+            323.0,
+            515.0
+          ],
+          "text": "II.METHODS ",
+          "section_path": "II.METHODS",
+          "order_idx": 22
+        },
+        {
+          "type": "text",
+          "sub_type": "",
+          "page_idx": 1,
+          "bbox": [
+            66.0,
+            520.0,
+            486.0,
+            590.0
+          ],
+          "text": "We propose an Edge-Constrained Controllable Stable Diffusion Watermarking (EC-CSW) framework to mitigate structural distortions caused by latent distribution shifts in existing methods. As illustrated in Figure 1, our framework comprises three tightly-coupled modules: ",
+          "section_path": "II.METHODS",
+          "order_idx": 23
+        },
+        {
+          "type": "list",
+          "sub_type": "text",
+          "page_idx": 1,
+          "bbox": [
+            66.0,
+            597.0,
+            486.0,
+            765.0
+          ],
+          "text": "",
+          "section_path": "II.METHODS",
+          "order_idx": 24
+        }
+      ]
+    },
+    {
+      "path": "A. DDIM",
+      "title": "A. DDIM ",
+      "level": 1,
+      "blocks": [
+        {
+          "type": "title",
+          "sub_type": "",
+          "page_idx": 1,
+          "bbox": [
+            66.0,
+            771.0,
+            140.0,
+            785.0
+          ],
+          "text": "A. DDIM ",
+          "section_path": "A. DDIM",
+          "order_idx": 25
+        },
+        {
+          "type": "text",
+          "sub_type": "",
+          "page_idx": 1,
+          "bbox": [
+            66.0,
+            789.0,
+            485.0,
+            859.0
+          ],
+          "text": "A complete diffusion process comprises two stages: the forward process, which incrementally injects noise into the original data distribution, and the reverse process, which progressively denoises from randomly sampled Gaussian noise. In DDIM [22], the forward process can be formulated as: ",
+          "section_path": "A. DDIM",
+          "order_idx": 26
+        },
+        {
+          "type": "equation",
+          "sub_type": "",
+          "page_idx": 1,
+          "bbox": [
+            119.0,
+            867.0,
+            477.0,
+            885.0
+          ],
+          "text": "$$\n\\mathbf {x} _ {t} = \\sqrt {\\alpha_ {t}} \\mathbf {x} _ {t - 1} + \\sqrt {1 - \\alpha_ {t}} \\boldsymbol {\\epsilon}, \\quad \\boldsymbol {\\epsilon} \\sim \\mathcal {N} (0, \\mathbf {I}) \\tag {1}\n$$",
+          "section_path": "A. DDIM",
+          "order_idx": 27
+        },
+        {
+          "type": "text",
+          "sub_type": "",
+          "page_idx": 1,
+          "bbox": [
+            508.0,
+            375.0,
+            926.0,
+            449.0
+          ],
+          "text": "where $\\alpha _ { t }$ is the predefined noise schedule coefficient, $t \\in [ 1 , T ]$ denotes the diffusion step, $\\epsilon$ is sampled from a standard Gaussian distribution, and $\\mathbf { x } _ { t }$ represents the noisy image at timestep $t$ . Equation (1) can be further derived as: ",
+          "section_path": "A. DDIM",
+          "order_idx": 28
+        },
+        {
+          "type": "equation",
+          "sub_type": "",
+          "page_idx": 1,
+          "bbox": [
+            614.0,
+            450.0,
+            919.0,
+            469.0
+          ],
+          "text": "$$\n\\mathbf {x} _ {t} = \\sqrt {\\bar {\\alpha} _ {t}} \\mathbf {x} _ {0} + \\sqrt {1 - \\bar {\\alpha} _ {t}} \\epsilon \\tag {2}\n$$",
+          "section_path": "A. DDIM",
+          "order_idx": 29
+        },
+        {
+          "type": "text",
+          "sub_type": "",
+          "page_idx": 1,
+          "bbox": [
+            508.0,
+            478.0,
+            666.0,
+            500.0
+          ],
+          "text": "where $\\overline { { \\alpha } } _ { t } = \\prod \\mathbf { \\Gamma } _ { i = 0 } ^ { t } \\alpha _ { i }$ ",
+          "section_path": "A. DDIM",
+          "order_idx": 30
+        },
+        {
+          "type": "text",
+          "sub_type": "",
+          "page_idx": 1,
+          "bbox": [
+            508.0,
+            510.0,
+            926.0,
+            537.0
+          ],
+          "text": "The formula for the DDIM reverse generation process is as follows: ",
+          "section_path": "A. DDIM",
+          "order_idx": 31
+        },
+        {
+          "type": "equation",
+          "sub_type": "",
+          "page_idx": 1,
+          "bbox": [
+            552.0,
+            546.0,
+            919.0,
+            564.0
+          ],
+          "text": "$$\n\\mathbf {x} _ {s} = \\sqrt {\\bar {\\alpha} _ {s}} \\hat {\\mathbf {x}} _ {0 | t} + \\sqrt {1 - \\bar {\\alpha} _ {s} - \\sigma_ {s} ^ {2}} \\boldsymbol {\\epsilon} _ {\\theta} (\\mathbf {x} _ {t}, t) + \\sigma_ {s} \\epsilon \\tag {3}\n$$",
+          "section_path": "A. DDIM",
+          "order_idx": 32
+        },
+        {
+          "type": "equation",
+          "sub_type": "",
+          "page_idx": 1,
+          "bbox": [
+            604.0,
+            566.0,
+            919.0,
+            601.0
+          ],
+          "text": "$$\n\\hat {\\mathbf {x}} _ {0 | t} = \\frac {\\mathbf {x} _ {t} - \\sqrt {1 - \\bar {\\alpha} _ {t}} \\boldsymbol {\\epsilon} _ {\\theta} (\\mathbf {x} _ {t} , t)}{\\sqrt {\\bar {\\alpha} _ {t}}} \\tag {4}\n$$",
+          "section_path": "A. DDIM",
+          "order_idx": 33
+        },
+        {
+          "type": "text",
+          "sub_type": "",
+          "page_idx": 1,
+          "bbox": [
+            508.0,
+            608.0,
+            928.0,
+            776.0
+          ],
+          "text": "Using Equation (4), we predict at timestep , and then infer the image at timestep based on the predicted . In DDIM, the timesteps and need not be adjacent (e.g., $s = t - 1$ ) but must satisfy $s < t$ . When in Equation (3) is set to 0, the DDIM sampling process becomes deterministic. To eliminate stochastic interference with watermark embedding stability, this study empolys the deterministic sampling strategy of the Denoising Diffusion Implicit Model (DDIM). We formalize the iterative denoising process from to as follows: ",
+          "section_path": "A. DDIM",
+          "order_idx": 34
+        },
+        {
+          "type": "equation",
+          "sub_type": "",
+          "page_idx": 1,
+          "bbox": [
+            619.0,
+            785.0,
+            919.0,
+            801.0
+          ],
+          "text": "$$\n\\mathbf {x} _ {0} = \\mathcal {D} _ {\\theta} \\left(\\mathbf {x} _ {T}; \\boldsymbol {\\epsilon} _ {\\theta}, \\mathbf {c}, T, 0\\right) \\tag {5}\n$$",
+          "section_path": "A. DDIM",
+          "order_idx": 35
+        },
+        {
+          "type": "text",
+          "sub_type": "",
+          "page_idx": 1,
+          "bbox": [
+            506.0,
+            805.0,
+            926.0,
+            837.0
+          ],
+          "text": "where $\\epsilon _ { \\theta }$ is a learnable noise predictor, and represents the textual prompt in DDIM. ",
+          "section_path": "A. DDIM",
+          "order_idx": 36
+        }
+      ]
+    },
+    {
+      "path": "B. Frequency-Domain Annular Watermark Embedding",
+      "title": "B. Frequency-Domain Annular Watermark Embedding ",
+      "level": 1,
+      "blocks": [
+        {
+          "type": "title",
+          "sub_type": "",
+          "page_idx": 1,
+          "bbox": [
+            509.0,
+            844.0,
+            880.0,
+            859.0
+          ],
+          "text": "B. Frequency-Domain Annular Watermark Embedding ",
+          "section_path": "B. Frequency-Domain Annular Watermark Embedding",
+          "order_idx": 37
+        },
+        {
+          "type": "text",
+          "sub_type": "",
+          "page_idx": 1,
+          "bbox": [
+            506.0,
+            862.0,
+            928.0,
+            905.0
+          ],
+          "text": "To avoid explicit watermark patterns in generated images caused by spatial-domain watermark embedding, this paper adopts a frequency-domain watermark embedding strategy ",
+          "section_path": "B. Frequency-Domain Annular Watermark Embedding",
+          "order_idx": 38
+        },
+        {
+          "type": "text",
+          "sub_type": "",
+          "page_idx": 2,
+          "bbox": [
+            66.0,
+            66.0,
+            486.0,
+            95.0
+          ],
+          "text": "instead of traditional spatial-domain methods. Embedding watermarks in the Fourier domain offers two key advantages: ",
+          "section_path": "B. Frequency-Domain Annular Watermark Embedding",
+          "order_idx": 41
+        },
+        {
+          "type": "list",
+          "sub_type": "text",
+          "page_idx": 2,
+          "bbox": [
+            66.0,
+            103.0,
+            485.0,
+            237.0
+          ],
+          "text": "",
+          "section_path": "B. Frequency-Domain Annular Watermark Embedding",
+          "order_idx": 42
+        },
+        {
+          "type": "text",
+          "sub_type": "",
+          "page_idx": 2,
+          "bbox": [
+            66.0,
+            243.0,
+            486.0,
+            272.0
+          ],
+          "text": "Considering the critical role of watermark shape in robustness [18], we explore two watermark patterns: ",
+          "section_path": "B. Frequency-Domain Annular Watermark Embedding",
+          "order_idx": 43
+        },
+        {
+          "type": "list",
+          "sub_type": "text",
+          "page_idx": 2,
+          "bbox": [
+            66.0,
+            279.0,
+            485.0,
+            441.0
+          ],
+          "text": "",
+          "section_path": "B. Frequency-Domain Annular Watermark Embedding",
+          "order_idx": 44
+        },
+        {
+          "type": "text",
+          "sub_type": "",
+          "page_idx": 2,
+          "bbox": [
+            66.0,
+            446.0,
+            486.0,
+            564.0
+          ],
+          "text": "In this work, we employ the annular watermark as our embedding pattern. Specifically, we first randomly initialize a noise vector in Gaussian space, apply the Fourier transform, and then introduce a carefully designed multi-ring watermark pattern (referred to as a \"key\") near the center of the Fourier domain. Each ring corresponds to a fixed value. We define a binary mask $M$ and a key $k \\in \\mathbb { C } ^ { | M | }$ . For the initialized noise vector $\\mathbf { x } _ { T }$ , its Fourier domain representation is formulated as: ",
+          "section_path": "B. Frequency-Domain Annular Watermark Embedding",
+          "order_idx": 45
+        },
+        {
+          "type": "equation",
+          "sub_type": "",
+          "page_idx": 2,
+          "bbox": [
+            153.0,
+            571.0,
+            477.0,
+            603.0
+          ],
+          "text": "$$\n\\mathcal {F} \\left(\\mathbf {x} _ {T}\\right) _ {i} \\sim \\left\\{ \\begin{array}{l l} k _ {i} & i f i \\in M \\\\ \\mathcal {N} (0, 1) & o t h e r w i s e \\end{array} \\right. \\tag {6}\n$$",
+          "section_path": "B. Frequency-Domain Annular Watermark Embedding",
+          "order_idx": 46
+        },
+        {
+          "type": "text",
+          "sub_type": "",
+          "page_idx": 2,
+          "bbox": [
+            66.0,
+            606.0,
+            486.0,
+            648.0
+          ],
+          "text": "After watermark embedding, the Fourier domain representation is inversely transformed back to the spatial domain. ",
+          "section_path": "B. Frequency-Domain Annular Watermark Embedding",
+          "order_idx": 47
+        }
+      ]
+    },
+    {
+      "path": "C. Edge-Aware Feature Extraction",
+      "title": "C. Edge-Aware Feature Extraction ",
+      "level": 1,
+      "blocks": [
+        {
+          "type": "title",
+          "sub_type": "",
+          "page_idx": 2,
+          "bbox": [
+            66.0,
+            655.0,
+            307.0,
+            670.0
+          ],
+          "text": "C. Edge-Aware Feature Extraction ",
+          "section_path": "C. Edge-Aware Feature Extraction",
+          "order_idx": 48
+        },
+        {
+          "type": "text",
+          "sub_type": "",
+          "page_idx": 2,
+          "bbox": [
+            66.0,
+            672.0,
+            486.0,
+            744.0
+          ],
+          "text": "This study proposes a multi-scale edge feature extraction module based on the Canny operator to embed structural priors of original images into the latent space of the diffusion model, constraining the denoising trajectory via a dynamic weighted fusion strategy. Specifically: ",
+          "section_path": "C. Edge-Aware Feature Extraction",
+          "order_idx": 49
+        },
+        {
+          "type": "text",
+          "sub_type": "",
+          "page_idx": 2,
+          "bbox": [
+            91.0,
+            750.0,
+            334.0,
+            765.0
+          ],
+          "text": "1.Multi-scale edge feature extraction ",
+          "section_path": "C. Edge-Aware Feature Extraction",
+          "order_idx": 50
+        },
+        {
+          "type": "list",
+          "sub_type": "text",
+          "page_idx": 2,
+          "bbox": [
+            66.0,
+            773.0,
+            485.0,
+            873.0
+          ],
+          "text": "",
+          "section_path": "C. Edge-Aware Feature Extraction",
+          "order_idx": 51
+        },
+        {
+          "type": "text",
+          "sub_type": "",
+          "page_idx": 2,
+          "bbox": [
+            66.0,
+            878.0,
+            486.0,
+            907.0
+          ],
+          "text": "This operation suppresses high-frequency noise while preserving the primary edge topology. Subsequently, dual-",
+          "section_path": "C. Edge-Aware Feature Extraction",
+          "order_idx": 52
+        },
+        {
+          "type": "text",
+          "sub_type": "",
+          "page_idx": 2,
+          "bbox": [
+            508.0,
+            66.0,
+            926.0,
+            148.0
+          ],
+          "text": "threshold gradient detection $\\cdot T _ { l } = 5 0 , T _ { h } = 1 5 0 $ ) is performed using the Canny operator. Through non-maximum suppression and hysteresis thresholding, a continuous binary edge image $I _ { C a n n y } \\in \\mathbb { R } ^ { H \\times W }$ is obtained, establishing a structural prior knowledge repository. ",
+          "section_path": "C. Edge-Aware Feature Extraction",
+          "order_idx": 53
+        },
+        {
+          "type": "text",
+          "sub_type": "",
+          "page_idx": 2,
+          "bbox": [
+            532.0,
+            152.0,
+            756.0,
+            167.0
+          ],
+          "text": "2.Latent Space Feature Encoding ",
+          "section_path": "C. Edge-Aware Feature Extraction",
+          "order_idx": 54
+        },
+        {
+          "type": "list",
+          "sub_type": "text",
+          "page_idx": 2,
+          "bbox": [
+            508.0,
+            175.0,
+            926.0,
+            311.0
+          ],
+          "text": "",
+          "section_path": "C. Edge-Aware Feature Extraction",
+          "order_idx": 55
+        }
+      ]
+    },
+    {
+      "path": "D. Dynamic Fusion of Edge Features",
+      "title": "D. Dynamic Fusion of Edge Features ",
+      "level": 1,
+      "blocks": [
+        {
+          "type": "title",
+          "sub_type": "",
+          "page_idx": 2,
+          "bbox": [
+            508.0,
+            318.0,
+            764.0,
+            333.0
+          ],
+          "text": "D. Dynamic Fusion of Edge Features ",
+          "section_path": "D. Dynamic Fusion of Edge Features",
+          "order_idx": 56
+        },
+        {
+          "type": "text",
+          "sub_type": "",
+          "page_idx": 2,
+          "bbox": [
+            506.0,
+            335.0,
+            928.0,
+            512.0
+          ],
+          "text": "Considering the varying impact of different denoising stages on image generation [21], early denoising steps ( $t \\to T$ ) dominate the generation of the main structural components. Enhancing edge constraints at this stage effectively preserves the geometric features of the original image. As the diffusion process progresses ( $\\ell \\to 1$ ), denoising gradually shifts toward detail synthesis, where reducing constraint strength allows the model to autonomously optimize local textures and avoid artifact issues caused by over-correction. We optimize the balance between structural preservation and detail generation in the diffusion model by designing an adaptive mechanism to dynamically adjust edge constraint intensity. ",
+          "section_path": "D. Dynamic Fusion of Edge Features",
+          "order_idx": 57
+        },
+        {
+          "type": "text",
+          "sub_type": "",
+          "page_idx": 2,
+          "bbox": [
+            508.0,
+            518.0,
+            926.0,
+            571.0
+          ],
+          "text": "Specifically, we define a scaling factor function $\\gamma ( t )$ across three stages (with $T$ as the total denoising steps and $t = T - i$ as the remaining steps at iteration $i$ ): ",
+          "section_path": "D. Dynamic Fusion of Edge Features",
+          "order_idx": 58
+        },
+        {
+          "type": "list",
+          "sub_type": "text",
+          "page_idx": 2,
+          "bbox": [
+            508.0,
+            582.0,
+            926.0,
+            871.0
+          ],
+          "text": "",
+          "section_path": "D. Dynamic Fusion of Edge Features",
+          "order_idx": 59
+        },
+        {
+          "type": "text",
+          "sub_type": "",
+          "page_idx": 2,
+          "bbox": [
+            532.0,
+            877.0,
+            794.0,
+            891.0
+          ],
+          "text": "The overall formulation is described as: ",
+          "section_path": "D. Dynamic Fusion of Edge Features",
+          "order_idx": 60
+        },
+        {
+          "type": "equation",
+          "sub_type": "",
+          "page_idx": 3,
+          "bbox": [
+            99.0,
+            66.0,
+            477.0,
+            150.0
+          ],
+          "text": "$$\n\\gamma (t) = \\left\\{ \\begin{array}{l l} 0. 0 0 0 5 \\cdot \\exp \\left(- \\frac {(T - t) ^ {2}}{2 \\left(\\frac {T}{3}\\right) ^ {2}}\\right), & t > \\frac {2}{3} T \\\\ \\underbrace {0 . 0 0 0 5 \\cdot e ^ {- 0 . 5}} _ {\\gamma_ {\\text {s t a r t}}} + \\left(\\underbrace {0 . 0 0 0 1} _ {\\gamma_ {\\text {e n d}}} - \\gamma_ {\\text {s t a r t}}\\right) \\cdot \\frac {\\frac {2}{3} T - t}{\\frac {1}{3} T}, & \\frac {1}{3} T <   t \\leq \\frac {2}{3} T \\\\ 0. 0 0 0 1 + 0. 0 0 0 1 \\cdot \\exp \\left(- \\frac {t}{0 . 0 0 0 1 T}\\right), & t \\leq \\frac {1}{3} T \\end{array} \\right. \\tag {7}\n$$",
+          "section_path": "D. Dynamic Fusion of Edge Features",
+          "order_idx": 63
+        },
+        {
+          "type": "text",
+          "sub_type": "",
+          "page_idx": 3,
+          "bbox": [
+            66.0,
+            152.0,
+            485.0,
+            181.0
+          ],
+          "text": "The dynamic scaling factor is weighted and fused into the latent variable at each denoising iteration step, formulated as: ",
+          "section_path": "D. Dynamic Fusion of Edge Features",
+          "order_idx": 64
+        },
+        {
+          "type": "equation",
+          "sub_type": "",
+          "page_idx": 3,
+          "bbox": [
+            104.0,
+            186.0,
+            477.0,
+            204.0
+          ],
+          "text": "$$\nz _ {s} ^ {\\text {f u s e d}} = z _ {t} + \\sigma \\left(\\tilde {z} _ {\\text {e d g e}}\\right) \\cdot \\gamma (t), s, t \\in (0, T) \\text {a n d} s <   t \\tag {8}\n$$",
+          "section_path": "D. Dynamic Fusion of Edge Features",
+          "order_idx": 65
+        },
+        {
+          "type": "text",
+          "sub_type": "",
+          "page_idx": 3,
+          "bbox": [
+            66.0,
+            207.0,
+            486.0,
+            333.0
+          ],
+          "text": "where $\\tilde { z } _ { e d g e }$ denotes the normalized edge features, $\\sigma$ is the Sigmoid function, and $\\mathcal { Z } _ { s } ^ { f u s e d }$ represents the fused latent variable at timestep . During the iterative denoising process, the output $z _ { s } ^ { f u s e d }$ at the current step is directly used as the input for the next step. After $t$ iterations, the final latent variable $z _ { 0 } ^ { f u s e d }$ is obtained and passed through the decoder module $D ( \\cdot )$ of the VAE to decode the latent vector into the final watermarked image: ",
+          "section_path": "D. Dynamic Fusion of Edge Features",
+          "order_idx": 66
+        },
+        {
+          "type": "equation",
+          "sub_type": "",
+          "page_idx": 3,
+          "bbox": [
+            192.0,
+            334.0,
+            477.0,
+            352.0
+          ],
+          "text": "$$\n\\mathbf {x} _ {0} ^ {\\text {f u s e d}} = D \\left(z _ {0} ^ {\\text {f u s e d}}\\right) \\tag {9}\n$$",
+          "section_path": "D. Dynamic Fusion of Edge Features",
+          "order_idx": 67
+        }
+      ]
+    },
+    {
+      "path": "III.EXPERIMENTAL RESULTS AND ANALYSIS",
+      "title": "III.EXPERIMENTAL RESULTS AND ANALYSIS ",
+      "level": 1,
+      "blocks": [
+        {
+          "type": "title",
+          "sub_type": "",
+          "page_idx": 3,
+          "bbox": [
+            96.0,
+            364.0,
+            444.0,
+            378.0
+          ],
+          "text": "III.EXPERIMENTAL RESULTS AND ANALYSIS ",
+          "section_path": "III.EXPERIMENTAL RESULTS AND ANALYSIS",
+          "order_idx": 68
+        }
+      ]
+    },
+    {
+      "path": "A. Experimental Setup",
+      "title": "A. Experimental Setup ",
+      "level": 1,
+      "blocks": [
+        {
+          "type": "title",
+          "sub_type": "",
+          "page_idx": 3,
+          "bbox": [
+            66.0,
+            387.0,
+            225.0,
+            401.0
+          ],
+          "text": "A. Experimental Setup ",
+          "section_path": "A. Experimental Setup",
+          "order_idx": 69
+        },
+        {
+          "type": "text",
+          "sub_type": "",
+          "page_idx": 3,
+          "bbox": [
+            66.0,
+            404.0,
+            488.0,
+            626.0
+          ],
+          "text": "This study constructs an experimental platform based on the state-of-the-art open-source latent text-to-image diffusion model, Stable Diffusion-v2 [23]. For data preparation, we utilize 1,000 text-image pairs from the Gustavosta/Stable-Diffusion-Prompts [24] dataset as foundational training samples. This dataset encompasses a wide range of diverse textual prompts covering multiple themes, styles, and scenarios, enabling robust support for generating highly diverse and creative images. In terms of model hyperparameters, we set the inference steps to 50 to balance generation quality and computational efficiency, with a default Classifier-Free Guidance scale of 7.5 to maintain textimage alignment stability. For watermark embedding, we design an annular watermark structure (radius: 10 pixels) and fix its embedding in the central image region to ensure imperceptibility. All experiments are conducted on a server equipped with dual NVIDIA RTX 2080 Ti GPUs (11GB VRAM each). ",
+          "section_path": "A. Experimental Setup",
+          "order_idx": 70
+        }
+      ]
+    },
+    {
+      "path": "B. Experimental Results",
+      "title": "B. Experimental Results ",
+      "level": 1,
+      "blocks": [
+        {
+          "type": "title",
+          "sub_type": "",
+          "page_idx": 3,
+          "bbox": [
+            66.0,
+            633.0,
+            235.0,
+            648.0
+          ],
+          "text": "B. Experimental Results ",
+          "section_path": "B. Experimental Results",
+          "order_idx": 71
+        },
+        {
+          "type": "text",
+          "sub_type": "",
+          "page_idx": 3,
+          "bbox": [
+            66.0,
+            650.0,
+            486.0,
+            781.0
+          ],
+          "text": "As shown in Figure 2, our edge-guided constraints significantly mitigate structural distortions in watermarked images generated by Stable Diffusion. Compared to the baseline method (Figure 2, left), which suffers from anatomical anomalies (e.g., blurred finger contours) and morphological deformities (e.g., distorted petals), our approach (Figure 2 middle) injects edge features ( $\\dot { z } _ { e d g e } = E ( I _ { C a n n y } ) )$ as dynamic denoising constraints, reducing latent space shifts and improving visual-semantic alignment. ",
+          "section_path": "B. Experimental Results",
+          "order_idx": 72
+        }
+      ]
+    },
+    {
+      "path": "C. Parameter Sensitivity Analysis",
+      "title": "C. Parameter Sensitivity Analysis ",
+      "level": 1,
+      "blocks": [
+        {
+          "type": "title",
+          "sub_type": "",
+          "page_idx": 3,
+          "bbox": [
+            66.0,
+            789.0,
+            297.0,
+            804.0
+          ],
+          "text": "C. Parameter Sensitivity Analysis ",
+          "section_path": "C. Parameter Sensitivity Analysis",
+          "order_idx": 73
+        },
+        {
+          "type": "text",
+          "sub_type": "",
+          "page_idx": 3,
+          "bbox": [
+            66.0,
+            806.0,
+            486.0,
+            848.0
+          ],
+          "text": "The edge feature scaling factor $\\lambda$ significantly impacts the generated image quality (see Figure 3). Experimental results demonstrate: ",
+          "section_path": "C. Parameter Sensitivity Analysis",
+          "order_idx": 74
+        },
+        {
+          "type": "text",
+          "sub_type": "",
+          "page_idx": 3,
+          "bbox": [
+            66.0,
+            857.0,
+            486.0,
+            902.0
+          ],
+          "text": " When $\\lambda { = } 0 . 0 0 0 5$ , the watermarked image achieves optimal structural fidelity, with clear finger contours, intact petal shapes, and excellent watermark invisibility. ",
+          "section_path": "C. Parameter Sensitivity Analysis",
+          "order_idx": 75
+        },
+        {
+          "type": "text",
+          "sub_type": "",
+          "page_idx": 3,
+          "bbox": [
+            508.0,
+            66.0,
+            926.0,
+            127.0
+          ],
+          "text": " As $\\lambda$ increases to $0 . 0 0 0 6 \\sim 0 . 0 0 1$ , the generation quality progressively degrades, manifesting as blurred finger edges, disproportionate eyeball ratios, and local petal deformations (visual distortions). ",
+          "section_path": "C. Parameter Sensitivity Analysis",
+          "order_idx": 76
+        },
+        {
+          "type": "text",
+          "sub_type": "",
+          "page_idx": 3,
+          "bbox": [
+            508.0,
+            133.0,
+            928.0,
+            191.0
+          ],
+          "text": "Based on comparative image results, this study selects $\\lambda =$ 0.0005 as the optimal parameter. By precisely controlling the strength of edge constraints, it achieves the best balance between suppressing distortions and preserving fine details. ",
+          "section_path": "C. Parameter Sensitivity Analysis",
+          "order_idx": 77
+        },
+        {
+          "type": "image",
+          "sub_type": "",
+          "page_idx": 3,
+          "bbox": [
+            524.0,
+            196.0,
+            913.0,
+            568.0
+          ],
+          "text": "[image]",
+          "section_path": "C. Parameter Sensitivity Analysis",
+          "order_idx": 78
+        },
+        {
+          "type": "image",
+          "sub_type": "",
+          "page_idx": 3,
+          "bbox": [
+            524.0,
+            641.0,
+            929.0,
+            837.0
+          ],
+          "text": "[image]",
+          "section_path": "C. Parameter Sensitivity Analysis",
+          "order_idx": 79
+        }
+      ]
+    },
+    {
+      "path": "IV.CONCLUSIONS",
+      "title": "IV.CONCLUSIONS ",
+      "level": 1,
+      "blocks": [
+        {
+          "type": "title",
+          "sub_type": "",
+          "page_idx": 4,
+          "bbox": [
+            200.0,
+            68.0,
+            341.0,
+            80.0
+          ],
+          "text": "IV.CONCLUSIONS ",
+          "section_path": "IV.CONCLUSIONS",
+          "order_idx": 82
+        },
+        {
+          "type": "text",
+          "sub_type": "",
+          "page_idx": 4,
+          "bbox": [
+            66.0,
+            85.0,
+            486.0,
+            335.0
+          ],
+          "text": "This paper introduces an edge-constrained diffusion watermarking framework to resolve structural distortions in generated images caused by latent distribution shifts during watermark embedding. By adaptively adjusting a timedependent scaling factor during the denoising process, the method dynamically modulates the intensity of edge constraints. This mechanism ensures alignment between generated content and the geometric priors of the original image distribution, effectively mitigating inconsistencies such as anatomical anomalies (e.g., blurred limb contours) and topological deformities (e.g., irregular petal arrangements). Experimental validation demonstrates that the time-adaptive scaling strategy stabilizes latent space trajectories, significantly improving structural fidelity while maintaining generative flexibility. This work lays the groundwork for future research in watermark encoding/decoding strategies and diffusion model applications, offering both theoretical significance and practical application value for digital rights management in AI-generated content. ",
+          "section_path": "IV.CONCLUSIONS",
+          "order_idx": 83
+        }
+      ]
+    },
+    {
+      "path": "REFERENCES",
+      "title": "REFERENCES ",
+      "level": 1,
+      "blocks": [
+        {
+          "type": "title",
+          "sub_type": "",
+          "page_idx": 4,
+          "bbox": [
+            222.0,
+            345.0,
+            330.0,
+            358.0
+          ],
+          "text": "REFERENCES ",
+          "section_path": "REFERENCES",
+          "order_idx": 84
+        },
+        {
+          "type": "list",
+          "sub_type": "ref_text",
+          "page_idx": 4,
+          "bbox": [
+            68.0,
+            363.0,
+            486.0,
+            880.0
+          ],
+          "text": "",
+          "section_path": "REFERENCES",
+          "order_idx": 85
+        },
+        {
+          "type": "list",
+          "sub_type": "ref_text",
+          "page_idx": 4,
+          "bbox": [
+            511.0,
+            66.0,
+            928.0,
+            520.0
+          ],
+          "text": "",
+          "section_path": "REFERENCES",
+          "order_idx": 86
+        }
+      ]
+    }
+  ],
+  "blocks": [
+    {
+      "type": "title",
+      "sub_type": "",
+      "page_idx": 0,
+      "bbox": [
+        119.0,
+        70.0,
+        879.0,
+        137.0
+      ],
+      "text": "Edge-Constrained Controllable Stable Diffusion Watermarking ",
+      "section_path": "Edge-Constrained Controllable Stable Diffusion Watermarking",
+      "order_idx": 0
+    },
+    {
+      "type": "text",
+      "sub_type": "",
+      "page_idx": 0,
+      "bbox": [
+        450.0,
+        143.0,
+        545.0,
+        157.0
+      ],
+      "text": "Yuxuan Song * ",
+      "section_path": "Edge-Constrained Controllable Stable Diffusion Watermarking",
+      "order_idx": 1
+    },
+    {
+      "type": "text",
+      "sub_type": "",
+      "page_idx": 0,
+      "bbox": [
+        165.0,
+        159.0,
+        828.0,
+        172.0
+      ],
+      "text": "Department of Cyberspace Security and Information Security, Zhengzhou University (ZZU), Zhengzhou, China ",
+      "section_path": "Edge-Constrained Controllable Stable Diffusion Watermarking",
+      "order_idx": 2
+    },
+    {
+      "type": "text",
+      "sub_type": "",
+      "page_idx": 0,
+      "bbox": [
+        398.0,
+        175.0,
+        596.0,
+        189.0
+      ],
+      "text": "*e-mail: 16611695070@163.com ",
+      "section_path": "Edge-Constrained Controllable Stable Diffusion Watermarking",
+      "order_idx": 3
+    },
+    {
+      "type": "text",
+      "sub_type": "",
+      "page_idx": 0,
+      "bbox": [
+        70.0,
+        208.0,
+        483.0,
+        455.0
+      ],
+      "text": "Abstract—Existing diffusion-based watermarking methods often experience latent distribution shifts, leading to structural distortions in the generated images. To tackle this issue, we propose the Edge-Constrained Controllable Stable Diffusion Watermarking (EC-CSW) framework, which incorporates edge features as geometric priors. This framework integrates multiscale edge features from the original, watermark-free images as geometric constraints, dynamically guiding the denoising process of the diffusion model. This method effectively balances the concealment of the watermark with the visual plausibility of the generated images. Experimental results, validated using 1,000 diverse text-image pairs based on the Stable Diffusion-v2 model, show that the proposed framework significantly mitigates the problems of unreasonable images caused by watermark embedding. This research offers innovative insights into the application of diffusion models in the field of watermarking, achieving a dual optimization of copyright protection and visual quality, and holds significant theoretical and practical implications. ",
+      "section_path": "Edge-Constrained Controllable Stable Diffusion Watermarking",
+      "order_idx": 4
+    },
+    {
+      "type": "title",
+      "sub_type": "",
+      "page_idx": 0,
+      "bbox": [
+        93.0,
+        469.0,
+        431.0,
+        483.0
+      ],
+      "text": "Keywords-Watermark; Stable Diffusion; Edge features; ",
+      "section_path": "Keywords-Watermark; Stable Diffusion; Edge features;",
+      "order_idx": 5
+    },
+    {
+      "type": "title",
+      "sub_type": "",
+      "page_idx": 0,
+      "bbox": [
+        205.0,
+        492.0,
+        343.0,
+        506.0
+      ],
+      "text": "I. INTRODUCTION ",
+      "section_path": "I. INTRODUCTION",
+      "order_idx": 6
+    },
+    {
+      "type": "text",
+      "sub_type": "",
+      "page_idx": 0,
+      "bbox": [
+        70.0,
+        511.0,
+        485.0,
+        760.0
+      ],
+      "text": "With the rapid development of Artificial Intelligence Generated Content (AIGC) and digital media ecosystems, digital copyright protection faces heightened demands. Traditional encryption technologies ensure information security through ciphertext conversion, but their explicit protection mechanisms risk exposing data value. In contrast, digital watermarking technology, which implicitly embeds copyright information into carriers (spatial/frequency domains) while preserving visual quality, has emerged as a core technology for medical privacy [1], e-commerce authentication [2], and secure cloud transmission [3]. Current research focuses on multi-objective collaborative optimization: balancing the triangular trade-off among watermark embedding capacity, undetectability, and anti-attack robustness while simultaneously optimizing generative image quality and watermark extraction accuracy . Achieving dynamic unification of high-fidelity media preservation and watermark reversibility remains a critical challenge in information hiding. ",
+      "section_path": "I. INTRODUCTION",
+      "order_idx": 7
+    },
+    {
+      "type": "text",
+      "sub_type": "",
+      "page_idx": 0,
+      "bbox": [
+        70.0,
+        767.0,
+        486.0,
+        864.0
+      ],
+      "text": "Traditional watermarking algorithms primarily rely on spatial domain (e.g., LSB [4]) or frequency domain (DCT [5]/DWT [7]) embedding strategies, with their core dilemma lying in the trade-off among embedding capacity, robustness, and visual fidelity. Although adaptive methods (e.g., WOW [16], HUGO [15]) enhance concealment by optimizing embedding locations or dynamic adjustment strategies, they remain ",
+      "section_path": "I. INTRODUCTION",
+      "order_idx": 8
+    },
+    {
+      "type": "text",
+      "sub_type": "",
+      "page_idx": 0,
+      "bbox": [
+        513.0,
+        208.0,
+        926.0,
+        290.0
+      ],
+      "text": "constrained by low embedding capacity and insufficient antiattack capabilities. Early deep learning techniques (e.g., end-toend CNN [9], autoencoders [8], reversible neural networks [6][17]) advanced the co-optimization of capacity and robustness, yet their modification-based embedding inherently introduces statistically detectable traces. ",
+      "section_path": "I. INTRODUCTION",
+      "order_idx": 9
+    },
+    {
+      "type": "text",
+      "sub_type": "",
+      "page_idx": 0,
+      "bbox": [
+        513.0,
+        297.0,
+        926.0,
+        589.0
+      ],
+      "text": "The advent of AIGC has driven the evolution of generative watermarking, where watermarks are fused into the image generation pipeline through in-process embedding, eliminating the need for post-generation modification. GAN-based methods (e.g., DCGAN [10], WGAN-GP [11], CycleGAN [12]) encode watermarks into latent features but suffer from decoding errors caused by mode collapse and feature coupling interference. Addressing this, Liu et al. [13] proposed an Image Disentangled Autoencoder (IDEAS) to enhance robustness by decoupling structural and texture features, albeit with low watermark conversion efficiency. Zhou et al. [14] achieved reversible secret-to-image mapping (S2IRT) via the Glow model, improving capacity but exhibiting weak anti-attack performance. Recently, diffusion models, leveraging high-fidelity generation and mode coverage capabilities, have introduced new paradigms for covert watermark embedding. Existing methods (e.g., Fourier domain embedding [18], latent diffusion coupling [19], ZoDiAc [20]) inject watermarks through pre-trained models, yet the embedded watermarks disrupt original latent distributions, leading to structural distortion in generated images and degraded watermark reliability. ",
+      "section_path": "I. INTRODUCTION",
+      "order_idx": 10
+    },
+    {
+      "type": "text",
+      "sub_type": "",
+      "page_idx": 0,
+      "bbox": [
+        513.0,
+        595.0,
+        926.0,
+        650.0
+      ],
+      "text": "To address latent distribution shifts caused by existing diffusion-based techniques, which induce structural distortions, this paper proposes an innovative solution with the following core contributions: ",
+      "section_path": "I. INTRODUCTION",
+      "order_idx": 11
+    },
+    {
+      "type": "text",
+      "sub_type": "",
+      "page_idx": 0,
+      "bbox": [
+        513.0,
+        657.0,
+        926.0,
+        755.0
+      ],
+      "text": "1.We propose a novel watermarking framework that deeply integrates geometric edge priors with the diffusion process. By establishing an implicit geometric constraint mechanism, we achieve multi-objective co-optimization of watermark embedding and image generation, overcoming the limitations of unsupervised perturbation in latent space distributions inherent to existing methods. ",
+      "section_path": "I. INTRODUCTION",
+      "order_idx": 12
+    },
+    {
+      "type": "text",
+      "sub_type": "",
+      "page_idx": 0,
+      "bbox": [
+        513.0,
+        762.0,
+        926.0,
+        872.0
+      ],
+      "text": "2.The framework comprises three core modules: 1)Annular Frequency-Domain Watermark Embedding Module: Embeds rotation-resistant watermarks in the Fourier domain for robustness. 2)Edge-Aware Multi-Scale Feature Extraction Module: Extracts structural priors via an enhanced Canny operator.3)Dynamic Feature Fusion: Adaptively adjusts edge constraints during denoising to align with the original distribution. ",
+      "section_path": "I. INTRODUCTION",
+      "order_idx": 13
+    },
+    {
+      "type": "aside_text",
+      "sub_type": "",
+      "page_idx": 0,
+      "bbox": [
+        11.0,
+        104.0,
+        32.0,
+        892.0
+      ],
+      "text": "2025 2nd International Conference on Digital Image Processing and Computer Applications (DIPCA) | 979-8-3315-3450-9/25/$31.00 ©2025 IEEE | DOI: 10.1109/DIPCA65051.2025.11042830 ",
+      "section_path": "I. INTRODUCTION",
+      "order_idx": 15
+    },
+    {
+      "type": "image",
+      "sub_type": "",
+      "page_idx": 1,
+      "bbox": [
+        178.0,
+        65.0,
+        844.0,
+        330.0
+      ],
+      "text": "[image]",
+      "section_path": "I. INTRODUCTION",
+      "order_idx": 19
+    },
+    {
+      "type": "text",
+      "sub_type": "",
+      "page_idx": 1,
+      "bbox": [
+        66.0,
+        373.0,
+        486.0,
+        444.0
+      ],
+      "text": "3.Experimental results demonstrate that our framework effectively mitigates structural distortion caused by distribution shifts, advancing the application of diffusion models in watermarking and achieving synergistic optimization of image rationality and watermark concealment. ",
+      "section_path": "I. INTRODUCTION",
+      "order_idx": 20
+    },
+    {
+      "type": "text",
+      "sub_type": "",
+      "page_idx": 1,
+      "bbox": [
+        66.0,
+        449.0,
+        486.0,
+        492.0
+      ],
+      "text": "This work provides a novel direction for reconciling highfidelity generation with imperceptible watermark integration, addressing critical challenges in the field of information hiding. ",
+      "section_path": "I. INTRODUCTION",
+      "order_idx": 21
+    },
+    {
+      "type": "title",
+      "sub_type": "",
+      "page_idx": 1,
+      "bbox": [
+        223.0,
+        501.0,
+        323.0,
+        515.0
+      ],
+      "text": "II.METHODS ",
+      "section_path": "II.METHODS",
+      "order_idx": 22
+    },
+    {
+      "type": "text",
+      "sub_type": "",
+      "page_idx": 1,
+      "bbox": [
+        66.0,
+        520.0,
+        486.0,
+        590.0
+      ],
+      "text": "We propose an Edge-Constrained Controllable Stable Diffusion Watermarking (EC-CSW) framework to mitigate structural distortions caused by latent distribution shifts in existing methods. As illustrated in Figure 1, our framework comprises three tightly-coupled modules: ",
+      "section_path": "II.METHODS",
+      "order_idx": 23
+    },
+    {
+      "type": "list",
+      "sub_type": "text",
+      "page_idx": 1,
+      "bbox": [
+        66.0,
+        597.0,
+        486.0,
+        765.0
+      ],
+      "text": "",
+      "section_path": "II.METHODS",
+      "order_idx": 24
+    },
+    {
+      "type": "title",
+      "sub_type": "",
+      "page_idx": 1,
+      "bbox": [
+        66.0,
+        771.0,
+        140.0,
+        785.0
+      ],
+      "text": "A. DDIM ",
+      "section_path": "A. DDIM",
+      "order_idx": 25
+    },
+    {
+      "type": "text",
+      "sub_type": "",
+      "page_idx": 1,
+      "bbox": [
+        66.0,
+        789.0,
+        485.0,
+        859.0
+      ],
+      "text": "A complete diffusion process comprises two stages: the forward process, which incrementally injects noise into the original data distribution, and the reverse process, which progressively denoises from randomly sampled Gaussian noise. In DDIM [22], the forward process can be formulated as: ",
+      "section_path": "A. DDIM",
+      "order_idx": 26
+    },
+    {
+      "type": "equation",
+      "sub_type": "",
+      "page_idx": 1,
+      "bbox": [
+        119.0,
+        867.0,
+        477.0,
+        885.0
+      ],
+      "text": "$$\n\\mathbf {x} _ {t} = \\sqrt {\\alpha_ {t}} \\mathbf {x} _ {t - 1} + \\sqrt {1 - \\alpha_ {t}} \\boldsymbol {\\epsilon}, \\quad \\boldsymbol {\\epsilon} \\sim \\mathcal {N} (0, \\mathbf {I}) \\tag {1}\n$$",
+      "section_path": "A. DDIM",
+      "order_idx": 27
+    },
+    {
+      "type": "text",
+      "sub_type": "",
+      "page_idx": 1,
+      "bbox": [
+        508.0,
+        375.0,
+        926.0,
+        449.0
+      ],
+      "text": "where $\\alpha _ { t }$ is the predefined noise schedule coefficient, $t \\in [ 1 , T ]$ denotes the diffusion step, $\\epsilon$ is sampled from a standard Gaussian distribution, and $\\mathbf { x } _ { t }$ represents the noisy image at timestep $t$ . Equation (1) can be further derived as: ",
+      "section_path": "A. DDIM",
+      "order_idx": 28
+    },
+    {
+      "type": "equation",
+      "sub_type": "",
+      "page_idx": 1,
+      "bbox": [
+        614.0,
+        450.0,
+        919.0,
+        469.0
+      ],
+      "text": "$$\n\\mathbf {x} _ {t} = \\sqrt {\\bar {\\alpha} _ {t}} \\mathbf {x} _ {0} + \\sqrt {1 - \\bar {\\alpha} _ {t}} \\epsilon \\tag {2}\n$$",
+      "section_path": "A. DDIM",
+      "order_idx": 29
+    },
+    {
+      "type": "text",
+      "sub_type": "",
+      "page_idx": 1,
+      "bbox": [
+        508.0,
+        478.0,
+        666.0,
+        500.0
+      ],
+      "text": "where $\\overline { { \\alpha } } _ { t } = \\prod \\mathbf { \\Gamma } _ { i = 0 } ^ { t } \\alpha _ { i }$ ",
+      "section_path": "A. DDIM",
+      "order_idx": 30
+    },
+    {
+      "type": "text",
+      "sub_type": "",
+      "page_idx": 1,
+      "bbox": [
+        508.0,
+        510.0,
+        926.0,
+        537.0
+      ],
+      "text": "The formula for the DDIM reverse generation process is as follows: ",
+      "section_path": "A. DDIM",
+      "order_idx": 31
+    },
+    {
+      "type": "equation",
+      "sub_type": "",
+      "page_idx": 1,
+      "bbox": [
+        552.0,
+        546.0,
+        919.0,
+        564.0
+      ],
+      "text": "$$\n\\mathbf {x} _ {s} = \\sqrt {\\bar {\\alpha} _ {s}} \\hat {\\mathbf {x}} _ {0 | t} + \\sqrt {1 - \\bar {\\alpha} _ {s} - \\sigma_ {s} ^ {2}} \\boldsymbol {\\epsilon} _ {\\theta} (\\mathbf {x} _ {t}, t) + \\sigma_ {s} \\epsilon \\tag {3}\n$$",
+      "section_path": "A. DDIM",
+      "order_idx": 32
+    },
+    {
+      "type": "equation",
+      "sub_type": "",
+      "page_idx": 1,
+      "bbox": [
+        604.0,
+        566.0,
+        919.0,
+        601.0
+      ],
+      "text": "$$\n\\hat {\\mathbf {x}} _ {0 | t} = \\frac {\\mathbf {x} _ {t} - \\sqrt {1 - \\bar {\\alpha} _ {t}} \\boldsymbol {\\epsilon} _ {\\theta} (\\mathbf {x} _ {t} , t)}{\\sqrt {\\bar {\\alpha} _ {t}}} \\tag {4}\n$$",
+      "section_path": "A. DDIM",
+      "order_idx": 33
+    },
+    {
+      "type": "text",
+      "sub_type": "",
+      "page_idx": 1,
+      "bbox": [
+        508.0,
+        608.0,
+        928.0,
+        776.0
+      ],
+      "text": "Using Equation (4), we predict at timestep , and then infer the image at timestep based on the predicted . In DDIM, the timesteps and need not be adjacent (e.g., $s = t - 1$ ) but must satisfy $s < t$ . When in Equation (3) is set to 0, the DDIM sampling process becomes deterministic. To eliminate stochastic interference with watermark embedding stability, this study empolys the deterministic sampling strategy of the Denoising Diffusion Implicit Model (DDIM). We formalize the iterative denoising process from to as follows: ",
+      "section_path": "A. DDIM",
+      "order_idx": 34
+    },
+    {
+      "type": "equation",
+      "sub_type": "",
+      "page_idx": 1,
+      "bbox": [
+        619.0,
+        785.0,
+        919.0,
+        801.0
+      ],
+      "text": "$$\n\\mathbf {x} _ {0} = \\mathcal {D} _ {\\theta} \\left(\\mathbf {x} _ {T}; \\boldsymbol {\\epsilon} _ {\\theta}, \\mathbf {c}, T, 0\\right) \\tag {5}\n$$",
+      "section_path": "A. DDIM",
+      "order_idx": 35
+    },
+    {
+      "type": "text",
+      "sub_type": "",
+      "page_idx": 1,
+      "bbox": [
+        506.0,
+        805.0,
+        926.0,
+        837.0
+      ],
+      "text": "where $\\epsilon _ { \\theta }$ is a learnable noise predictor, and represents the textual prompt in DDIM. ",
+      "section_path": "A. DDIM",
+      "order_idx": 36
+    },
+    {
+      "type": "title",
+      "sub_type": "",
+      "page_idx": 1,
+      "bbox": [
+        509.0,
+        844.0,
+        880.0,
+        859.0
+      ],
+      "text": "B. Frequency-Domain Annular Watermark Embedding ",
+      "section_path": "B. Frequency-Domain Annular Watermark Embedding",
+      "order_idx": 37
+    },
+    {
+      "type": "text",
+      "sub_type": "",
+      "page_idx": 1,
+      "bbox": [
+        506.0,
+        862.0,
+        928.0,
+        905.0
+      ],
+      "text": "To avoid explicit watermark patterns in generated images caused by spatial-domain watermark embedding, this paper adopts a frequency-domain watermark embedding strategy ",
+      "section_path": "B. Frequency-Domain Annular Watermark Embedding",
+      "order_idx": 38
+    },
+    {
+      "type": "text",
+      "sub_type": "",
+      "page_idx": 2,
+      "bbox": [
+        66.0,
+        66.0,
+        486.0,
+        95.0
+      ],
+      "text": "instead of traditional spatial-domain methods. Embedding watermarks in the Fourier domain offers two key advantages: ",
+      "section_path": "B. Frequency-Domain Annular Watermark Embedding",
+      "order_idx": 41
+    },
+    {
+      "type": "list",
+      "sub_type": "text",
+      "page_idx": 2,
+      "bbox": [
+        66.0,
+        103.0,
+        485.0,
+        237.0
+      ],
+      "text": "",
+      "section_path": "B. Frequency-Domain Annular Watermark Embedding",
+      "order_idx": 42
+    },
+    {
+      "type": "text",
+      "sub_type": "",
+      "page_idx": 2,
+      "bbox": [
+        66.0,
+        243.0,
+        486.0,
+        272.0
+      ],
+      "text": "Considering the critical role of watermark shape in robustness [18], we explore two watermark patterns: ",
+      "section_path": "B. Frequency-Domain Annular Watermark Embedding",
+      "order_idx": 43
+    },
+    {
+      "type": "list",
+      "sub_type": "text",
+      "page_idx": 2,
+      "bbox": [
+        66.0,
+        279.0,
+        485.0,
+        441.0
+      ],
+      "text": "",
+      "section_path": "B. Frequency-Domain Annular Watermark Embedding",
+      "order_idx": 44
+    },
+    {
+      "type": "text",
+      "sub_type": "",
+      "page_idx": 2,
+      "bbox": [
+        66.0,
+        446.0,
+        486.0,
+        564.0
+      ],
+      "text": "In this work, we employ the annular watermark as our embedding pattern. Specifically, we first randomly initialize a noise vector in Gaussian space, apply the Fourier transform, and then introduce a carefully designed multi-ring watermark pattern (referred to as a \"key\") near the center of the Fourier domain. Each ring corresponds to a fixed value. We define a binary mask $M$ and a key $k \\in \\mathbb { C } ^ { | M | }$ . For the initialized noise vector $\\mathbf { x } _ { T }$ , its Fourier domain representation is formulated as: ",
+      "section_path": "B. Frequency-Domain Annular Watermark Embedding",
+      "order_idx": 45
+    },
+    {
+      "type": "equation",
+      "sub_type": "",
+      "page_idx": 2,
+      "bbox": [
+        153.0,
+        571.0,
+        477.0,
+        603.0
+      ],
+      "text": "$$\n\\mathcal {F} \\left(\\mathbf {x} _ {T}\\right) _ {i} \\sim \\left\\{ \\begin{array}{l l} k _ {i} & i f i \\in M \\\\ \\mathcal {N} (0, 1) & o t h e r w i s e \\end{array} \\right. \\tag {6}\n$$",
+      "section_path": "B. Frequency-Domain Annular Watermark Embedding",
+      "order_idx": 46
+    },
+    {
+      "type": "text",
+      "sub_type": "",
+      "page_idx": 2,
+      "bbox": [
+        66.0,
+        606.0,
+        486.0,
+        648.0
+      ],
+      "text": "After watermark embedding, the Fourier domain representation is inversely transformed back to the spatial domain. ",
+      "section_path": "B. Frequency-Domain Annular Watermark Embedding",
+      "order_idx": 47
+    },
+    {
+      "type": "title",
+      "sub_type": "",
+      "page_idx": 2,
+      "bbox": [
+        66.0,
+        655.0,
+        307.0,
+        670.0
+      ],
+      "text": "C. Edge-Aware Feature Extraction ",
+      "section_path": "C. Edge-Aware Feature Extraction",
+      "order_idx": 48
+    },
+    {
+      "type": "text",
+      "sub_type": "",
+      "page_idx": 2,
+      "bbox": [
+        66.0,
+        672.0,
+        486.0,
+        744.0
+      ],
+      "text": "This study proposes a multi-scale edge feature extraction module based on the Canny operator to embed structural priors of original images into the latent space of the diffusion model, constraining the denoising trajectory via a dynamic weighted fusion strategy. Specifically: ",
+      "section_path": "C. Edge-Aware Feature Extraction",
+      "order_idx": 49
+    },
+    {
+      "type": "text",
+      "sub_type": "",
+      "page_idx": 2,
+      "bbox": [
+        91.0,
+        750.0,
+        334.0,
+        765.0
+      ],
+      "text": "1.Multi-scale edge feature extraction ",
+      "section_path": "C. Edge-Aware Feature Extraction",
+      "order_idx": 50
+    },
+    {
+      "type": "list",
+      "sub_type": "text",
+      "page_idx": 2,
+      "bbox": [
+        66.0,
+        773.0,
+        485.0,
+        873.0
+      ],
+      "text": "",
+      "section_path": "C. Edge-Aware Feature Extraction",
+      "order_idx": 51
+    },
+    {
+      "type": "text",
+      "sub_type": "",
+      "page_idx": 2,
+      "bbox": [
+        66.0,
+        878.0,
+        486.0,
+        907.0
+      ],
+      "text": "This operation suppresses high-frequency noise while preserving the primary edge topology. Subsequently, dual-",
+      "section_path": "C. Edge-Aware Feature Extraction",
+      "order_idx": 52
+    },
+    {
+      "type": "text",
+      "sub_type": "",
+      "page_idx": 2,
+      "bbox": [
+        508.0,
+        66.0,
+        926.0,
+        148.0
+      ],
+      "text": "threshold gradient detection $\\cdot T _ { l } = 5 0 , T _ { h } = 1 5 0 $ ) is performed using the Canny operator. Through non-maximum suppression and hysteresis thresholding, a continuous binary edge image $I _ { C a n n y } \\in \\mathbb { R } ^ { H \\times W }$ is obtained, establishing a structural prior knowledge repository. ",
+      "section_path": "C. Edge-Aware Feature Extraction",
+      "order_idx": 53
+    },
+    {
+      "type": "text",
+      "sub_type": "",
+      "page_idx": 2,
+      "bbox": [
+        532.0,
+        152.0,
+        756.0,
+        167.0
+      ],
+      "text": "2.Latent Space Feature Encoding ",
+      "section_path": "C. Edge-Aware Feature Extraction",
+      "order_idx": 54
+    },
+    {
+      "type": "list",
+      "sub_type": "text",
+      "page_idx": 2,
+      "bbox": [
+        508.0,
+        175.0,
+        926.0,
+        311.0
+      ],
+      "text": "",
+      "section_path": "C. Edge-Aware Feature Extraction",
+      "order_idx": 55
+    },
+    {
+      "type": "title",
+      "sub_type": "",
+      "page_idx": 2,
+      "bbox": [
+        508.0,
+        318.0,
+        764.0,
+        333.0
+      ],
+      "text": "D. Dynamic Fusion of Edge Features ",
+      "section_path": "D. Dynamic Fusion of Edge Features",
+      "order_idx": 56
+    },
+    {
+      "type": "text",
+      "sub_type": "",
+      "page_idx": 2,
+      "bbox": [
+        506.0,
+        335.0,
+        928.0,
+        512.0
+      ],
+      "text": "Considering the varying impact of different denoising stages on image generation [21], early denoising steps ( $t \\to T$ ) dominate the generation of the main structural components. Enhancing edge constraints at this stage effectively preserves the geometric features of the original image. As the diffusion process progresses ( $\\ell \\to 1$ ), denoising gradually shifts toward detail synthesis, where reducing constraint strength allows the model to autonomously optimize local textures and avoid artifact issues caused by over-correction. We optimize the balance between structural preservation and detail generation in the diffusion model by designing an adaptive mechanism to dynamically adjust edge constraint intensity. ",
+      "section_path": "D. Dynamic Fusion of Edge Features",
+      "order_idx": 57
+    },
+    {
+      "type": "text",
+      "sub_type": "",
+      "page_idx": 2,
+      "bbox": [
+        508.0,
+        518.0,
+        926.0,
+        571.0
+      ],
+      "text": "Specifically, we define a scaling factor function $\\gamma ( t )$ across three stages (with $T$ as the total denoising steps and $t = T - i$ as the remaining steps at iteration $i$ ): ",
+      "section_path": "D. Dynamic Fusion of Edge Features",
+      "order_idx": 58
+    },
+    {
+      "type": "list",
+      "sub_type": "text",
+      "page_idx": 2,
+      "bbox": [
+        508.0,
+        582.0,
+        926.0,
+        871.0
+      ],
+      "text": "",
+      "section_path": "D. Dynamic Fusion of Edge Features",
+      "order_idx": 59
+    },
+    {
+      "type": "text",
+      "sub_type": "",
+      "page_idx": 2,
+      "bbox": [
+        532.0,
+        877.0,
+        794.0,
+        891.0
+      ],
+      "text": "The overall formulation is described as: ",
+      "section_path": "D. Dynamic Fusion of Edge Features",
+      "order_idx": 60
+    },
+    {
+      "type": "equation",
+      "sub_type": "",
+      "page_idx": 3,
+      "bbox": [
+        99.0,
+        66.0,
+        477.0,
+        150.0
+      ],
+      "text": "$$\n\\gamma (t) = \\left\\{ \\begin{array}{l l} 0. 0 0 0 5 \\cdot \\exp \\left(- \\frac {(T - t) ^ {2}}{2 \\left(\\frac {T}{3}\\right) ^ {2}}\\right), & t > \\frac {2}{3} T \\\\ \\underbrace {0 . 0 0 0 5 \\cdot e ^ {- 0 . 5}} _ {\\gamma_ {\\text {s t a r t}}} + \\left(\\underbrace {0 . 0 0 0 1} _ {\\gamma_ {\\text {e n d}}} - \\gamma_ {\\text {s t a r t}}\\right) \\cdot \\frac {\\frac {2}{3} T - t}{\\frac {1}{3} T}, & \\frac {1}{3} T <   t \\leq \\frac {2}{3} T \\\\ 0. 0 0 0 1 + 0. 0 0 0 1 \\cdot \\exp \\left(- \\frac {t}{0 . 0 0 0 1 T}\\right), & t \\leq \\frac {1}{3} T \\end{array} \\right. \\tag {7}\n$$",
+      "section_path": "D. Dynamic Fusion of Edge Features",
+      "order_idx": 63
+    },
+    {
+      "type": "text",
+      "sub_type": "",
+      "page_idx": 3,
+      "bbox": [
+        66.0,
+        152.0,
+        485.0,
+        181.0
+      ],
+      "text": "The dynamic scaling factor is weighted and fused into the latent variable at each denoising iteration step, formulated as: ",
+      "section_path": "D. Dynamic Fusion of Edge Features",
+      "order_idx": 64
+    },
+    {
+      "type": "equation",
+      "sub_type": "",
+      "page_idx": 3,
+      "bbox": [
+        104.0,
+        186.0,
+        477.0,
+        204.0
+      ],
+      "text": "$$\nz _ {s} ^ {\\text {f u s e d}} = z _ {t} + \\sigma \\left(\\tilde {z} _ {\\text {e d g e}}\\right) \\cdot \\gamma (t), s, t \\in (0, T) \\text {a n d} s <   t \\tag {8}\n$$",
+      "section_path": "D. Dynamic Fusion of Edge Features",
+      "order_idx": 65
+    },
+    {
+      "type": "text",
+      "sub_type": "",
+      "page_idx": 3,
+      "bbox": [
+        66.0,
+        207.0,
+        486.0,
+        333.0
+      ],
+      "text": "where $\\tilde { z } _ { e d g e }$ denotes the normalized edge features, $\\sigma$ is the Sigmoid function, and $\\mathcal { Z } _ { s } ^ { f u s e d }$ represents the fused latent variable at timestep . During the iterative denoising process, the output $z _ { s } ^ { f u s e d }$ at the current step is directly used as the input for the next step. After $t$ iterations, the final latent variable $z _ { 0 } ^ { f u s e d }$ is obtained and passed through the decoder module $D ( \\cdot )$ of the VAE to decode the latent vector into the final watermarked image: ",
+      "section_path": "D. Dynamic Fusion of Edge Features",
+      "order_idx": 66
+    },
+    {
+      "type": "equation",
+      "sub_type": "",
+      "page_idx": 3,
+      "bbox": [
+        192.0,
+        334.0,
+        477.0,
+        352.0
+      ],
+      "text": "$$\n\\mathbf {x} _ {0} ^ {\\text {f u s e d}} = D \\left(z _ {0} ^ {\\text {f u s e d}}\\right) \\tag {9}\n$$",
+      "section_path": "D. Dynamic Fusion of Edge Features",
+      "order_idx": 67
+    },
+    {
+      "type": "title",
+      "sub_type": "",
+      "page_idx": 3,
+      "bbox": [
+        96.0,
+        364.0,
+        444.0,
+        378.0
+      ],
+      "text": "III.EXPERIMENTAL RESULTS AND ANALYSIS ",
+      "section_path": "III.EXPERIMENTAL RESULTS AND ANALYSIS",
+      "order_idx": 68
+    },
+    {
+      "type": "title",
+      "sub_type": "",
+      "page_idx": 3,
+      "bbox": [
+        66.0,
+        387.0,
+        225.0,
+        401.0
+      ],
+      "text": "A. Experimental Setup ",
+      "section_path": "A. Experimental Setup",
+      "order_idx": 69
+    },
+    {
+      "type": "text",
+      "sub_type": "",
+      "page_idx": 3,
+      "bbox": [
+        66.0,
+        404.0,
+        488.0,
+        626.0
+      ],
+      "text": "This study constructs an experimental platform based on the state-of-the-art open-source latent text-to-image diffusion model, Stable Diffusion-v2 [23]. For data preparation, we utilize 1,000 text-image pairs from the Gustavosta/Stable-Diffusion-Prompts [24] dataset as foundational training samples. This dataset encompasses a wide range of diverse textual prompts covering multiple themes, styles, and scenarios, enabling robust support for generating highly diverse and creative images. In terms of model hyperparameters, we set the inference steps to 50 to balance generation quality and computational efficiency, with a default Classifier-Free Guidance scale of 7.5 to maintain textimage alignment stability. For watermark embedding, we design an annular watermark structure (radius: 10 pixels) and fix its embedding in the central image region to ensure imperceptibility. All experiments are conducted on a server equipped with dual NVIDIA RTX 2080 Ti GPUs (11GB VRAM each). ",
+      "section_path": "A. Experimental Setup",
+      "order_idx": 70
+    },
+    {
+      "type": "title",
+      "sub_type": "",
+      "page_idx": 3,
+      "bbox": [
+        66.0,
+        633.0,
+        235.0,
+        648.0
+      ],
+      "text": "B. Experimental Results ",
+      "section_path": "B. Experimental Results",
+      "order_idx": 71
+    },
+    {
+      "type": "text",
+      "sub_type": "",
+      "page_idx": 3,
+      "bbox": [
+        66.0,
+        650.0,
+        486.0,
+        781.0
+      ],
+      "text": "As shown in Figure 2, our edge-guided constraints significantly mitigate structural distortions in watermarked images generated by Stable Diffusion. Compared to the baseline method (Figure 2, left), which suffers from anatomical anomalies (e.g., blurred finger contours) and morphological deformities (e.g., distorted petals), our approach (Figure 2 middle) injects edge features ( $\\dot { z } _ { e d g e } = E ( I _ { C a n n y } ) )$ as dynamic denoising constraints, reducing latent space shifts and improving visual-semantic alignment. ",
+      "section_path": "B. Experimental Results",
+      "order_idx": 72
+    },
+    {
+      "type": "title",
+      "sub_type": "",
+      "page_idx": 3,
+      "bbox": [
+        66.0,
+        789.0,
+        297.0,
+        804.0
+      ],
+      "text": "C. Parameter Sensitivity Analysis ",
+      "section_path": "C. Parameter Sensitivity Analysis",
+      "order_idx": 73
+    },
+    {
+      "type": "text",
+      "sub_type": "",
+      "page_idx": 3,
+      "bbox": [
+        66.0,
+        806.0,
+        486.0,
+        848.0
+      ],
+      "text": "The edge feature scaling factor $\\lambda$ significantly impacts the generated image quality (see Figure 3). Experimental results demonstrate: ",
+      "section_path": "C. Parameter Sensitivity Analysis",
+      "order_idx": 74
+    },
+    {
+      "type": "text",
+      "sub_type": "",
+      "page_idx": 3,
+      "bbox": [
+        66.0,
+        857.0,
+        486.0,
+        902.0
+      ],
+      "text": " When $\\lambda { = } 0 . 0 0 0 5$ , the watermarked image achieves optimal structural fidelity, with clear finger contours, intact petal shapes, and excellent watermark invisibility. ",
+      "section_path": "C. Parameter Sensitivity Analysis",
+      "order_idx": 75
+    },
+    {
+      "type": "text",
+      "sub_type": "",
+      "page_idx": 3,
+      "bbox": [
+        508.0,
+        66.0,
+        926.0,
+        127.0
+      ],
+      "text": " As $\\lambda$ increases to $0 . 0 0 0 6 \\sim 0 . 0 0 1$ , the generation quality progressively degrades, manifesting as blurred finger edges, disproportionate eyeball ratios, and local petal deformations (visual distortions). ",
+      "section_path": "C. Parameter Sensitivity Analysis",
+      "order_idx": 76
+    },
+    {
+      "type": "text",
+      "sub_type": "",
+      "page_idx": 3,
+      "bbox": [
+        508.0,
+        133.0,
+        928.0,
+        191.0
+      ],
+      "text": "Based on comparative image results, this study selects $\\lambda =$ 0.0005 as the optimal parameter. By precisely controlling the strength of edge constraints, it achieves the best balance between suppressing distortions and preserving fine details. ",
+      "section_path": "C. Parameter Sensitivity Analysis",
+      "order_idx": 77
+    },
+    {
+      "type": "image",
+      "sub_type": "",
+      "page_idx": 3,
+      "bbox": [
+        524.0,
+        196.0,
+        913.0,
+        568.0
+      ],
+      "text": "[image]",
+      "section_path": "C. Parameter Sensitivity Analysis",
+      "order_idx": 78
+    },
+    {
+      "type": "image",
+      "sub_type": "",
+      "page_idx": 3,
+      "bbox": [
+        524.0,
+        641.0,
+        929.0,
+        837.0
+      ],
+      "text": "[image]",
+      "section_path": "C. Parameter Sensitivity Analysis",
+      "order_idx": 79
+    },
+    {
+      "type": "title",
+      "sub_type": "",
+      "page_idx": 4,
+      "bbox": [
+        200.0,
+        68.0,
+        341.0,
+        80.0
+      ],
+      "text": "IV.CONCLUSIONS ",
+      "section_path": "IV.CONCLUSIONS",
+      "order_idx": 82
+    },
+    {
+      "type": "text",
+      "sub_type": "",
+      "page_idx": 4,
+      "bbox": [
+        66.0,
+        85.0,
+        486.0,
+        335.0
+      ],
+      "text": "This paper introduces an edge-constrained diffusion watermarking framework to resolve structural distortions in generated images caused by latent distribution shifts during watermark embedding. By adaptively adjusting a timedependent scaling factor during the denoising process, the method dynamically modulates the intensity of edge constraints. This mechanism ensures alignment between generated content and the geometric priors of the original image distribution, effectively mitigating inconsistencies such as anatomical anomalies (e.g., blurred limb contours) and topological deformities (e.g., irregular petal arrangements). Experimental validation demonstrates that the time-adaptive scaling strategy stabilizes latent space trajectories, significantly improving structural fidelity while maintaining generative flexibility. This work lays the groundwork for future research in watermark encoding/decoding strategies and diffusion model applications, offering both theoretical significance and practical application value for digital rights management in AI-generated content. ",
+      "section_path": "IV.CONCLUSIONS",
+      "order_idx": 83
+    },
+    {
+      "type": "title",
+      "sub_type": "",
+      "page_idx": 4,
+      "bbox": [
+        222.0,
+        345.0,
+        330.0,
+        358.0
+      ],
+      "text": "REFERENCES ",
+      "section_path": "REFERENCES",
+      "order_idx": 84
+    },
+    {
+      "type": "list",
+      "sub_type": "ref_text",
+      "page_idx": 4,
+      "bbox": [
+        68.0,
+        363.0,
+        486.0,
+        880.0
+      ],
+      "text": "",
+      "section_path": "REFERENCES",
+      "order_idx": 85
+    },
+    {
+      "type": "list",
+      "sub_type": "ref_text",
+      "page_idx": 4,
+      "bbox": [
+        511.0,
+        66.0,
+        928.0,
+        520.0
+      ],
+      "text": "",
+      "section_path": "REFERENCES",
+      "order_idx": 86
+    }
+  ]
+}

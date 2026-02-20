@@ -11,12 +11,10 @@ from typing import Iterable
 from .config import DEFAULT_USER_AGENT, Settings, load_env_file
 from .debug import debug
 from .http_client import HTTPClient
-from .llm import LLMConfig, embeddings, rerank, generate_agent_remark, generate_agent_remarks_batch
+from .llm import LLMConfig, embeddings, rerank
 from .models import PUBLIC_FIELDS, Paper
 from .platforms import resolve_platform
-from .platforms.core import core_find_oa_url
 from .platforms.crossref import guess_doi_from_crossref
-from .platforms.unpaywall import unpaywall_find_pdf_url
 from .logger import logger
 from .utils import (
     normalize_doi,
@@ -69,8 +67,6 @@ def _merge_into(primary: Paper, incoming: Paper) -> None:
         primary.doi = incoming.doi
     if not primary.authors and incoming.authors:
         primary.authors = incoming.authors
-    if not primary.oa_paper_url and incoming.oa_paper_url:
-        primary.oa_paper_url = incoming.oa_paper_url
 
 
 def _normalize_output_fields(fields: list[str] | None) -> list[str] | None:
@@ -423,197 +419,6 @@ async def _rerank_rank(
         return _simple_rank(q, papers, k), False, stats
 
 
-async def _fill_oa_paper_urls(
-    client: HTTPClient,
-    *,
-    papers: list[Paper],
-    settings: Settings,
-) -> dict[str, int | float]:
-    if not papers:
-        return {
-            "unpaywall_attempts": 0,
-            "unpaywall_ok": 0,
-            "unpaywall_errors": 0,
-            "unpaywall_time_s_total": 0.0,
-            "unpaywall_time_s_max": 0.0,
-            "core_attempts": 0,
-            "core_ok": 0,
-            "core_errors": 0,
-            "core_time_s_total": 0.0,
-            "core_time_s_max": 0.0,
-        }
-
-    max_concurrency = max(int(getattr(settings, "oa_max_concurrency", 5)), 1)
-    sem = asyncio.Semaphore(max_concurrency)
-
-    lock = asyncio.Lock()
-    stats: dict[str, int | float] = {
-        "unpaywall_attempts": 0,
-        "unpaywall_ok": 0,
-        "unpaywall_errors": 0,
-        "unpaywall_time_s_total": 0.0,
-        "unpaywall_time_s_max": 0.0,
-        "core_attempts": 0,
-        "core_ok": 0,
-        "core_errors": 0,
-        "core_time_s_total": 0.0,
-        "core_time_s_max": 0.0,
-    }
-
-    async def _add_stat(key: str, value: int | float) -> None:
-        async with lock:
-            cur = stats.get(key, 0)
-            if isinstance(cur, int) and isinstance(value, int):
-                stats[key] = cur + value
-            elif isinstance(cur, float) and isinstance(value, float):
-                stats[key] = cur + value
-            else:
-                # Best-effort: allow int/float mix.
-                stats[key] = float(cur) + float(value)
-
-    async def _max_stat(key: str, value: float) -> None:
-        async with lock:
-            cur = float(stats.get(key, 0.0))
-            stats[key] = max(cur, float(value))
-
-    async def fill_one(p: Paper) -> None:
-        if p.oa_paper_url:
-            return
-
-        async with sem:
-            if p.doi:
-                await _add_stat("unpaywall_attempts", 1)
-                t0 = time.perf_counter()
-                try:
-                    oa = await unpaywall_find_pdf_url(
-                        client, doi=p.doi, email=settings.pick_unpaywall_email()
-                    )
-                except Exception as e:
-                    oa = None
-                    await _add_stat("unpaywall_errors", 1)
-                    debug(f"unpaywall failed doi={p.doi} error={e}")
-                dt = time.perf_counter() - t0
-                await _add_stat("unpaywall_time_s_total", float(dt))
-                await _max_stat("unpaywall_time_s_max", float(dt))
-                if oa:
-                    await _add_stat("unpaywall_ok", 1)
-                if oa:
-                    p.oa_paper_url = oa
-                    return
-
-            await _add_stat("core_attempts", 1)
-            t0 = time.perf_counter()
-            try:
-                oa = await core_find_oa_url(client, doi=p.doi, title=p.title, api_key=settings.core_api_key)
-            except Exception as e:
-                oa = None
-                await _add_stat("core_errors", 1)
-                debug(f"core failed doi={p.doi} title={normalize_whitespace(p.title)[:80]} error={e}")
-            dt = time.perf_counter() - t0
-            await _add_stat("core_time_s_total", float(dt))
-            await _max_stat("core_time_s_max", float(dt))
-            if oa:
-                await _add_stat("core_ok", 1)
-            if oa:
-                p.oa_paper_url = oa
-
-    await asyncio.gather(*(fill_one(p) for p in papers))
-    return stats
-
-
-async def _fill_agent_remarks(
-    client: HTTPClient,
-    *,
-    query: str,
-    papers: list[Paper],
-    settings: Settings,
-) -> None:
-    if not papers:
-        return
-
-    if not settings.summary_enabled:
-        for p in papers:
-            if not p.agent_remark:
-                # 关闭摘要生成,不生成摘要
-                p.agent_remark = ""
-        return
-
-    cfg = LLMConfig(
-        base_url=settings.llm_base_url,
-        api_key=settings.llm_api_key,
-        max_retries=settings.llm_max_retries,
-        retry_base_delay=settings.llm_retry_base_delay,
-        retry_max_delay=settings.llm_retry_max_delay,
-    )
-
-    llm_ready = bool(cfg.base_url and cfg.api_key and settings.summary_model)
-    if not llm_ready:
-        debug("LLM not configured; skip agent_remark generation.")
-        for p in papers:
-            if not p.agent_remark:
-                p.agent_remark = ""
-        return
-
-    max_concurrency = max(int(settings.summary_max_concurrency), 1)
-    batch_size = max(int(settings.summary_batch_size), 1)
-    max_papers = int(settings.summary_max_papers)
-    if max_papers <= 0:
-        max_papers = len(papers)
-
-    to_summarize = papers[:max_papers]
-    skipped = papers[max_papers:]
-    if skipped:
-        debug(f"SUMMARY_MAX_PAPERS reached ({max_papers}); skip {len(skipped)} papers.")
-
-    sem = asyncio.Semaphore(max_concurrency)
-
-    async def call_with_sem(coro):
-        async with sem:
-            return await coro
-
-    async def fill_single(p: Paper) -> None:
-        p.agent_remark = await call_with_sem(
-            generate_agent_remark(
-                client,
-                cfg=cfg,
-                model=settings.summary_model,
-                query=query,
-                paper=p,
-                max_abstract_chars=settings.summary_abstract_max_chars,
-            )
-        )
-
-    async def handle_batch(batch: list[Paper]) -> None:
-        if not batch:
-            return
-        if len(batch) == 1 or batch_size <= 1:
-            await fill_single(batch[0])
-            return
-
-        mapping = await call_with_sem(
-            generate_agent_remarks_batch(
-                client,
-                cfg=cfg,
-                model=settings.summary_model,
-                query=query,
-                papers=batch,
-                max_abstract_chars=settings.summary_abstract_max_chars,
-            )
-        )
-        if mapping:
-            for i, p in enumerate(batch):
-                remark = mapping.get(i)
-                if remark:
-                    p.agent_remark = remark
-
-        missing = [p for p in batch if not p.agent_remark]
-        if missing:
-            await asyncio.gather(*(fill_single(p) for p in missing))
-
-    batches = [to_summarize[i : i + batch_size] for i in range(0, len(to_summarize), batch_size)]
-    await asyncio.gather(*(handle_batch(b) for b in batches))
-
-
 async def search_papers(
     query: str,
     platforms: list[str],
@@ -621,22 +426,26 @@ async def search_papers(
     final_limit: int | None = None,
     summary_enabled: bool | None = None,
     fields: list[str] | None = None,
+    settings: Settings | None = None,
 ) -> str:
     """
     Search papers across multiple platforms and return a JSON string.
     Required keys per item:
       title, abstract, url, doi, authors, source_platform
+
+    If *settings* is provided it is used directly; otherwise configuration
+    is loaded from environment variables / ``.env`` as before.
     """
-    load_env_file(".env")
-    settings = Settings.from_env()
+    if settings is None:
+        load_env_file(".env")
+        settings = Settings.from_env()
     fields = _normalize_output_fields(fields)
     if final_limit is not None:
         max_limit = max(int(settings.final_limit_max), 1)
         effective = max(int(final_limit), 1)
         effective = min(effective, max_limit)
         settings = replace(settings, final_limit=effective)
-    if summary_enabled is not None:
-        settings = replace(settings, summary_enabled=bool(summary_enabled))
+    _ = summary_enabled  # deprecated and no-op
 
     q_norm = normalize_whitespace(query)
     if settings.query_max_chars > 0 and len(q_norm) > int(settings.query_max_chars):
@@ -657,11 +466,10 @@ async def search_papers(
     t_total0 = time.perf_counter()
     if logger is not None:
         logger.info(
-            "[paper_search] start q={} platforms={} final_limit={} summary_enabled={}",
+            "[paper_search] start q={} platforms={} final_limit={}",
             normalize_whitespace(query),
             platforms,
             settings.final_limit,
-            settings.summary_enabled,
         )
 
     t0 = time.perf_counter()

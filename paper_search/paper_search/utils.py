@@ -3,7 +3,6 @@ from __future__ import annotations
 import hashlib
 import html
 import re
-from urllib.parse import quote_plus
 import xml.etree.ElementTree as ET
 
 
@@ -44,13 +43,6 @@ def safe_filename_component(text: str) -> str:
     text = normalize_whitespace(text)
     text = re.sub(r"[^a-zA-Z0-9._-]+", "_", text)
     return text.strip("._-") or "paper"
-
-
-def internal_pdf_url_for(doi: str, title_hash: str, *, doi_template: str, no_doi_template: str) -> str:
-    doi_norm = normalize_doi(doi)
-    if doi_norm:
-        return doi_template.format(doi=quote_plus(doi_norm))
-    return no_doi_template.format(title_hash=quote_plus(title_hash))
 
 
 def openalex_abstract_from_inverted_index(inverted_index: dict[str, list[int]] | None) -> str:

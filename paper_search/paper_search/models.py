@@ -23,10 +23,6 @@ class Paper:
     authors: str
     source_platform: str
 
-    pdf_url: str = ""
-    oa_paper_url: str = ""
-    agent_remark: str = ""
-
     # Internal fields (not part of the public output schema)
     extra: dict[str, Any] = field(default_factory=dict)
 

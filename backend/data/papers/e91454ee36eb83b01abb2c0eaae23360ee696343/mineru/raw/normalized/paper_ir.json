@@ -1,0 +1,4005 @@
+{
+  "paper_id": "e91454ee36eb83b01abb2c0eaae23360ee696343",
+  "title": "Safe-SD: Safe and Traceable Stable Diffusion with Text Prompt Trigger for Invisible Generative Watermarking",
+  "sections": [
+    {
+      "path": "Safe-SD: Safe and Traceable Stable Diffusion with Text Prompt Trigger for Invisible Generative Watermarking",
+      "title": "Safe-SD: Safe and Traceable Stable Diffusion with Text Prompt Trigger for Invisible Generative Watermarking ",
+      "level": 1,
+      "blocks": [
+        {
+          "type": "title",
+          "sub_type": "",
+          "page_idx": 0,
+          "bbox": [
+            96.0,
+            101.0,
+            898.0,
+            151.0
+          ],
+          "text": "Safe-SD: Safe and Traceable Stable Diffusion with Text Prompt Trigger for Invisible Generative Watermarking ",
+          "section_path": "Safe-SD: Safe and Traceable Stable Diffusion with Text Prompt Trigger for Invisible Generative Watermarking",
+          "order_idx": 0
+        },
+        {
+          "type": "text",
+          "sub_type": "",
+          "page_idx": 0,
+          "bbox": [
+            215.0,
+            162.0,
+            380.0,
+            224.0
+          ],
+          "text": "Zhiyuan Ma∗ Tsinghua University Beijing, China mzyth@tsinghua.edu.cn ",
+          "section_path": "Safe-SD: Safe and Traceable Stable Diffusion with Text Prompt Trigger for Invisible Generative Watermarking",
+          "order_idx": 1
+        },
+        {
+          "type": "text",
+          "sub_type": "",
+          "page_idx": 0,
+          "bbox": [
+            222.0,
+            238.0,
+            372.0,
+            301.0
+          ],
+          "text": "Biqing Qi Tsinghua University Beijing, China qibiqing7@gmail.com ",
+          "section_path": "Safe-SD: Safe and Traceable Stable Diffusion with Text Prompt Trigger for Invisible Generative Watermarking",
+          "order_idx": 2
+        }
+      ]
+    },
+    {
+      "path": "ABSTRACT",
+      "title": "ABSTRACT ",
+      "level": 1,
+      "blocks": [
+        {
+          "type": "title",
+          "sub_type": "",
+          "page_idx": 0,
+          "bbox": [
+            83.0,
+            340.0,
+            184.0,
+            354.0
+          ],
+          "text": "ABSTRACT ",
+          "section_path": "ABSTRACT",
+          "order_idx": 3
+        },
+        {
+          "type": "text",
+          "sub_type": "",
+          "page_idx": 0,
+          "bbox": [
+            81.0,
+            358.0,
+            483.0,
+            762.0
+          ],
+          "text": "Recently, stable diffusion (SD) models have typically flourished in the field of image synthesis and personalized editing, with a range of photorealistic and unprecedented images being successfully generated. As a result, widespread interest has been ignited to develop and use various SD-based tools for visual content creation. However, the exposure of AI-created content on public platforms could raise both legal and ethical risks. In this regard, the traditional methods of adding watermarks to the already generated images (i.e. post-processing) may face a dilemma (e.g., being erased or modified) in terms of copyright protection and content monitoring, since the powerful image inversion and text-to-image editing techniques have been widely explored in SD-based methods. In this work, we propose a Safe and high-traceable Stable Diffusion framework (namely Safe-SD) to adaptively implant the graphical watermarks (e.g., QR code) into the imperceptible structure-related pixels during the generative diffusion process for supporting text-driven invisible watermarking and detection. Different from the previous high-cost injection-then-detection training framework, we design a simple and unified architecture, which makes it possible to simultaneously train watermark injection and detection in a single network, greatly improving the efficiency and convenience of use. Moreover, to further support text-driven generative watermarking and deeply explore its robustness and high-traceability, we elaborately design a ??-sampling and ??-encryption algorithm to fine-tune a latent diffuser wrapped by a VAE for balancing high-fidelity image synthesis and high-traceable watermark detection. We present our quantitative and qualitative results on two representative datasets LSUN, COCO and FFHQ, demonstrating state-of-the-art performance of Safe-SD and showing it significantly outperforms the previous approaches. ",
+          "section_path": "ABSTRACT",
+          "order_idx": 4
+        },
+        {
+          "type": "list",
+          "sub_type": "text",
+          "page_idx": 0,
+          "bbox": [
+            83.0,
+            773.0,
+            321.0,
+            797.0
+          ],
+          "text": "",
+          "section_path": "ABSTRACT",
+          "order_idx": 5
+        },
+        {
+          "type": "image",
+          "sub_type": "",
+          "page_idx": 0,
+          "bbox": [
+            84.0,
+            810.0,
+            196.0,
+            843.0
+          ],
+          "text": "[image]",
+          "section_path": "ABSTRACT",
+          "order_idx": 6
+        },
+        {
+          "type": "text",
+          "sub_type": "",
+          "page_idx": 0,
+          "bbox": [
+            200.0,
+            816.0,
+            482.0,
+            838.0
+          ],
+          "text": "This work is licensed under a Creative Commons Attribution-ShareAlike International 4.0 License. ",
+          "section_path": "ABSTRACT",
+          "order_idx": 7
+        },
+        {
+          "type": "text",
+          "sub_type": "",
+          "page_idx": 0,
+          "bbox": [
+            81.0,
+            852.0,
+            382.0,
+            863.0
+          ],
+          "text": "MM ’24, October 28-November 1, 2024, Melbourne, VIC, Australia ",
+          "section_path": "ABSTRACT",
+          "order_idx": 8
+        },
+        {
+          "type": "text",
+          "sub_type": "",
+          "page_idx": 0,
+          "bbox": [
+            84.0,
+            864.0,
+            303.0,
+            875.0
+          ],
+          "text": "© 2024 Copyright held by the owner/author(s). ",
+          "section_path": "ABSTRACT",
+          "order_idx": 9
+        },
+        {
+          "type": "text",
+          "sub_type": "",
+          "page_idx": 0,
+          "bbox": [
+            84.0,
+            875.0,
+            254.0,
+            883.0
+          ],
+          "text": "ACM ISBN 979-8-4007-0686-8/24/10 ",
+          "section_path": "ABSTRACT",
+          "order_idx": 10
+        },
+        {
+          "type": "text",
+          "sub_type": "",
+          "page_idx": 0,
+          "bbox": [
+            84.0,
+            883.0,
+            272.0,
+            895.0
+          ],
+          "text": "https://doi.org/10.1145/3664647.3681418 ",
+          "section_path": "ABSTRACT",
+          "order_idx": 11
+        },
+        {
+          "type": "text",
+          "sub_type": "",
+          "page_idx": 0,
+          "bbox": [
+            620.0,
+            162.0,
+            779.0,
+            224.0
+          ],
+          "text": "Guoli Jia∗ Tsinghua University Beijing, China exped1230@gmail.com ",
+          "section_path": "ABSTRACT",
+          "order_idx": 12
+        },
+        {
+          "type": "text",
+          "sub_type": "",
+          "page_idx": 0,
+          "bbox": [
+            599.0,
+            237.0,
+            800.0,
+            330.0
+          ],
+          "text": "Bowen Zhou† Tsinghua University Beijing, China Shanghai AI Laboratory Shanghai, China zhoubowen@tsinghua.edu.cn ",
+          "section_path": "ABSTRACT",
+          "order_idx": 13
+        }
+      ]
+    },
+    {
+      "path": "CCS CONCEPTS",
+      "title": "CCS CONCEPTS ",
+      "level": 1,
+      "blocks": [
+        {
+          "type": "title",
+          "sub_type": "",
+          "page_idx": 0,
+          "bbox": [
+            514.0,
+            340.0,
+            653.0,
+            354.0
+          ],
+          "text": "CCS CONCEPTS ",
+          "section_path": "CCS CONCEPTS",
+          "order_idx": 14
+        },
+        {
+          "type": "text",
+          "sub_type": "",
+          "page_idx": 0,
+          "bbox": [
+            513.0,
+            359.0,
+            915.0,
+            387.0
+          ],
+          "text": "• Security and privacy Digital rights management; • Computing methodologies Artificial intelligence. ",
+          "section_path": "CCS CONCEPTS",
+          "order_idx": 15
+        }
+      ]
+    },
+    {
+      "path": "KEYWORDS",
+      "title": "KEYWORDS ",
+      "level": 1,
+      "blocks": [
+        {
+          "type": "title",
+          "sub_type": "",
+          "page_idx": 0,
+          "bbox": [
+            514.0,
+            398.0,
+            622.0,
+            412.0
+          ],
+          "text": "KEYWORDS ",
+          "section_path": "KEYWORDS",
+          "order_idx": 16
+        },
+        {
+          "type": "text",
+          "sub_type": "",
+          "page_idx": 0,
+          "bbox": [
+            514.0,
+            417.0,
+            900.0,
+            431.0
+          ],
+          "text": "Invisible Watermarking, Generative Copyright, Stable Diffusion ",
+          "section_path": "KEYWORDS",
+          "order_idx": 17
+        }
+      ]
+    },
+    {
+      "path": "ACM Reference Format:",
+      "title": "ACM Reference Format: ",
+      "level": 1,
+      "blocks": [
+        {
+          "type": "title",
+          "sub_type": "",
+          "page_idx": 0,
+          "bbox": [
+            514.0,
+            439.0,
+            661.0,
+            450.0
+          ],
+          "text": "ACM Reference Format: ",
+          "section_path": "ACM Reference Format:",
+          "order_idx": 18
+        },
+        {
+          "type": "text",
+          "sub_type": "",
+          "page_idx": 0,
+          "bbox": [
+            513.0,
+            450.0,
+            913.0,
+            515.0
+          ],
+          "text": "Zhiyuan Ma, Guoli Jia, Biqing Qi, and Bowen Zhou. 2024. Safe-SD: Safe and Traceable Stable Diffusion with Text Prompt Trigger for Invisible Generative Watermarking. In Proceedings of the 32nd ACM International Conference on Multimedia (MM ’24), October 28-November 1, 2024, Melbourne, VIC, Australia. ACM, New York, NY, USA, 10 pages. https://doi.org/10.1145/3664647.3681418 ",
+          "section_path": "ACM Reference Format:",
+          "order_idx": 19
+        }
+      ]
+    },
+    {
+      "path": "1 INTRODUCTION",
+      "title": "1 INTRODUCTION ",
+      "level": 1,
+      "blocks": [
+        {
+          "type": "title",
+          "sub_type": "",
+          "page_idx": 0,
+          "bbox": [
+            514.0,
+            531.0,
+            687.0,
+            544.0
+          ],
+          "text": "1 INTRODUCTION ",
+          "section_path": "1 INTRODUCTION",
+          "order_idx": 20
+        },
+        {
+          "type": "text",
+          "sub_type": "",
+          "page_idx": 0,
+          "bbox": [
+            513.0,
+            549.0,
+            913.0,
+            577.0
+          ],
+          "text": "“In art, what we want is the certainty that one spark of original genius shall not be extinguished.” ",
+          "section_path": "1 INTRODUCTION",
+          "order_idx": 21
+        },
+        {
+          "type": "text",
+          "sub_type": "",
+          "page_idx": 0,
+          "bbox": [
+            818.0,
+            578.0,
+            913.0,
+            590.0
+          ],
+          "text": "– Mary Cassatt ",
+          "section_path": "1 INTRODUCTION",
+          "order_idx": 22
+        },
+        {
+          "type": "text",
+          "sub_type": "",
+          "page_idx": 0,
+          "bbox": [
+            511.0,
+            590.0,
+            913.0,
+            811.0
+          ],
+          "text": "Recent years have witnessed the remarkable success of diffusion models [22, 41, 47, 48, 53, 62], due to its impressive generative capabilities in multimodal cummunity [4, 44, 46]. After surpassing GAN on image synthesis [12], diffusion models have shown a promising algorithm with dense theoretical founding, and emerged as the new state-of-the-art among the deep generative models [19, 23, 30, 39, 43, 45, 52, 58, 61, 63, 64, 68, 75]. Notably, Stable Diffusion [59], as one of the most popular and sought-after generative models, has sparked the interest of many researchers, and a series of SD-based works have been proposed and exploited to produce plenty of AIcreated or AI-edited images, such as ControlNet [78], SDEdit [49], DreamBooth [60], Imagic [28], InstructPix2Pix [3] and Null-text Inversion [50], which raises profound concerns about ethical and legal risks [55, 56] for AI-generated content (AIGC) being unscrupulously exposed on public platforms and raises new challenges for copyright protection and content monitoring. ",
+          "section_path": "1 INTRODUCTION",
+          "order_idx": 23
+        },
+        {
+          "type": "text",
+          "sub_type": "",
+          "page_idx": 0,
+          "bbox": [
+            511.0,
+            811.0,
+            913.0,
+            896.0
+          ],
+          "text": "These concerns may be elaborated into the following three aspects: (1) Originator Concern. An artistic work or photograph produced by the original author may be edited or modified at will by AI today and published to the public platform for commercial profit, which infringes on the interests of the originator. Take Figure 1 as an example, when a wonderful hand-crafted watercolor ",
+          "section_path": "1 INTRODUCTION",
+          "order_idx": 24
+        },
+        {
+          "type": "image",
+          "sub_type": "",
+          "page_idx": 1,
+          "bbox": [
+            120.0,
+            104.0,
+            447.0,
+            309.0
+          ],
+          "text": "[image]",
+          "section_path": "1 INTRODUCTION",
+          "order_idx": 27
+        },
+        {
+          "type": "text",
+          "sub_type": "",
+          "page_idx": 1,
+          "bbox": [
+            81.0,
+            369.0,
+            482.0,
+            743.0
+          ],
+          "text": "painting is published online by the originator, another user could download it without any restrictions and then request the SD-based model to edit the artwork through an accompanying prompt “please edit a watercolor picture of...”, whereas ultimately attributes the AIcreated production and its ancillary value to the user and the given prompt, which may have violated the rights of the originator. If this is a commercial advertisement or model shooting, product designs or industrial drawings, etc., it may cause more serious infringement of interests. (2) Developer Concern. Which means the potential risks that SD-based tools open sourced by developers may be abused by people with bad motives to engage in underground activities, such as fake news fabrication, political rumors publishing or pornographic propaganda, etc., simply by editing human characteristics (e.g., replacing faces). (3) Monitor Concern. Which means it’s extremely difficult for the monitor of online platforms to distinguish which visual contents are produced by AI and judge whether it should be safely blocked to ensure their compliance with legal and ethical standards [42], since the fidelity and texture of AI-created images have approached human levels. For example, a generated picture recently won an art competition [18], which suggests humans will soon be unable to discern the subtle differences between AI-generated content and human-created content. Overall, the above concerns illustrate the fact that the emergence of powerful AI-generative tools and the lack of traceability of their generated productions may open the door to new threats such as artwork plagiarism, copyright infringement, political rumors publishing, portrait rights infringement and so on. ",
+          "section_path": "1 INTRODUCTION",
+          "order_idx": 28
+        },
+        {
+          "type": "text",
+          "sub_type": "",
+          "page_idx": 1,
+          "bbox": [
+            81.0,
+            743.0,
+            482.0,
+            896.0
+          ],
+          "text": "To cope with the above concerns, we propose a Safe and hightraceable Stable Diffusion framework with a text prompt trigger for unified generative watermarking and detection, Safe-SD for short. Note that since Stable Diffusion [59] is an open source model with most ecologically complete as well as widely used foundation models and has been applied to numerous generative tasks, we only focus on the SD-based models for invisible watermark injection and extraction, which can be further easily extended to other diffusion models such as DALL-E2 [58], Imagen [61] and Parti [75] by only replacing the weights and bias of the U-Net’s parameters in diffusion models and adding a lightweight inject-convolution layer from our ",
+          "section_path": "1 INTRODUCTION",
+          "order_idx": 29
+        },
+        {
+          "type": "text",
+          "sub_type": "",
+          "page_idx": 1,
+          "bbox": [
+            513.0,
+            106.0,
+            915.0,
+            148.0
+          ],
+          "text": "Safe-SD. Different from existing methods that post-processing [9], injection-then-detection [76] or are based solely on decoder finetuning [16], our proposed models have the following new features: ",
+          "section_path": "1 INTRODUCTION",
+          "order_idx": 30
+        },
+        {
+          "type": "list",
+          "sub_type": "text",
+          "page_idx": 1,
+          "bbox": [
+            540.0,
+            152.0,
+            915.0,
+            359.0
+          ],
+          "text": "",
+          "section_path": "1 INTRODUCTION",
+          "order_idx": 31
+        },
+        {
+          "type": "text",
+          "sub_type": "",
+          "page_idx": 1,
+          "bbox": [
+            511.0,
+            364.0,
+            919.0,
+            489.0
+          ],
+          "text": "Experiments on three representative datasets LSUN-Churches [74], COCO [37], and FFHQ [26] demonstrates the effectiveness of Safe-SD, showing that it achieves the state-of-the-art generative results against previous invisible watermarking methods. Further qualitative evaluations exhibit the pixel-wise differences between the original images and watermarked images, and the robustness study quantitatively evaluates the anti-attack ability, which further verifies the superiority of Safe-SD in balancing high-resolution image synthesis and high-traceable watermark detection. ",
+          "section_path": "1 INTRODUCTION",
+          "order_idx": 32
+        }
+      ]
+    },
+    {
+      "path": "2 RELATED WORK",
+      "title": "2 RELATED WORK ",
+      "level": 1,
+      "blocks": [
+        {
+          "type": "title",
+          "sub_type": "",
+          "page_idx": 1,
+          "bbox": [
+            514.0,
+            503.0,
+            689.0,
+            517.0
+          ],
+          "text": "2 RELATED WORK ",
+          "section_path": "2 RELATED WORK",
+          "order_idx": 33
+        },
+        {
+          "type": "text",
+          "sub_type": "",
+          "page_idx": 1,
+          "bbox": [
+            511.0,
+            521.0,
+            913.0,
+            660.0
+          ],
+          "text": "Diffusion Models. Recent years have witnessed the remarkable success of diffusion-based generative models, due to their excellent performance in diversity and impressive generative capabilities. These previous efforts mainly focus on sampling procedure [38, 64], conditional guidance [12, 52], likelihood maximization [29, 30] and generalization ability [19, 27] and have enabled state-of-the-art image synthesis. Stable Diffusion [59] is one of the most widely used diffusion models, due to its open source and user-friendly features, it has recently gained great attention and become one of the leading researches in image generation and manipulation. ",
+          "section_path": "2 RELATED WORK",
+          "order_idx": 34
+        },
+        {
+          "type": "text",
+          "sub_type": "",
+          "page_idx": 1,
+          "bbox": [
+            511.0,
+            661.0,
+            915.0,
+            896.0
+          ],
+          "text": "Image Watermarking Techniques. To trace copyright and make AI-generated content detectable, numerous watermarking techniques have been proposed for deep neural networks [1, 32, 33, 35, 36, 40, 51], which can basically be classified into two categories: discriminative models and generative models. In discriminative models, watermarking techniques are mainly dominated by white-box or black-box models. The white-box models [5, 8, 14, 34, 66, 67, 70, 72] need access to the models and their parameters (white-box access) in order to extract the watermarks, while the black-box models [6, 11, 21, 24, 65, 73, 77, 79] only adopt predefined inputs as triggers to query the models (black-box access) without caring about their internal details. In generative models, the previous methods mainly investigate GANs by watermarking all generative images [10, 15, 54, 81] such as binary strings embedding [15, 76, 81], textual message encoding [10] and graphic watermark injection [54]. Very recently, some researchers [16, 25, 80] have extended the binary strings embedding technique into ",
+          "section_path": "2 RELATED WORK",
+          "order_idx": 35
+        },
+        {
+          "type": "image",
+          "sub_type": "",
+          "page_idx": 2,
+          "bbox": [
+            125.0,
+            104.0,
+            455.0,
+            256.0
+          ],
+          "text": "[image]",
+          "section_path": "2 RELATED WORK",
+          "order_idx": 39
+        },
+        {
+          "type": "image",
+          "sub_type": "",
+          "page_idx": 2,
+          "bbox": [
+            460.0,
+            104.0,
+            867.0,
+            255.0
+          ],
+          "text": "[image]",
+          "section_path": "2 RELATED WORK",
+          "order_idx": 40
+        },
+        {
+          "type": "text",
+          "sub_type": "",
+          "page_idx": 2,
+          "bbox": [
+            81.0,
+            294.0,
+            482.0,
+            364.0
+          ],
+          "text": "diffusion-based architecture for digital copyright protection, one of the most representative digital watermark injection methods is Stable Signature [16]. However, binary digital watermarking suffers from erasing and overwriting threats when meeting with DDIM inversion [62], overwriting attacks [71] and backdoor attacks [7, 20]. ",
+          "section_path": "2 RELATED WORK",
+          "order_idx": 41
+        },
+        {
+          "type": "text",
+          "sub_type": "",
+          "page_idx": 2,
+          "bbox": [
+            81.0,
+            364.0,
+            482.0,
+            667.0
+          ],
+          "text": "Different from them, we explore a more secure and efficient diffusion-based generative framework Safe-SD, with an imperceptible watermark injection module and textual prompt trigger, which is designed in a unified watermarking and tracing framework, making it possible to simultaneously achieve watermark injection and detection in a single network, greatly improving the training efficiency and convenience of use for multimedia and AIGC community. For security, the Safe-SD enables the SD-based generative network to implant the graphical watermarks (e.g., QR code) into the imperceptible structure-related pixels and retain high-fidelity image synthesis and high-traceable watermark detection capabilities, which is hard to be erased or modified as the graphical watermark is tightly bound to the progressive diffusion process. For robustness, we introduce a fine-tuned latent diffuser with an elaborately designed ??-encryption algorithm for high-traceable watermarking training. Moreover, we also conduct a hacker attacking study (Sec. 4.5), by setting up 5 attack tests to evaluate the robustness of proposed Safe-SD against attacks. Note our Safe-SD methods can be easily extended to other diffusion-based models such as DALL-E2 [58], Imagen [61] and Parti [75] by only replacing the weights and bias of the U-Net’s parameters in diffusion models and adding a lightweight inject-convolution layer have pretrained in our Safe-SD. ",
+          "section_path": "2 RELATED WORK",
+          "order_idx": 42
+        }
+      ]
+    },
+    {
+      "path": "3 METHOD",
+      "title": "3 METHOD ",
+      "level": 1,
+      "blocks": [
+        {
+          "type": "title",
+          "sub_type": "",
+          "page_idx": 2,
+          "bbox": [
+            83.0,
+            683.0,
+            194.0,
+            696.0
+          ],
+          "text": "3 METHOD ",
+          "section_path": "3 METHOD",
+          "order_idx": 43
+        },
+        {
+          "type": "text",
+          "sub_type": "",
+          "page_idx": 2,
+          "bbox": [
+            81.0,
+            700.0,
+            482.0,
+            853.0
+          ],
+          "text": "As depicted in Figure 2, Safe-SD mainly contains two stages: 1) Pre-training stage for unified watermark injector/extractor (Sec.3.1) and 2) Fine-tuning stage for latent diffuser with text prompt trigger (Sec.3.2). The former aims to train a modified SD’s first-stagemodel (with a brand new dual variational autoencoder) to obtain a unified graphic watermark injection and extraction network, whereas the latter serves as a latent diffuser with an elaborately designed temporal $\\lambda$ -encryption algorithm for more secure and high-traceable watermark injection. Moreover, we introduce a novel prompt triggering mechanism to support text-driven image watermarking and copyright detection scenes. ",
+          "section_path": "3 METHOD",
+          "order_idx": 44
+        },
+        {
+          "type": "text",
+          "sub_type": "",
+          "page_idx": 2,
+          "bbox": [
+            81.0,
+            854.0,
+            482.0,
+            896.0
+          ],
+          "text": "During inference, the pipeline of our proposed model is: 1) Safe-SD first accepts a text condition ?? and an image $x$ ({“image synthesis”: $x = \\emptyset$ ; “image editing”: $x \\}$ ) as inputs, and then the ",
+          "section_path": "3 METHOD",
+          "order_idx": 45
+        },
+        {
+          "type": "text",
+          "sub_type": "",
+          "page_idx": 2,
+          "bbox": [
+            511.0,
+            294.0,
+            913.0,
+            502.0
+          ],
+          "text": "prompt trigger $p ( \\cdot )$ determines which watermark ?? should be injected based on the given condition ??. Meanwhile, Safe-SD randomly allocates a key $m \\in \\{ 0 , 1 \\} ^ { T }$ $T$ is diffusion steps) into the next step; 2) The encoder $\\varepsilon$ of the first-stage-model first encodes the image $x$ and watermark $\\boldsymbol { w }$ into latent variables $z _ { i }$ and $z _ { w }$ respectively and then feeds them immediately into the second stage; 3) The latent diffuser first accepts the latent variables $z _ { i }$ and $z _ { w }$ , condition ?? and the key $m$ , then performs temporal $\\lambda$ -encryption algorithm (Algorithm 1) for high-traceable watermark injection or performs condition-guided invert denoising (Algorithm 2) for high-fidelity image synthesis; 4) The decoder $\\mathcal { D } _ { i }$ of the first-stage-model then serves as a watermarker to generate the above watermarked images with ??-encryption for safe readout, and another decoder $\\mathcal { D } _ { w }$ serves as a detector to decode the injected watermark hidden from the images for detection, authentication and copyright trace. ",
+          "section_path": "3 METHOD",
+          "order_idx": 46
+        }
+      ]
+    },
+    {
+      "path": "3.1 Pre-training watermark injector/extractor",
+      "title": "3.1 Pre-training watermark injector/extractor ",
+      "level": 2,
+      "blocks": [
+        {
+          "type": "title",
+          "sub_type": "",
+          "page_idx": 2,
+          "bbox": [
+            513.0,
+            508.0,
+            901.0,
+            523.0
+          ],
+          "text": "3.1 Pre-training watermark injector/extractor ",
+          "section_path": "3.1 Pre-training watermark injector/extractor",
+          "order_idx": 47
+        },
+        {
+          "type": "text",
+          "sub_type": "",
+          "page_idx": 2,
+          "bbox": [
+            511.0,
+            526.0,
+            913.0,
+            651.0
+          ],
+          "text": "Our first-stage-model is designed to jointly train a watermark extractor $\\mathcal { D } _ { w }$ and an image generator $\\mathcal { D } _ { i }$ with invisible watermarking when they are equally fed the latent variables $z _ { m }$ of an image mixed with watermark features. Since it is fully pre-trained to balance the two goals of simultaneously generating high-quality images and clear watermarks, this first-stage-model can adapt to accept any latent mixture $z _ { m } ^ { * }$ with ??-encryption watermarking in the second stage, to ultimately complete the dual decodings. Details of the first-stage-model are introduced below. ",
+          "section_path": "3.1 Pre-training watermark injector/extractor",
+          "order_idx": 48
+        },
+        {
+          "type": "text",
+          "sub_type": "",
+          "page_idx": 2,
+          "bbox": [
+            513.0,
+            652.0,
+            913.0,
+            748.0
+          ],
+          "text": "Shared graphic encoder. Given an input image $x$ and a randomly searched watermark $w , x , w \\in \\mathbb { R } ^ { H \\times \\bar { W } \\times 3 }$ . The shared graphic encoder E first projects the image $x$ and watermark $\\boldsymbol { w }$ into latent variables $z _ { i }$ and $z _ { w }$ , i.e.,, $\\boldsymbol { z } _ { i } = \\boldsymbol { \\mathcal { E } } ( \\boldsymbol { x } ) , \\boldsymbol { z } _ { w } = \\boldsymbol { \\mathcal { E } } ( w ) , \\boldsymbol { z } _ { i } , \\boldsymbol { z } _ { w } \\in \\mathbb { R } ^ { h \\times w \\times d }$ , where $h$ and ?? respectively denote scaled height and width (default scaled factor $f = H / h = W / w = 8 )$ , and $d$ is the dimensionality of the projected latent variables. ",
+          "section_path": "3.1 Pre-training watermark injector/extractor",
+          "order_idx": 49
+        },
+        {
+          "type": "text",
+          "sub_type": "",
+          "page_idx": 2,
+          "bbox": [
+            513.0,
+            750.0,
+            913.0,
+            819.0
+          ],
+          "text": "Injection convolution layer. Safe-SD first concatenates the projected image $z _ { i }$ and watermark $z _ { w }$ in the channel dimension, and then obtains the mixture features $\\boldsymbol { z } _ { m } \\in \\mathbb { R } ^ { h \\times w \\times d }$ through a simple injection convolution layer ???? (·) : Rℎ×??×2?? → Rℎ×??×?? . $f _ { c } ( . ) : \\mathbb { R } ^ { h \\times w \\times 2 d }  \\mathbb { R } ^ { h \\times w \\times d }$ Formally, ",
+          "section_path": "3.1 Pre-training watermark injector/extractor",
+          "order_idx": 50
+        },
+        {
+          "type": "equation",
+          "sub_type": "",
+          "page_idx": 2,
+          "bbox": [
+            665.0,
+            821.0,
+            913.0,
+            835.0
+          ],
+          "text": "$$\nz _ {m} = f _ {c} \\left(z _ {i}, z _ {w}\\right) \\tag {1}\n$$",
+          "section_path": "3.1 Pre-training watermark injector/extractor",
+          "order_idx": 51
+        },
+        {
+          "type": "text",
+          "sub_type": "",
+          "page_idx": 2,
+          "bbox": [
+            513.0,
+            840.0,
+            913.0,
+            896.0
+          ],
+          "text": "Dual goal decoders. To synchronously train an image generator $\\mathcal { D } _ { i }$ with invisible watermarking and a watermark extractor $\\mathcal { D } _ { w }$ , we introduce a dual decoding mechanism with two decoder copies from SD’s first-stage-model (i.e., vae [13]), and one copy with frozen ",
+          "section_path": "3.1 Pre-training watermark injector/extractor",
+          "order_idx": 52
+        },
+        {
+          "type": "code",
+          "sub_type": "algorithm",
+          "page_idx": 3,
+          "bbox": [
+            83.0,
+            121.0,
+            480.0,
+            406.0
+          ],
+          "text": "",
+          "section_path": "3.1 Pre-training watermark injector/extractor",
+          "order_idx": 55
+        },
+        {
+          "type": "text",
+          "sub_type": "",
+          "page_idx": 3,
+          "bbox": [
+            81.0,
+            431.0,
+            482.0,
+            542.0
+          ],
+          "text": "parameters $\\theta _ { f }$ and the other copy with trainable parameters $\\theta _ { t }$ Note that since decoder $\\mathcal { D } _ { i }$ plays the role of an image generator with an invisible watermark injection and has been fed to the mixture variable $z _ { m }$ , it needs to be assigned to the frozen parameter $\\theta _ { f }$ for watermarking image generation, while decoder $\\mathcal { D } _ { w }$ only serves as a watermark extractor (also with the mixed variables $z _ { m }$ as input), therefore need to be assigned trainable parameters $\\theta _ { t }$ for watermark extraction. Formally, ",
+          "section_path": "3.1 Pre-training watermark injector/extractor",
+          "order_idx": 56
+        },
+        {
+          "type": "equation",
+          "sub_type": "",
+          "page_idx": 3,
+          "bbox": [
+            178.0,
+            550.0,
+            480.0,
+            566.0
+          ],
+          "text": "$$\n\\hat {x} = \\mathcal {D} _ {i} \\left(z _ {m}; \\theta_ {f}\\right), \\hat {w} = \\mathcal {D} _ {w} \\left(z _ {m}; \\theta_ {t}\\right) \\tag {2}\n$$",
+          "section_path": "3.1 Pre-training watermark injector/extractor",
+          "order_idx": 57
+        },
+        {
+          "type": "text",
+          "sub_type": "",
+          "page_idx": 3,
+          "bbox": [
+            81.0,
+            571.0,
+            482.0,
+            627.0
+          ],
+          "text": "To maximize the accuracy of watermark extraction and enable to generate high-resolution images, we set up a weighting-based loss $\\mathcal { L } _ { s ^ { 1 } }$ to supervise the entire first-stage-model, which can be formally represented as, ",
+          "section_path": "3.1 Pre-training watermark injector/extractor",
+          "order_idx": 58
+        },
+        {
+          "type": "equation",
+          "sub_type": "",
+          "page_idx": 3,
+          "bbox": [
+            163.0,
+            632.0,
+            480.0,
+            648.0
+          ],
+          "text": "$$\n\\mathcal {L} _ {s ^ {1}} = \\left\\| x - \\hat {x} \\right\\| ^ {2} + \\gamma \\cdot \\left\\| w - \\hat {w} \\right\\| ^ {2} + \\mathcal {L} _ {a d v} \\tag {3}\n$$",
+          "section_path": "3.1 Pre-training watermark injector/extractor",
+          "order_idx": 59
+        },
+        {
+          "type": "text",
+          "sub_type": "",
+          "page_idx": 3,
+          "bbox": [
+            81.0,
+            655.0,
+            482.0,
+            696.0
+          ],
+          "text": "where $\\gamma$ is the weighting hyperparameter (default $\\gamma$ equals 1), and $\\mathcal { L } _ { a d v }$ denotes the adversarial training loss, which maintains the same setting as in VQGAN [13]. ",
+          "section_path": "3.1 Pre-training watermark injector/extractor",
+          "order_idx": 60
+        }
+      ]
+    },
+    {
+      "path": "3.2 Fine-tuning latent ??-encryption diffuser",
+      "title": "3.2 Fine-tuning latent ??-encryption diffuser ",
+      "level": 2,
+      "blocks": [
+        {
+          "type": "title",
+          "sub_type": "",
+          "page_idx": 3,
+          "bbox": [
+            83.0,
+            696.0,
+            452.0,
+            713.0
+          ],
+          "text": "3.2 Fine-tuning latent ??-encryption diffuser ",
+          "section_path": "3.2 Fine-tuning latent ??-encryption diffuser",
+          "order_idx": 61
+        },
+        {
+          "type": "text",
+          "sub_type": "",
+          "page_idx": 3,
+          "bbox": [
+            81.0,
+            715.0,
+            482.0,
+            811.0
+          ],
+          "text": "The second-stage-model mainly serves as a temporal ??-encryption diffuser with a prompt triggering mechanism, which mainly relies on a temporal injection algorithm by accepting a binary key $m \\in$ $\\{ 0 , 1 \\} ^ { T }$ as instruction-code to control whether each diffusion step requires performing watermark injection, for cryptographic image synthesis with minor structural changes. Details of the second-stagemodel are as follows. ",
+          "section_path": "3.2 Fine-tuning latent ??-encryption diffuser",
+          "order_idx": 62
+        },
+        {
+          "type": "text",
+          "sub_type": "",
+          "page_idx": 3,
+          "bbox": [
+            81.0,
+            811.0,
+            482.0,
+            896.0
+          ],
+          "text": "Prompt trigger. The prompt trigger is designed to achieve nonsensitive watermark triggering, which accepts a textual editing- or synthesis-related instruction as input, by following a CLIP embedding layer and a linear prompt trigger layer, to ultimately obtain a watermark (pre-defined or user-defined watermark) with the highest probability for subsequent invisible watermark injection. Moreover, ",
+          "section_path": "3.2 Fine-tuning latent ??-encryption diffuser",
+          "order_idx": 63
+        },
+        {
+          "type": "code",
+          "sub_type": "algorithm",
+          "page_idx": 3,
+          "bbox": [
+            526.0,
+            122.0,
+            911.0,
+            402.0
+          ],
+          "text": "",
+          "section_path": "3.2 Fine-tuning latent ??-encryption diffuser",
+          "order_idx": 64
+        },
+        {
+          "type": "text",
+          "sub_type": "",
+          "page_idx": 3,
+          "bbox": [
+            511.0,
+            434.0,
+            913.0,
+            545.0
+          ],
+          "text": "for stable copyright protection, Safe-SD can also support watermark injection based on special instructions, such as when given the instruction: “Please help me edit this personal photo with my avatar watermark [U]” and the accompanying avatar “[U]” as a personalized watermark, Safe-SD can be triggered directly with this specified watermarking LOGO. Note that in our experiments, we adopt a public LOGO dataset 1 to represent pre-defined or userdefined watermarks for the training of the Safe-SD. ",
+          "section_path": "3.2 Fine-tuning latent ??-encryption diffuser",
+          "order_idx": 65
+        },
+        {
+          "type": "text",
+          "sub_type": "",
+          "page_idx": 3,
+          "bbox": [
+            513.0,
+            545.0,
+            913.0,
+            628.0
+          ],
+          "text": "Forward diffusion with ??-sampling. To enable the watermark to be adaptively injected into the image synthesis process with temporal diffusion and to maintain traceability, we propose the forward diffusion with ??-sampling. We first introduce the definitions of ??- sampling and ??-distribution below, and then explain how it can be used for watermark injection based on temporal encryption. ",
+          "section_path": "3.2 Fine-tuning latent ??-encryption diffuser",
+          "order_idx": 66
+        },
+        {
+          "type": "text",
+          "sub_type": "",
+          "page_idx": 3,
+          "bbox": [
+            513.0,
+            628.0,
+            913.0,
+            710.0
+          ],
+          "text": "First, for a given sequence $( x _ { 1 } , . . . , x _ { N } )$ , the ??-sampling operation is defined as: randomly selecting ?? elements from the sequence with $N$ elements for sampling, and at the same time, the unsampled elements are set to 0. Thereafter the obtained discrete distribution is referred to as the $^ { * } \\lambda$ -distribution” corresponding to this ??-sampling, abbreviated as ??-?????? (·), where, ",
+          "section_path": "3.2 Fine-tuning latent ??-encryption diffuser",
+          "order_idx": 67
+        },
+        {
+          "type": "equation",
+          "sub_type": "",
+          "page_idx": 3,
+          "bbox": [
+            612.0,
+            719.0,
+            911.0,
+            751.0
+          ],
+          "text": "$$\n\\lambda - d i s (i) = \\left\\{ \\begin{array}{l l} x _ {i} & \\text {i f} x _ {i} \\text {i s s a m p l e d ,} \\\\ 0 & \\text {o t h e r w i s e .} \\end{array} \\right. \\tag {4}\n$$",
+          "section_path": "3.2 Fine-tuning latent ??-encryption diffuser",
+          "order_idx": 68
+        },
+        {
+          "type": "text",
+          "sub_type": "",
+          "page_idx": 3,
+          "bbox": [
+            513.0,
+            761.0,
+            913.0,
+            861.0
+          ],
+          "text": "Then, we introduce this ??-sampling based temporal encryption mechanism, which aims to bind a given watermark $\\boldsymbol { w }$ to a diffusion synthesis process $q ( z _ { m } ^ { ( t ) } | z _ { i } ^ { ( t - 1 ) } , z _ { w } ^ { ( { t - 1 } ) } )$ | ?? and simultaneously generate a binary key $m$ for traceability, as illustrated in Algorithm 1. As shown in Figure 3, when $\\lambda ( t )$ equals $t$ , the Safe-SD is activated to perform the watermark injection process through a temporal injection cell (right side of Figure 3), which is consistent with the ",
+          "section_path": "3.2 Fine-tuning latent ??-encryption diffuser",
+          "order_idx": 69
+        },
+        {
+          "type": "page_footnote",
+          "sub_type": "",
+          "page_idx": 3,
+          "bbox": [
+            514.0,
+            883.0,
+            769.0,
+            895.0
+          ],
+          "text": "1https://github.com/msn199959/Logo-2k-plus-Dataset ",
+          "section_path": "3.2 Fine-tuning latent ??-encryption diffuser",
+          "order_idx": 72
+        },
+        {
+          "type": "image",
+          "sub_type": "",
+          "page_idx": 4,
+          "bbox": [
+            112.0,
+            103.0,
+            269.0,
+            205.0
+          ],
+          "text": "[image]",
+          "section_path": "3.2 Fine-tuning latent ??-encryption diffuser",
+          "order_idx": 74
+        },
+        {
+          "type": "image",
+          "sub_type": "",
+          "page_idx": 4,
+          "bbox": [
+            277.0,
+            103.0,
+            450.0,
+            207.0
+          ],
+          "text": "[image]",
+          "section_path": "3.2 Fine-tuning latent ??-encryption diffuser",
+          "order_idx": 75
+        },
+        {
+          "type": "text",
+          "sub_type": "",
+          "page_idx": 4,
+          "bbox": [
+            81.0,
+            252.0,
+            483.0,
+            279.0
+          ],
+          "text": "first-stage-model to ensure good generalization for watermark injection and can be formally described as, ",
+          "section_path": "3.2 Fine-tuning latent ??-encryption diffuser",
+          "order_idx": 76
+        },
+        {
+          "type": "equation",
+          "sub_type": "",
+          "page_idx": 4,
+          "bbox": [
+            199.0,
+            282.0,
+            480.0,
+            303.0
+          ],
+          "text": "$$\nz _ {m} ^ {(t - 1)} = f _ {c} \\left(z _ {i} ^ {(t - 1)}, z _ {w} ^ {(t - 1)}\\right) \\tag {5}\n$$",
+          "section_path": "3.2 Fine-tuning latent ??-encryption diffuser",
+          "order_idx": 77
+        },
+        {
+          "type": "equation",
+          "sub_type": "",
+          "page_idx": 4,
+          "bbox": [
+            153.0,
+            309.0,
+            482.0,
+            332.0
+          ],
+          "text": "$$\nz _ {m} ^ {(t)} = \\alpha_ {t} \\cdot z _ {m} ^ {(t - 1)} + \\sqrt {1 - \\alpha_ {t} ^ {2}} \\epsilon , \\epsilon \\sim \\mathcal {N} (\\boldsymbol {0}, I) \\tag {6}\n$$",
+          "section_path": "3.2 Fine-tuning latent ??-encryption diffuser",
+          "order_idx": 78
+        },
+        {
+          "type": "text",
+          "sub_type": "",
+          "page_idx": 4,
+          "bbox": [
+            81.0,
+            334.0,
+            483.0,
+            439.0
+          ],
+          "text": "where $f _ { c } ( \\cdot )$ denotes an aforementioned learnable injection convolution layer proposed by us for mapping the concatenation of the latent image ?? (?? $z _ { i } ^ { ( t - 1 ) }$ and watermark ?? (???? $z _ { w } ^ { ( t - 1 ) }$ into a latent watermarking mixture ?? (?? −1)?? . Whereas, when ??(?? ) equals 0, the Safe-SD $z _ { m } ^ { ( t - 1 ) }$ $\\lambda ( t )$ performs this forward diffusion simply by adding random noise $\\epsilon \\sim { \\cal N } ( 0 , I )$ to the latent vector $z _ { i } ^ { ( t - 1 ) }$ of the image from the previous step, formally, ",
+          "section_path": "3.2 Fine-tuning latent ??-encryption diffuser",
+          "order_idx": 79
+        },
+        {
+          "type": "equation",
+          "sub_type": "",
+          "page_idx": 4,
+          "bbox": [
+            151.0,
+            445.0,
+            482.0,
+            468.0
+          ],
+          "text": "$$\nz _ {m} ^ {(t)} = \\alpha_ {t} \\cdot z _ {i} ^ {(t - 1)} + \\sqrt {1 - \\alpha_ {t} ^ {2}} \\epsilon , \\epsilon \\sim \\mathcal {N} (0, I) \\tag {7}\n$$",
+          "section_path": "3.2 Fine-tuning latent ??-encryption diffuser",
+          "order_idx": 80
+        },
+        {
+          "type": "text",
+          "sub_type": "",
+          "page_idx": 4,
+          "bbox": [
+            81.0,
+            470.0,
+            480.0,
+            527.0
+          ],
+          "text": "Note Safe-SD uses a binary value of 0 or 1 to record this forward diffusion process with ??-sampling and then to compose them into a binary key $m \\in \\{ 0 , 1 \\} ^ { T }$ , which will serve as readout to control the subsequent inverted denoising. ",
+          "section_path": "3.2 Fine-tuning latent ??-encryption diffuser",
+          "order_idx": 81
+        },
+        {
+          "type": "text",
+          "sub_type": "",
+          "page_idx": 4,
+          "bbox": [
+            81.0,
+            527.0,
+            482.0,
+            678.0
+          ],
+          "text": "Inverted denoising based $\\lambda$ -encryption. To fine-tune the latent diffuser from second-stage-model to enable the input image, watermark and their latent mixture to be correctly denoised by an U-Net network, and to ultimately ensure high-fidelity image synthesis and watermark extraction, we propose this inverted denoising module based ??-encryption. Consistent with the forward process mentioned above, this inverted denoising module is controlled by an if-else-branched Markov chain, which is recorded by the binary key $m$ (e.g., 10101101) generated above. Similarly, we first introduce the ??-encryption mechanism below, and then explain how it can be used for inverted denoising. ",
+          "section_path": "3.2 Fine-tuning latent ??-encryption diffuser",
+          "order_idx": 82
+        },
+        {
+          "type": "text",
+          "sub_type": "",
+          "page_idx": 4,
+          "bbox": [
+            81.0,
+            679.0,
+            482.0,
+            790.0
+          ],
+          "text": "First, for a given sequence $( x _ { 1 } , . . . , x _ { N } )$ and a key $m \\in \\{ 0 , 1 \\} ^ { N }$ , this ??-encryption is defined as: at any position where $m _ { i } = 1$ , the original data $x _ { i }$ is modified into $x _ { i } ^ { * }$ by superimposing a perturbation $x _ { \\Delta }$ onto $x _ { i }$ (i.e., $x _ { i } ^ { * } = x _ { i } \\oplus x _ { \\Delta } )$ , while keeping the original data unchanged at other positions where $m _ { i } = 0$ , to finally obtain the encrypted sequence. The advantage of this ??-encryption method is that it maintains the distribution of the original data as much as possible while achieving controllable encryption. ",
+          "section_path": "3.2 Fine-tuning latent ??-encryption diffuser",
+          "order_idx": 83
+        },
+        {
+          "type": "text",
+          "sub_type": "",
+          "page_idx": 4,
+          "bbox": [
+            81.0,
+            790.0,
+            482.0,
+            873.0
+          ],
+          "text": "Then, we introduce a ??-encryption based inverted denoising strategy, which treats the latent watermark $z _ { w }$ as a perturbation when $m = 1$ , and $z _ { w }$ is subsequently superimposed on the latent variable $z _ { i }$ of the image (i.e., $z _ { m } ^ { * } = z _ { i } \\oplus z _ { w } )$ by an injection convolution layer $f _ { c } ( \\cdot )$ to ultimately obtain a watermarked image (i.e., encrypted vector) in latent space, as shown in Figure 3(b). Formally, ",
+          "section_path": "3.2 Fine-tuning latent ??-encryption diffuser",
+          "order_idx": 84
+        },
+        {
+          "type": "equation",
+          "sub_type": "",
+          "page_idx": 4,
+          "bbox": [
+            151.0,
+            877.0,
+            482.0,
+            898.0
+          ],
+          "text": "$$\nz _ {m} ^ {(t)} = z _ {i} ^ {(t - 1)} \\oplus z _ {w} ^ {(t - 1)} = f _ {c} \\left(z _ {i} ^ {(t - 1)}, z _ {w} ^ {(t - 1)}\\right) \\tag {8}\n$$",
+          "section_path": "3.2 Fine-tuning latent ??-encryption diffuser",
+          "order_idx": 85
+        },
+        {
+          "type": "image",
+          "sub_type": "",
+          "page_idx": 4,
+          "bbox": [
+            540.0,
+            104.0,
+            696.0,
+            205.0
+          ],
+          "text": "[image]",
+          "section_path": "3.2 Fine-tuning latent ??-encryption diffuser",
+          "order_idx": 86
+        },
+        {
+          "type": "image",
+          "sub_type": "",
+          "page_idx": 4,
+          "bbox": [
+            705.0,
+            104.0,
+            880.0,
+            210.0
+          ],
+          "text": "[image]",
+          "section_path": "3.2 Fine-tuning latent ??-encryption diffuser",
+          "order_idx": 87
+        },
+        {
+          "type": "text",
+          "sub_type": "",
+          "page_idx": 4,
+          "bbox": [
+            511.0,
+            256.0,
+            913.0,
+            369.0
+          ],
+          "text": "Furthermore, as illustrated in Algorithm 2, when $m = 0$ , the latent variable $z _ { i }$ of the original image is directly sent to U-Net for denoising without adding any disturbance. As shown in Figure 4, when denoising the perturbed image $z _ { m } ^ { ( t ) }$ , the watermark $z _ { w } ^ { ( t ) }$ ?? is simultaneously fed into U-Net for balancing image generation and watermark extraction. Note that this does not require using U-Net twice but simply by first concatenating them and then feeding them together into a shared U-Net network $\\epsilon _ { \\theta } ( \\cdot )$ for denoising as, ",
+          "section_path": "3.2 Fine-tuning latent ??-encryption diffuser",
+          "order_idx": 88
+        },
+        {
+          "type": "equation",
+          "sub_type": "",
+          "page_idx": 4,
+          "bbox": [
+            575.0,
+            373.0,
+            911.0,
+            396.0
+          ],
+          "text": "$$\n\\left. \\left(z _ {m} ^ {(t - 1)}, z _ {w} ^ {(t - 1)}\\right) = \\mathcal {S} _ {d d i m} \\left(\\epsilon_ {\\theta} ^ {(t)} \\left(z _ {m} ^ {(t)}, z _ {w} ^ {(t)} \\mid c, t\\right)\\right) \\right. \\tag {9}\n$$",
+          "section_path": "3.2 Fine-tuning latent ??-encryption diffuser",
+          "order_idx": 89
+        },
+        {
+          "type": "text",
+          "sub_type": "",
+          "page_idx": 4,
+          "bbox": [
+            513.0,
+            398.0,
+            913.0,
+            483.0
+          ],
+          "text": "where $S _ { d d i m } ( \\cdot )$ denotes the DDIM [62] sampling strategy executed during inference, which is sampled from the predicted $\\dot { \\epsilon } _ { \\theta } ^ { ( t ) }$ to obtain the final ?? (?? −?? $z _ { m } ^ { ( t - 1 ) }$ and $z _ { w } ^ { ( t - 1 ) }$ (through a tensor split operation torch.chunk()). Similarly, when an unperturbed image $z _ { i } ^ { ( t ) }$ as input, the watermark ?? (?? )?? i $z _ { w } ^ { ( t ) }$ s also sent to U-Net for denoising as, ",
+          "section_path": "3.2 Fine-tuning latent ??-encryption diffuser",
+          "order_idx": 90
+        },
+        {
+          "type": "equation",
+          "sub_type": "",
+          "page_idx": 4,
+          "bbox": [
+            584.0,
+            486.0,
+            911.0,
+            508.0
+          ],
+          "text": "$$\n\\left. \\left(z _ {i} ^ {(t - 1)}, z _ {w} ^ {(t - 1)}\\right) = \\mathcal {S} _ {d d i m} \\left(\\epsilon_ {\\theta} ^ {(t)} \\left(z _ {i} ^ {(t)}, z _ {w} ^ {(t)} | c, t\\right)\\right) \\right. \\tag {10}\n$$",
+          "section_path": "3.2 Fine-tuning latent ??-encryption diffuser",
+          "order_idx": 91
+        },
+        {
+          "type": "text",
+          "sub_type": "",
+          "page_idx": 4,
+          "bbox": [
+            513.0,
+            513.0,
+            911.0,
+            555.0
+          ],
+          "text": "Fine-tuning objectives. To fine-tune this latent diffuser with ??-sampling and $\\lambda$ -encryption to adapt to the dual goal decoders from the first-stage-model, we set up a stepwise denoising loss, ",
+          "section_path": "3.2 Fine-tuning latent ??-encryption diffuser",
+          "order_idx": 92
+        },
+        {
+          "type": "equation",
+          "sub_type": "",
+          "page_idx": 4,
+          "bbox": [
+            535.0,
+            556.0,
+            911.0,
+            601.0
+          ],
+          "text": "$$\n\\mathcal {L} _ {s ^ {2}} = \\left| \\left| \\underbrace {\\epsilon - \\epsilon_ {\\theta} ^ {(t)} \\left(z _ {m} ^ {(t)} , z _ {w} ^ {(t)}\\right)} _ {m _ {t} = 1} \\right| \\right| _ {2} ^ {2} + \\left| \\left| \\underbrace {\\epsilon - \\epsilon_ {\\theta} ^ {(t)} \\left(z _ {i} ^ {(t)} , z _ {w} ^ {(t)}\\right)} _ {m _ {t} = 0} \\right| \\right| _ {2} ^ {2} \\tag {11}\n$$",
+          "section_path": "3.2 Fine-tuning latent ??-encryption diffuser",
+          "order_idx": 93
+        },
+        {
+          "type": "text",
+          "sub_type": "",
+          "page_idx": 4,
+          "bbox": [
+            513.0,
+            604.0,
+            915.0,
+            646.0
+          ],
+          "text": "where $\\epsilon \\sim { \\cal N } ( 0 , I )$ denotes standard Gaussian noise, which is consistent with Stable Diffusion [59]. Moreover, the classifier-free guidance technique [23] is also used in the training of Safe-SD. ",
+          "section_path": "3.2 Fine-tuning latent ??-encryption diffuser",
+          "order_idx": 94
+        }
+      ]
+    },
+    {
+      "path": "4 EXPERIMENTS",
+      "title": "4 EXPERIMENTS ",
+      "level": 1,
+      "blocks": [
+        {
+          "type": "title",
+          "sub_type": "",
+          "page_idx": 4,
+          "bbox": [
+            514.0,
+            657.0,
+            671.0,
+            671.0
+          ],
+          "text": "4 EXPERIMENTS ",
+          "section_path": "4 EXPERIMENTS",
+          "order_idx": 95
+        }
+      ]
+    },
+    {
+      "path": "4.1 Experimental Setting",
+      "title": "4.1 Experimental Setting ",
+      "level": 2,
+      "blocks": [
+        {
+          "type": "title",
+          "sub_type": "",
+          "page_idx": 4,
+          "bbox": [
+            514.0,
+            676.0,
+            732.0,
+            693.0
+          ],
+          "text": "4.1 Experimental Setting ",
+          "section_path": "4.1 Experimental Setting",
+          "order_idx": 96
+        },
+        {
+          "type": "text",
+          "sub_type": "",
+          "page_idx": 4,
+          "bbox": [
+            511.0,
+            696.0,
+            913.0,
+            876.0
+          ],
+          "text": "Datasets. We follow [13] to pre-train the first-stage-model of our Safe-SD on LSUN-Churches [74], COCO [37], FFHQ 2 [26] and Logo-2K [69] datasets with image resolution $2 5 6 \\times 2 5 6$ , and further follow Dreambooth [60] to fine-tune the latent diffuser of the second-stage-model for ??−encrypted watermark injection. For the training of the text-conditional diffusion models, we follow [60] to leverage a textual prompt (e.g., “a photo of a church with watermark [V] (or [U])”) as the guidance condition and adopt the graphical LOGOs from Logo-2K as pre-defined watermarks to finetune our Safe-SD model in our experiments. Specifically, 126, 227 images on the training set of LSUN-Churches, 63, 000 images on the training set of FFHQ and 167, 140 watermarks on Logo-2K are utilized to train the models. During testing, 1, 000 images and 1, 000 ",
+          "section_path": "4.1 Experimental Setting",
+          "order_idx": 97
+        },
+        {
+          "type": "page_footnote",
+          "sub_type": "",
+          "page_idx": 4,
+          "bbox": [
+            514.0,
+            882.0,
+            707.0,
+            895.0
+          ],
+          "text": "2https://github.com/NVlabs/ffhq-dataset ",
+          "section_path": "4.1 Experimental Setting",
+          "order_idx": 99
+        },
+        {
+          "type": "image",
+          "sub_type": "",
+          "page_idx": 5,
+          "bbox": [
+            125.0,
+            104.0,
+            867.0,
+            377.0
+          ],
+          "text": "[image]",
+          "section_path": "4.1 Experimental Setting",
+          "order_idx": 101
+        },
+        {
+          "type": "text",
+          "sub_type": "",
+          "page_idx": 5,
+          "bbox": [
+            81.0,
+            429.0,
+            480.0,
+            455.0
+          ],
+          "text": "watermarks are randomly composed to perform the quantitatively experimental evaluations. ",
+          "section_path": "4.1 Experimental Setting",
+          "order_idx": 102
+        },
+        {
+          "type": "text",
+          "sub_type": "",
+          "page_idx": 5,
+          "bbox": [
+            81.0,
+            455.0,
+            482.0,
+            583.0
+          ],
+          "text": "Implementation details. We follow SD [59] to resize all the images to a resolution of $2 5 6 \\times 2 5 6$ , and the batch size is set to 4. The scaling factor $f$ is set to 8 and the guidance factor of the classifierfree is set to 7.5. During inference, the pre-trained CLIP embedding layer [57] is leveraged to match the suitable watermarks for adaptive prompt triggering strategy and DDIM [62] sampling is executed for final image synthesis. All the experiments are performed for 20 epochs on 2 NVIDIA RTX3090 GPUs with PyTorch framework and the optimization and schedule setups are consistent with [59]. ",
+          "section_path": "4.1 Experimental Setting",
+          "order_idx": 103
+        }
+      ]
+    },
+    {
+      "path": "4.2 Image generation quality for watermarking",
+      "title": "4.2 Image generation quality for watermarking ",
+      "level": 2,
+      "blocks": [
+        {
+          "type": "title",
+          "sub_type": "",
+          "page_idx": 5,
+          "bbox": [
+            81.0,
+            614.0,
+            482.0,
+            631.0
+          ],
+          "text": "4.2 Image generation quality for watermarking ",
+          "section_path": "4.2 Image generation quality for watermarking",
+          "order_idx": 104
+        },
+        {
+          "type": "text",
+          "sub_type": "",
+          "page_idx": 5,
+          "bbox": [
+            81.0,
+            632.0,
+            482.0,
+            896.0
+          ],
+          "text": "Qualitative Evaluation. To evaluate the image generation quality and the fidelity with watermarking, we first conduct the qualitative experiments by visualizing the pixel-level differences $( \\times 1 0 )$ between the original image and watermarked image (marked as W/. Watermark), which are presented in Figure 5. Specifically, in Figure 5, we respectively test Safe-SD on natural images from COCO [37] (Top), facial images from FFHQ [26] (Mid), and text-generated images (Bottom). From Figure 5, we can observe that: 1) All watermarked images by our Safe-SD maintain high-fidelity. Particularly, even for challenging facial images, the watermarked results still can finely preserve the details of hair. Moreover, combined with the results of Figure 6 (additionally presenting the detected watermarks), we can notice that our Safe-SD can simultaneously balance the quality of the detected watermarks and the watermarked images. It is worth noting that compared to previous digital watermarking methods [16, 80], our Safe-SD has higher fault tolerance. For example, when several pixels are incorrectly predicted, it will not lead to incorrect detection and authentication in our method, but in the digital watermarking method, the incorrect prediction of ",
+          "section_path": "4.2 Image generation quality for watermarking",
+          "order_idx": 105
+        },
+        {
+          "type": "table",
+          "sub_type": "",
+          "page_idx": 5,
+          "bbox": [
+            516.0,
+            426.0,
+            913.0,
+            541.0
+          ],
+          "text": "<table><tr><td>Methods</td><td>Type</td><td>PSNR ↑</td><td>FID ↓</td><td>LPIPS ↓</td><td>CLIP ↑</td></tr><tr><td>SSL Watermark [2022]</td><td>string</td><td>31.60</td><td>19.63</td><td>0.261</td><td>84.03</td></tr><tr><td>Baluja et.al. [2019]</td><td>graphics</td><td>30.41</td><td>20.39</td><td>0.317</td><td>83.63</td></tr><tr><td>FNNS [2021]</td><td>string</td><td>32.71</td><td>19.03</td><td>0.243</td><td>85.99</td></tr><tr><td>HiDDeN [2018]</td><td>string</td><td>32.99</td><td>19.49</td><td>0.244</td><td>85.43</td></tr><tr><td>Stable Signature [2023]</td><td>string</td><td>31.09</td><td>19.47</td><td>0.263</td><td>87.90</td></tr><tr><td>Safe-SD (Ours)</td><td>graphics</td><td>33.17</td><td>18.89</td><td>0.232</td><td>88.15</td></tr></table>",
+          "section_path": "4.2 Image generation quality for watermarking",
+          "order_idx": 106
+        },
+        {
+          "type": "text",
+          "sub_type": "",
+          "page_idx": 5,
+          "bbox": [
+            511.0,
+            590.0,
+            913.0,
+            867.0
+          ],
+          "text": "2) There are still subtle textured differences in enlarged pixel-level, but that’s almost imperceptible and well ensures traceability. According to the enlarged $( \\times 1 0 )$ pixel-wise results, it can be observed that the generative differences mainly come from visual contents with dense texture, such as hair and eyes in facial images, but note that it is almost impossible to discern by the human eyes. That also reveals that the information hidden in the image cannot disappear, but can only be moved to an imperceptible location to ensure traceability. 3) Safe-SD is suitable for a wide variety of images and well supports text-driven generative watermarking. As shown in Figure 5, the experiments are conducted on a wide variety of images, such as the natural images from COCO [37], facial images from FFHQ [26], and text-generated images (bottom), showing all the generated images watermarked by our Safe-SD maintain high-fidelity, which demonstrates the powerful generalization ability of our Safe-SD. Besides, Figure 6 presents more qualitative comparison results with the previous graphical watermarking method [2], which further verifies the superiority of our model in balancing high-resolution image synthesis and high-traceable watermark detection. ",
+          "section_path": "4.2 Image generation quality for watermarking",
+          "order_idx": 107
+        },
+        {
+          "type": "text",
+          "sub_type": "",
+          "page_idx": 5,
+          "bbox": [
+            513.0,
+            867.0,
+            913.0,
+            896.0
+          ],
+          "text": "Quantitative Evaluation. Following [16], we further quantitatively evaluate our approach in PSNR, FID, LPIPS and CLIP-Score ",
+          "section_path": "4.2 Image generation quality for watermarking",
+          "order_idx": 108
+        },
+        {
+          "type": "image",
+          "sub_type": "",
+          "page_idx": 6,
+          "bbox": [
+            127.0,
+            104.0,
+            248.0,
+            208.0
+          ],
+          "text": "[image]",
+          "section_path": "4.2 Image generation quality for watermarking",
+          "order_idx": 112
+        },
+        {
+          "type": "image",
+          "sub_type": "",
+          "page_idx": 6,
+          "bbox": [
+            253.0,
+            104.0,
+            370.0,
+            208.0
+          ],
+          "text": "[image]",
+          "section_path": "4.2 Image generation quality for watermarking",
+          "order_idx": 113
+        },
+        {
+          "type": "image",
+          "sub_type": "",
+          "page_idx": 6,
+          "bbox": [
+            372.0,
+            104.0,
+            493.0,
+            208.0
+          ],
+          "text": "[image]",
+          "section_path": "4.2 Image generation quality for watermarking",
+          "order_idx": 114
+        },
+        {
+          "type": "image",
+          "sub_type": "",
+          "page_idx": 6,
+          "bbox": [
+            500.0,
+            104.0,
+            617.0,
+            208.0
+          ],
+          "text": "[image]",
+          "section_path": "4.2 Image generation quality for watermarking",
+          "order_idx": 115
+        },
+        {
+          "type": "image",
+          "sub_type": "",
+          "page_idx": 6,
+          "bbox": [
+            622.0,
+            104.0,
+            740.0,
+            208.0
+          ],
+          "text": "[image]",
+          "section_path": "4.2 Image generation quality for watermarking",
+          "order_idx": 116
+        },
+        {
+          "type": "image",
+          "sub_type": "",
+          "page_idx": 6,
+          "bbox": [
+            743.0,
+            104.0,
+            861.0,
+            208.0
+          ],
+          "text": "[image]",
+          "section_path": "4.2 Image generation quality for watermarking",
+          "order_idx": 117
+        },
+        {
+          "type": "image",
+          "sub_type": "",
+          "page_idx": 6,
+          "bbox": [
+            127.0,
+            213.0,
+            248.0,
+            316.0
+          ],
+          "text": "[image]",
+          "section_path": "4.2 Image generation quality for watermarking",
+          "order_idx": 118
+        },
+        {
+          "type": "image",
+          "sub_type": "",
+          "page_idx": 6,
+          "bbox": [
+            253.0,
+            213.0,
+            370.0,
+            316.0
+          ],
+          "text": "[image]",
+          "section_path": "4.2 Image generation quality for watermarking",
+          "order_idx": 119
+        },
+        {
+          "type": "image",
+          "sub_type": "",
+          "page_idx": 6,
+          "bbox": [
+            372.0,
+            213.0,
+            493.0,
+            316.0
+          ],
+          "text": "[image]",
+          "section_path": "4.2 Image generation quality for watermarking",
+          "order_idx": 120
+        },
+        {
+          "type": "image",
+          "sub_type": "",
+          "page_idx": 6,
+          "bbox": [
+            500.0,
+            213.0,
+            617.0,
+            316.0
+          ],
+          "text": "[image]",
+          "section_path": "4.2 Image generation quality for watermarking",
+          "order_idx": 121
+        },
+        {
+          "type": "image",
+          "sub_type": "",
+          "page_idx": 6,
+          "bbox": [
+            622.0,
+            213.0,
+            740.0,
+            316.0
+          ],
+          "text": "[image]",
+          "section_path": "4.2 Image generation quality for watermarking",
+          "order_idx": 122
+        },
+        {
+          "type": "image",
+          "sub_type": "",
+          "page_idx": 6,
+          "bbox": [
+            743.0,
+            213.0,
+            861.0,
+            316.0
+          ],
+          "text": "[image]",
+          "section_path": "4.2 Image generation quality for watermarking",
+          "order_idx": 123
+        },
+        {
+          "type": "table",
+          "sub_type": "",
+          "page_idx": 6,
+          "bbox": [
+            84.0,
+            369.0,
+            482.0,
+            484.0
+          ],
+          "text": "<table><tr><td>Methods</td><td>Type</td><td>PSNR ↑</td><td>FID ↓</td><td>LPIPS ↓</td><td>CLIP ↑</td></tr><tr><td>HiDDeN [2018]</td><td>string</td><td>32.19</td><td>19.58</td><td>0.217</td><td>93.32</td></tr><tr><td>Baluja et.al. [2019]</td><td>graphics</td><td>29.17</td><td>20.85</td><td>0.403</td><td>91.93</td></tr><tr><td>FNNS [2021]</td><td>string</td><td>31.96</td><td>19.56</td><td>0.220</td><td>92.00</td></tr><tr><td>SSL Watermark [2022]</td><td>string</td><td>30.47</td><td>19.91</td><td>0.262</td><td>91.51</td></tr><tr><td>Stable Signature [2023]</td><td>string</td><td>30.88</td><td>20.33</td><td>0.231</td><td>93.01</td></tr><tr><td>Safe-SD (Ours)</td><td>graphics</td><td>32.73</td><td>19.36</td><td>0.215</td><td>93.99</td></tr></table>",
+          "section_path": "4.2 Image generation quality for watermarking",
+          "order_idx": 124
+        },
+        {
+          "type": "text",
+          "sub_type": "",
+          "page_idx": 6,
+          "bbox": [
+            81.0,
+            505.0,
+            482.0,
+            656.0
+          ],
+          "text": "metrics on LSUN-Churches and FFHQ datasets, which is shown in Table 1 and Table 2. From the results in the two tables, we can observe that our model Safe-SD achieves state-of-the-art performance on all four metrics and obtains the best generative results, even with more challenging graphical watermarking, i.e., directly interfering with pixels, compared to string-based methods [16, 17, 31, 81]. In particular, our model outperforms Stable Signature, a recent generative work, by $6 . 6 9 \\%$ , $2 . 9 8 \\%$ , $1 1 . 7 9 \\%$ and $0 . 2 8 \\%$ in four metrics on the LSUN-Churches dataset, and exceeds by $5 . 9 9 \\%$ , $4 . 7 7 \\%$ , $6 . 9 3 \\%$ and $1 . 0 5 \\%$ on the FFHQ dataset, which further verifies the superiority and effectiveness of Safe-SD. ",
+          "section_path": "4.2 Image generation quality for watermarking",
+          "order_idx": 125
+        }
+      ]
+    },
+    {
+      "path": "4.3 Explore on $\\lambda$ -encryption watermarking",
+      "title": "4.3 Explore on $\\lambda$ -encryption watermarking ",
+      "level": 2,
+      "blocks": [
+        {
+          "type": "title",
+          "sub_type": "",
+          "page_idx": 6,
+          "bbox": [
+            83.0,
+            670.0,
+            446.0,
+            686.0
+          ],
+          "text": "4.3 Explore on $\\lambda$ -encryption watermarking ",
+          "section_path": "4.3 Explore on $\\lambda$ -encryption watermarking",
+          "order_idx": 126
+        },
+        {
+          "type": "text",
+          "sub_type": "",
+          "page_idx": 6,
+          "bbox": [
+            81.0,
+            688.0,
+            482.0,
+            813.0
+          ],
+          "text": "The frequency of ??-encryption. To deeply explore the performance of ??-encryption in image watermarking in our approach, we perform a study on the impact of watermarking frequency ?? on image synthesis quality, as shown in Figure 7. It can be observed that with the increase of ?? (i.e., from 5 to 15), the performance of generated images may be affected due to the interference of watermark information, so we need to balance the frequency of watermark injection and the image’s fidelity and finally choose $\\lambda = 1 0$ (50 steps in total) as the appropriate watermarking frequency. ",
+          "section_path": "4.3 Explore on $\\lambda$ -encryption watermarking",
+          "order_idx": 127
+        },
+        {
+          "type": "text",
+          "sub_type": "",
+          "page_idx": 6,
+          "bbox": [
+            81.0,
+            813.0,
+            482.0,
+            896.0
+          ],
+          "text": "The time period of ??-encryption. To further explore the influence of different injection times of watermark on image synthesis quality, we also perform a study on the watermarking time period $t$ , as shown in Figure 7. From Figure 7, we can observe that the earlier the injection occurs, the less high-frequency information in the image is retained in the final generative results. Particularly, when ",
+          "section_path": "4.3 Explore on $\\lambda$ -encryption watermarking",
+          "order_idx": 128
+        },
+        {
+          "type": "image",
+          "sub_type": "",
+          "page_idx": 6,
+          "bbox": [
+            540.0,
+            371.0,
+            705.0,
+            435.0
+          ],
+          "text": "[image]",
+          "section_path": "4.3 Explore on $\\lambda$ -encryption watermarking",
+          "order_idx": 129
+        },
+        {
+          "type": "image",
+          "sub_type": "",
+          "page_idx": 6,
+          "bbox": [
+            720.0,
+            371.0,
+            885.0,
+            435.0
+          ],
+          "text": "[image]",
+          "section_path": "4.3 Explore on $\\lambda$ -encryption watermarking",
+          "order_idx": 130
+        },
+        {
+          "type": "image",
+          "sub_type": "",
+          "page_idx": 6,
+          "bbox": [
+            540.0,
+            435.0,
+            704.0,
+            502.0
+          ],
+          "text": "[image]",
+          "section_path": "4.3 Explore on $\\lambda$ -encryption watermarking",
+          "order_idx": 131
+        },
+        {
+          "type": "image",
+          "sub_type": "",
+          "page_idx": 6,
+          "bbox": [
+            720.0,
+            435.0,
+            885.0,
+            502.0
+          ],
+          "text": "[image]",
+          "section_path": "4.3 Explore on $\\lambda$ -encryption watermarking",
+          "order_idx": 132
+        },
+        {
+          "type": "image",
+          "sub_type": "",
+          "page_idx": 6,
+          "bbox": [
+            722.0,
+            502.0,
+            885.0,
+            571.0
+          ],
+          "text": "[image]",
+          "section_path": "4.3 Explore on $\\lambda$ -encryption watermarking",
+          "order_idx": 133
+        },
+        {
+          "type": "text",
+          "sub_type": "",
+          "page_idx": 6,
+          "bbox": [
+            513.0,
+            643.0,
+            913.0,
+            726.0
+          ],
+          "text": "$\\lambda = 1 5$ and the watermarking time period is in the early stage (refer to the first column of each case in Figure 7(c)), it will cause image distortion, which indicates that the watermarking unit (Figure 3) should be activated set as often as possible during the middle to end time period of latent diffusion, for better balancing watermark injection and generative effects. ",
+          "section_path": "4.3 Explore on $\\lambda$ -encryption watermarking",
+          "order_idx": 134
+        }
+      ]
+    },
+    {
+      "path": "4.4 Analysis on hyper-parameter ??",
+      "title": "4.4 Analysis on hyper-parameter ?? ",
+      "level": 2,
+      "blocks": [
+        {
+          "type": "title",
+          "sub_type": "",
+          "page_idx": 6,
+          "bbox": [
+            514.0,
+            739.0,
+            810.0,
+            755.0
+          ],
+          "text": "4.4 Analysis on hyper-parameter ?? ",
+          "section_path": "4.4 Analysis on hyper-parameter ??",
+          "order_idx": 135
+        },
+        {
+          "type": "text",
+          "sub_type": "",
+          "page_idx": 6,
+          "bbox": [
+            511.0,
+            757.0,
+            913.0,
+            896.0
+          ],
+          "text": "To further trade off the high-fidelity image synthesis and hightraceable watermark injection, we perform this study on hyperparameter ?? (refer to Formula 3), as illustrated in Figure 8. From Figure 8(a), we can observe that: 1) When the loss of image reconstruction and the loss of watermark decoding have the same weight (i.e., $\\gamma = 1 \\mathrm { \\dot { \\Omega } }$ ), both of them can steadily decrease until the model converges; 2) When reducing ?? to make the model focus on image synthesis (i.e., $\\gamma = 0 . 1$ ), the loss curves of both have a significant decline in the early stage, but after that the watermark decoding becomes difficult to converge. Correspondingly, the decoded LOGO ",
+          "section_path": "4.4 Analysis on hyper-parameter ??",
+          "order_idx": 136
+        },
+        {
+          "type": "image",
+          "sub_type": "",
+          "page_idx": 7,
+          "bbox": [
+            106.0,
+            103.0,
+            890.0,
+            314.0
+          ],
+          "text": "[image]",
+          "section_path": "4.4 Analysis on hyper-parameter ??",
+          "order_idx": 139
+        },
+        {
+          "type": "table",
+          "sub_type": "",
+          "page_idx": 7,
+          "bbox": [
+            94.0,
+            349.0,
+            467.0,
+            468.0
+          ],
+          "text": "<table><tr><td></td><td>PSNR ↑</td><td>FID ↓</td><td>LPIPS ↓</td><td>CLIP-Score ↑</td></tr><tr><td>None (Ours)</td><td>33.17</td><td>18.89</td><td>0.232</td><td>88.15</td></tr><tr><td>Rotate 90</td><td>32.96</td><td>18.94</td><td>0.228</td><td>87.72</td></tr><tr><td>Resize 0.7</td><td>32.18</td><td>19.11</td><td>0.242</td><td>87.03</td></tr><tr><td>Brightness 2.0</td><td>30.53</td><td>19.77</td><td>0.257</td><td>86.09</td></tr><tr><td>Crop 10%</td><td>31.01</td><td>19.30</td><td>0.250</td><td>85.01</td></tr><tr><td>Combined</td><td>29.24</td><td>20.18</td><td>0.275</td><td>83.49</td></tr></table>",
+          "section_path": "4.4 Analysis on hyper-parameter ??",
+          "order_idx": 140
+        },
+        {
+          "type": "text",
+          "sub_type": "",
+          "page_idx": 7,
+          "bbox": [
+            81.0,
+            500.0,
+            482.0,
+            556.0
+          ],
+          "text": "has become obviously blurred at this time; 3) When $\\gamma$ further decreases (i.e., $\\gamma = 0 . 0 1 \\mathrm { \\Omega }$ ), a similar conclusion is further verified. Based on the above discussion, we finally choose $\\gamma = 1$ to balance image synthesis and watermark decoding. ",
+          "section_path": "4.4 Analysis on hyper-parameter ??",
+          "order_idx": 141
+        }
+      ]
+    },
+    {
+      "path": "4.5 The robustness of watermarking",
+      "title": "4.5 The robustness of watermarking ",
+      "level": 2,
+      "blocks": [
+        {
+          "type": "title",
+          "sub_type": "",
+          "page_idx": 7,
+          "bbox": [
+            83.0,
+            571.0,
+            393.0,
+            588.0
+          ],
+          "text": "4.5 The robustness of watermarking ",
+          "section_path": "4.5 The robustness of watermarking",
+          "order_idx": 142
+        },
+        {
+          "type": "text",
+          "sub_type": "",
+          "page_idx": 7,
+          "bbox": [
+            81.0,
+            590.0,
+            482.0,
+            811.0
+          ],
+          "text": "Anti-attack test. We conduct the anti-attack test to evaluate the robustness of our graphical watermarking against a variety of attacks, as shown in Table 3. Specifically, we follow Stable Signature [16] to set up 5 attack tests: 1) Rotate 90, 2) Resize 0.7, 3) Brightness 2.0, 4) Crop $1 0 \\%$ , 5) Combined. From Table 3, we can observe that our approach is robust to the various attacks. For example, the PSNR metric under the most challenging combined attack is still higher than $2 9 \\%$ , and the LPIPS metric is still lower than $0 . 2 8 \\%$ , which demonstrate the excellent robustness of our Safe-SD. Moreover, the CLIP-Scores under all attacks are still higher than $8 3 \\%$ , which demonstrates most of the semantic information is still retained in the watermarked images. Moreover, it can be observed that the brightness has a relatively maximal impact on generation quality (e.g., PSNR, FID, LPIPS), and even if the image is cropped to $1 0 \\%$ of the original image, it still retains a high watermark recognition rate, which verifies the effectiveness of Safe-SD. ",
+          "section_path": "4.5 The robustness of watermarking",
+          "order_idx": 143
+        },
+        {
+          "type": "text",
+          "sub_type": "",
+          "page_idx": 7,
+          "bbox": [
+            81.0,
+            811.0,
+            482.0,
+            896.0
+          ],
+          "text": "Multi-watermarking test. Figure 9 shows the test results of multi-watermarking. From Figure 9, we notice that when multiple watermarks are injected at the same time, Safe-SD still maintains the high-quality image characteristics. Meanwhile, the two injected watermarks in Figure 9 can still be clearly extracted, demonstrating the superiority of our model in multi-watermarking scenarios. ",
+          "section_path": "4.5 The robustness of watermarking",
+          "order_idx": 144
+        },
+        {
+          "type": "image",
+          "sub_type": "",
+          "page_idx": 7,
+          "bbox": [
+            535.0,
+            356.0,
+            890.0,
+            580.0
+          ],
+          "text": "[image]",
+          "section_path": "4.5 The robustness of watermarking",
+          "order_idx": 145
+        }
+      ]
+    },
+    {
+      "path": "5 CONCLUSION",
+      "title": "5 CONCLUSION ",
+      "level": 1,
+      "blocks": [
+        {
+          "type": "title",
+          "sub_type": "",
+          "page_idx": 7,
+          "bbox": [
+            514.0,
+            642.0,
+            661.0,
+            655.0
+          ],
+          "text": "5 CONCLUSION ",
+          "section_path": "5 CONCLUSION",
+          "order_idx": 146
+        },
+        {
+          "type": "text",
+          "sub_type": "",
+          "page_idx": 7,
+          "bbox": [
+            511.0,
+            660.0,
+            915.0,
+            896.0
+          ],
+          "text": "In this paper, we have presented Safe-SD, a safe and high-traceable Stable Diffusion framework with a text prompt trigger for unified generative watermarking and detection. Specifically, we design a simple and unified architecture, which makes it possible to simultaneously train watermark injection and detection in a single network, greatly improving the efficiency and convenience of use. Moreover, to further support text-driven generative watermarking, we elaborately design a ??-sampling and ??-encryption algorithm to fine-tune a latent diffuser wrapped by a VAE for balancing highfidelity image synthesis and high-traceable watermark detection. Besides, we introduce a novel prompt triggering mechanism to enable adaptive watermark injection for facilitating copyright protection. Note the proposed approach can be easily extended to other diffusion models and can adapt to various downstream tasks. Experiments on the representative LSUN-Churches, COCO, and FFHQ datasets demonstrate the effectiveness and superior performance of our Safe-SD model in both quantitative and qualitative evaluations. ",
+          "section_path": "5 CONCLUSION",
+          "order_idx": 147
+        }
+      ]
+    },
+    {
+      "path": "ACKNOWLEDGMENTS",
+      "title": "ACKNOWLEDGMENTS ",
+      "level": 1,
+      "blocks": [
+        {
+          "type": "title",
+          "sub_type": "",
+          "page_idx": 8,
+          "bbox": [
+            84.0,
+            104.0,
+            279.0,
+            119.0
+          ],
+          "text": "ACKNOWLEDGMENTS ",
+          "section_path": "ACKNOWLEDGMENTS",
+          "order_idx": 151
+        },
+        {
+          "type": "text",
+          "sub_type": "",
+          "page_idx": 8,
+          "bbox": [
+            81.0,
+            125.0,
+            482.0,
+            165.0
+          ],
+          "text": "This work was supported by the China Postdoctoral Science Foundation under Grant No.2023M741950, and the Nationally Funded Postdoctoral Researcher Program under Grant No.GZB20230347. ",
+          "section_path": "ACKNOWLEDGMENTS",
+          "order_idx": 152
+        }
+      ]
+    },
+    {
+      "path": "REFERENCES",
+      "title": "REFERENCES ",
+      "level": 1,
+      "blocks": [
+        {
+          "type": "title",
+          "sub_type": "",
+          "page_idx": 8,
+          "bbox": [
+            84.0,
+            181.0,
+            202.0,
+            196.0
+          ],
+          "text": "REFERENCES ",
+          "section_path": "REFERENCES",
+          "order_idx": 153
+        },
+        {
+          "type": "list",
+          "sub_type": "ref_text",
+          "page_idx": 8,
+          "bbox": [
+            86.0,
+            199.0,
+            482.0,
+            895.0
+          ],
+          "text": "",
+          "section_path": "REFERENCES",
+          "order_idx": 154
+        },
+        {
+          "type": "list",
+          "sub_type": "ref_text",
+          "page_idx": 8,
+          "bbox": [
+            517.0,
+            109.0,
+            913.0,
+            895.0
+          ],
+          "text": "",
+          "section_path": "REFERENCES",
+          "order_idx": 155
+        },
+        {
+          "type": "list",
+          "sub_type": "ref_text",
+          "page_idx": 9,
+          "bbox": [
+            86.0,
+            109.0,
+            480.0,
+            895.0
+          ],
+          "text": "",
+          "section_path": "REFERENCES",
+          "order_idx": 158
+        },
+        {
+          "type": "list",
+          "sub_type": "ref_text",
+          "page_idx": 9,
+          "bbox": [
+            516.0,
+            109.0,
+            911.0,
+            371.0
+          ],
+          "text": "",
+          "section_path": "REFERENCES",
+          "order_idx": 159
+        }
+      ]
+    }
+  ],
+  "blocks": [
+    {
+      "type": "title",
+      "sub_type": "",
+      "page_idx": 0,
+      "bbox": [
+        96.0,
+        101.0,
+        898.0,
+        151.0
+      ],
+      "text": "Safe-SD: Safe and Traceable Stable Diffusion with Text Prompt Trigger for Invisible Generative Watermarking ",
+      "section_path": "Safe-SD: Safe and Traceable Stable Diffusion with Text Prompt Trigger for Invisible Generative Watermarking",
+      "order_idx": 0
+    },
+    {
+      "type": "text",
+      "sub_type": "",
+      "page_idx": 0,
+      "bbox": [
+        215.0,
+        162.0,
+        380.0,
+        224.0
+      ],
+      "text": "Zhiyuan Ma∗ Tsinghua University Beijing, China mzyth@tsinghua.edu.cn ",
+      "section_path": "Safe-SD: Safe and Traceable Stable Diffusion with Text Prompt Trigger for Invisible Generative Watermarking",
+      "order_idx": 1
+    },
+    {
+      "type": "text",
+      "sub_type": "",
+      "page_idx": 0,
+      "bbox": [
+        222.0,
+        238.0,
+        372.0,
+        301.0
+      ],
+      "text": "Biqing Qi Tsinghua University Beijing, China qibiqing7@gmail.com ",
+      "section_path": "Safe-SD: Safe and Traceable Stable Diffusion with Text Prompt Trigger for Invisible Generative Watermarking",
+      "order_idx": 2
+    },
+    {
+      "type": "title",
+      "sub_type": "",
+      "page_idx": 0,
+      "bbox": [
+        83.0,
+        340.0,
+        184.0,
+        354.0
+      ],
+      "text": "ABSTRACT ",
+      "section_path": "ABSTRACT",
+      "order_idx": 3
+    },
+    {
+      "type": "text",
+      "sub_type": "",
+      "page_idx": 0,
+      "bbox": [
+        81.0,
+        358.0,
+        483.0,
+        762.0
+      ],
+      "text": "Recently, stable diffusion (SD) models have typically flourished in the field of image synthesis and personalized editing, with a range of photorealistic and unprecedented images being successfully generated. As a result, widespread interest has been ignited to develop and use various SD-based tools for visual content creation. However, the exposure of AI-created content on public platforms could raise both legal and ethical risks. In this regard, the traditional methods of adding watermarks to the already generated images (i.e. post-processing) may face a dilemma (e.g., being erased or modified) in terms of copyright protection and content monitoring, since the powerful image inversion and text-to-image editing techniques have been widely explored in SD-based methods. In this work, we propose a Safe and high-traceable Stable Diffusion framework (namely Safe-SD) to adaptively implant the graphical watermarks (e.g., QR code) into the imperceptible structure-related pixels during the generative diffusion process for supporting text-driven invisible watermarking and detection. Different from the previous high-cost injection-then-detection training framework, we design a simple and unified architecture, which makes it possible to simultaneously train watermark injection and detection in a single network, greatly improving the efficiency and convenience of use. Moreover, to further support text-driven generative watermarking and deeply explore its robustness and high-traceability, we elaborately design a ??-sampling and ??-encryption algorithm to fine-tune a latent diffuser wrapped by a VAE for balancing high-fidelity image synthesis and high-traceable watermark detection. We present our quantitative and qualitative results on two representative datasets LSUN, COCO and FFHQ, demonstrating state-of-the-art performance of Safe-SD and showing it significantly outperforms the previous approaches. ",
+      "section_path": "ABSTRACT",
+      "order_idx": 4
+    },
+    {
+      "type": "list",
+      "sub_type": "text",
+      "page_idx": 0,
+      "bbox": [
+        83.0,
+        773.0,
+        321.0,
+        797.0
+      ],
+      "text": "",
+      "section_path": "ABSTRACT",
+      "order_idx": 5
+    },
+    {
+      "type": "image",
+      "sub_type": "",
+      "page_idx": 0,
+      "bbox": [
+        84.0,
+        810.0,
+        196.0,
+        843.0
+      ],
+      "text": "[image]",
+      "section_path": "ABSTRACT",
+      "order_idx": 6
+    },
+    {
+      "type": "text",
+      "sub_type": "",
+      "page_idx": 0,
+      "bbox": [
+        200.0,
+        816.0,
+        482.0,
+        838.0
+      ],
+      "text": "This work is licensed under a Creative Commons Attribution-ShareAlike International 4.0 License. ",
+      "section_path": "ABSTRACT",
+      "order_idx": 7
+    },
+    {
+      "type": "text",
+      "sub_type": "",
+      "page_idx": 0,
+      "bbox": [
+        81.0,
+        852.0,
+        382.0,
+        863.0
+      ],
+      "text": "MM ’24, October 28-November 1, 2024, Melbourne, VIC, Australia ",
+      "section_path": "ABSTRACT",
+      "order_idx": 8
+    },
+    {
+      "type": "text",
+      "sub_type": "",
+      "page_idx": 0,
+      "bbox": [
+        84.0,
+        864.0,
+        303.0,
+        875.0
+      ],
+      "text": "© 2024 Copyright held by the owner/author(s). ",
+      "section_path": "ABSTRACT",
+      "order_idx": 9
+    },
+    {
+      "type": "text",
+      "sub_type": "",
+      "page_idx": 0,
+      "bbox": [
+        84.0,
+        875.0,
+        254.0,
+        883.0
+      ],
+      "text": "ACM ISBN 979-8-4007-0686-8/24/10 ",
+      "section_path": "ABSTRACT",
+      "order_idx": 10
+    },
+    {
+      "type": "text",
+      "sub_type": "",
+      "page_idx": 0,
+      "bbox": [
+        84.0,
+        883.0,
+        272.0,
+        895.0
+      ],
+      "text": "https://doi.org/10.1145/3664647.3681418 ",
+      "section_path": "ABSTRACT",
+      "order_idx": 11
+    },
+    {
+      "type": "text",
+      "sub_type": "",
+      "page_idx": 0,
+      "bbox": [
+        620.0,
+        162.0,
+        779.0,
+        224.0
+      ],
+      "text": "Guoli Jia∗ Tsinghua University Beijing, China exped1230@gmail.com ",
+      "section_path": "ABSTRACT",
+      "order_idx": 12
+    },
+    {
+      "type": "text",
+      "sub_type": "",
+      "page_idx": 0,
+      "bbox": [
+        599.0,
+        237.0,
+        800.0,
+        330.0
+      ],
+      "text": "Bowen Zhou† Tsinghua University Beijing, China Shanghai AI Laboratory Shanghai, China zhoubowen@tsinghua.edu.cn ",
+      "section_path": "ABSTRACT",
+      "order_idx": 13
+    },
+    {
+      "type": "title",
+      "sub_type": "",
+      "page_idx": 0,
+      "bbox": [
+        514.0,
+        340.0,
+        653.0,
+        354.0
+      ],
+      "text": "CCS CONCEPTS ",
+      "section_path": "CCS CONCEPTS",
+      "order_idx": 14
+    },
+    {
+      "type": "text",
+      "sub_type": "",
+      "page_idx": 0,
+      "bbox": [
+        513.0,
+        359.0,
+        915.0,
+        387.0
+      ],
+      "text": "• Security and privacy Digital rights management; • Computing methodologies Artificial intelligence. ",
+      "section_path": "CCS CONCEPTS",
+      "order_idx": 15
+    },
+    {
+      "type": "title",
+      "sub_type": "",
+      "page_idx": 0,
+      "bbox": [
+        514.0,
+        398.0,
+        622.0,
+        412.0
+      ],
+      "text": "KEYWORDS ",
+      "section_path": "KEYWORDS",
+      "order_idx": 16
+    },
+    {
+      "type": "text",
+      "sub_type": "",
+      "page_idx": 0,
+      "bbox": [
+        514.0,
+        417.0,
+        900.0,
+        431.0
+      ],
+      "text": "Invisible Watermarking, Generative Copyright, Stable Diffusion ",
+      "section_path": "KEYWORDS",
+      "order_idx": 17
+    },
+    {
+      "type": "title",
+      "sub_type": "",
+      "page_idx": 0,
+      "bbox": [
+        514.0,
+        439.0,
+        661.0,
+        450.0
+      ],
+      "text": "ACM Reference Format: ",
+      "section_path": "ACM Reference Format:",
+      "order_idx": 18
+    },
+    {
+      "type": "text",
+      "sub_type": "",
+      "page_idx": 0,
+      "bbox": [
+        513.0,
+        450.0,
+        913.0,
+        515.0
+      ],
+      "text": "Zhiyuan Ma, Guoli Jia, Biqing Qi, and Bowen Zhou. 2024. Safe-SD: Safe and Traceable Stable Diffusion with Text Prompt Trigger for Invisible Generative Watermarking. In Proceedings of the 32nd ACM International Conference on Multimedia (MM ’24), October 28-November 1, 2024, Melbourne, VIC, Australia. ACM, New York, NY, USA, 10 pages. https://doi.org/10.1145/3664647.3681418 ",
+      "section_path": "ACM Reference Format:",
+      "order_idx": 19
+    },
+    {
+      "type": "title",
+      "sub_type": "",
+      "page_idx": 0,
+      "bbox": [
+        514.0,
+        531.0,
+        687.0,
+        544.0
+      ],
+      "text": "1 INTRODUCTION ",
+      "section_path": "1 INTRODUCTION",
+      "order_idx": 20
+    },
+    {
+      "type": "text",
+      "sub_type": "",
+      "page_idx": 0,
+      "bbox": [
+        513.0,
+        549.0,
+        913.0,
+        577.0
+      ],
+      "text": "“In art, what we want is the certainty that one spark of original genius shall not be extinguished.” ",
+      "section_path": "1 INTRODUCTION",
+      "order_idx": 21
+    },
+    {
+      "type": "text",
+      "sub_type": "",
+      "page_idx": 0,
+      "bbox": [
+        818.0,
+        578.0,
+        913.0,
+        590.0
+      ],
+      "text": "– Mary Cassatt ",
+      "section_path": "1 INTRODUCTION",
+      "order_idx": 22
+    },
+    {
+      "type": "text",
+      "sub_type": "",
+      "page_idx": 0,
+      "bbox": [
+        511.0,
+        590.0,
+        913.0,
+        811.0
+      ],
+      "text": "Recent years have witnessed the remarkable success of diffusion models [22, 41, 47, 48, 53, 62], due to its impressive generative capabilities in multimodal cummunity [4, 44, 46]. After surpassing GAN on image synthesis [12], diffusion models have shown a promising algorithm with dense theoretical founding, and emerged as the new state-of-the-art among the deep generative models [19, 23, 30, 39, 43, 45, 52, 58, 61, 63, 64, 68, 75]. Notably, Stable Diffusion [59], as one of the most popular and sought-after generative models, has sparked the interest of many researchers, and a series of SD-based works have been proposed and exploited to produce plenty of AIcreated or AI-edited images, such as ControlNet [78], SDEdit [49], DreamBooth [60], Imagic [28], InstructPix2Pix [3] and Null-text Inversion [50], which raises profound concerns about ethical and legal risks [55, 56] for AI-generated content (AIGC) being unscrupulously exposed on public platforms and raises new challenges for copyright protection and content monitoring. ",
+      "section_path": "1 INTRODUCTION",
+      "order_idx": 23
+    },
+    {
+      "type": "text",
+      "sub_type": "",
+      "page_idx": 0,
+      "bbox": [
+        511.0,
+        811.0,
+        913.0,
+        896.0
+      ],
+      "text": "These concerns may be elaborated into the following three aspects: (1) Originator Concern. An artistic work or photograph produced by the original author may be edited or modified at will by AI today and published to the public platform for commercial profit, which infringes on the interests of the originator. Take Figure 1 as an example, when a wonderful hand-crafted watercolor ",
+      "section_path": "1 INTRODUCTION",
+      "order_idx": 24
+    },
+    {
+      "type": "image",
+      "sub_type": "",
+      "page_idx": 1,
+      "bbox": [
+        120.0,
+        104.0,
+        447.0,
+        309.0
+      ],
+      "text": "[image]",
+      "section_path": "1 INTRODUCTION",
+      "order_idx": 27
+    },
+    {
+      "type": "text",
+      "sub_type": "",
+      "page_idx": 1,
+      "bbox": [
+        81.0,
+        369.0,
+        482.0,
+        743.0
+      ],
+      "text": "painting is published online by the originator, another user could download it without any restrictions and then request the SD-based model to edit the artwork through an accompanying prompt “please edit a watercolor picture of...”, whereas ultimately attributes the AIcreated production and its ancillary value to the user and the given prompt, which may have violated the rights of the originator. If this is a commercial advertisement or model shooting, product designs or industrial drawings, etc., it may cause more serious infringement of interests. (2) Developer Concern. Which means the potential risks that SD-based tools open sourced by developers may be abused by people with bad motives to engage in underground activities, such as fake news fabrication, political rumors publishing or pornographic propaganda, etc., simply by editing human characteristics (e.g., replacing faces). (3) Monitor Concern. Which means it’s extremely difficult for the monitor of online platforms to distinguish which visual contents are produced by AI and judge whether it should be safely blocked to ensure their compliance with legal and ethical standards [42], since the fidelity and texture of AI-created images have approached human levels. For example, a generated picture recently won an art competition [18], which suggests humans will soon be unable to discern the subtle differences between AI-generated content and human-created content. Overall, the above concerns illustrate the fact that the emergence of powerful AI-generative tools and the lack of traceability of their generated productions may open the door to new threats such as artwork plagiarism, copyright infringement, political rumors publishing, portrait rights infringement and so on. ",
+      "section_path": "1 INTRODUCTION",
+      "order_idx": 28
+    },
+    {
+      "type": "text",
+      "sub_type": "",
+      "page_idx": 1,
+      "bbox": [
+        81.0,
+        743.0,
+        482.0,
+        896.0
+      ],
+      "text": "To cope with the above concerns, we propose a Safe and hightraceable Stable Diffusion framework with a text prompt trigger for unified generative watermarking and detection, Safe-SD for short. Note that since Stable Diffusion [59] is an open source model with most ecologically complete as well as widely used foundation models and has been applied to numerous generative tasks, we only focus on the SD-based models for invisible watermark injection and extraction, which can be further easily extended to other diffusion models such as DALL-E2 [58], Imagen [61] and Parti [75] by only replacing the weights and bias of the U-Net’s parameters in diffusion models and adding a lightweight inject-convolution layer from our ",
+      "section_path": "1 INTRODUCTION",
+      "order_idx": 29
+    },
+    {
+      "type": "text",
+      "sub_type": "",
+      "page_idx": 1,
+      "bbox": [
+        513.0,
+        106.0,
+        915.0,
+        148.0
+      ],
+      "text": "Safe-SD. Different from existing methods that post-processing [9], injection-then-detection [76] or are based solely on decoder finetuning [16], our proposed models have the following new features: ",
+      "section_path": "1 INTRODUCTION",
+      "order_idx": 30
+    },
+    {
+      "type": "list",
+      "sub_type": "text",
+      "page_idx": 1,
+      "bbox": [
+        540.0,
+        152.0,
+        915.0,
+        359.0
+      ],
+      "text": "",
+      "section_path": "1 INTRODUCTION",
+      "order_idx": 31
+    },
+    {
+      "type": "text",
+      "sub_type": "",
+      "page_idx": 1,
+      "bbox": [
+        511.0,
+        364.0,
+        919.0,
+        489.0
+      ],
+      "text": "Experiments on three representative datasets LSUN-Churches [74], COCO [37], and FFHQ [26] demonstrates the effectiveness of Safe-SD, showing that it achieves the state-of-the-art generative results against previous invisible watermarking methods. Further qualitative evaluations exhibit the pixel-wise differences between the original images and watermarked images, and the robustness study quantitatively evaluates the anti-attack ability, which further verifies the superiority of Safe-SD in balancing high-resolution image synthesis and high-traceable watermark detection. ",
+      "section_path": "1 INTRODUCTION",
+      "order_idx": 32
+    },
+    {
+      "type": "title",
+      "sub_type": "",
+      "page_idx": 1,
+      "bbox": [
+        514.0,
+        503.0,
+        689.0,
+        517.0
+      ],
+      "text": "2 RELATED WORK ",
+      "section_path": "2 RELATED WORK",
+      "order_idx": 33
+    },
+    {
+      "type": "text",
+      "sub_type": "",
+      "page_idx": 1,
+      "bbox": [
+        511.0,
+        521.0,
+        913.0,
+        660.0
+      ],
+      "text": "Diffusion Models. Recent years have witnessed the remarkable success of diffusion-based generative models, due to their excellent performance in diversity and impressive generative capabilities. These previous efforts mainly focus on sampling procedure [38, 64], conditional guidance [12, 52], likelihood maximization [29, 30] and generalization ability [19, 27] and have enabled state-of-the-art image synthesis. Stable Diffusion [59] is one of the most widely used diffusion models, due to its open source and user-friendly features, it has recently gained great attention and become one of the leading researches in image generation and manipulation. ",
+      "section_path": "2 RELATED WORK",
+      "order_idx": 34
+    },
+    {
+      "type": "text",
+      "sub_type": "",
+      "page_idx": 1,
+      "bbox": [
+        511.0,
+        661.0,
+        915.0,
+        896.0
+      ],
+      "text": "Image Watermarking Techniques. To trace copyright and make AI-generated content detectable, numerous watermarking techniques have been proposed for deep neural networks [1, 32, 33, 35, 36, 40, 51], which can basically be classified into two categories: discriminative models and generative models. In discriminative models, watermarking techniques are mainly dominated by white-box or black-box models. The white-box models [5, 8, 14, 34, 66, 67, 70, 72] need access to the models and their parameters (white-box access) in order to extract the watermarks, while the black-box models [6, 11, 21, 24, 65, 73, 77, 79] only adopt predefined inputs as triggers to query the models (black-box access) without caring about their internal details. In generative models, the previous methods mainly investigate GANs by watermarking all generative images [10, 15, 54, 81] such as binary strings embedding [15, 76, 81], textual message encoding [10] and graphic watermark injection [54]. Very recently, some researchers [16, 25, 80] have extended the binary strings embedding technique into ",
+      "section_path": "2 RELATED WORK",
+      "order_idx": 35
+    },
+    {
+      "type": "image",
+      "sub_type": "",
+      "page_idx": 2,
+      "bbox": [
+        125.0,
+        104.0,
+        455.0,
+        256.0
+      ],
+      "text": "[image]",
+      "section_path": "2 RELATED WORK",
+      "order_idx": 39
+    },
+    {
+      "type": "image",
+      "sub_type": "",
+      "page_idx": 2,
+      "bbox": [
+        460.0,
+        104.0,
+        867.0,
+        255.0
+      ],
+      "text": "[image]",
+      "section_path": "2 RELATED WORK",
+      "order_idx": 40
+    },
+    {
+      "type": "text",
+      "sub_type": "",
+      "page_idx": 2,
+      "bbox": [
+        81.0,
+        294.0,
+        482.0,
+        364.0
+      ],
+      "text": "diffusion-based architecture for digital copyright protection, one of the most representative digital watermark injection methods is Stable Signature [16]. However, binary digital watermarking suffers from erasing and overwriting threats when meeting with DDIM inversion [62], overwriting attacks [71] and backdoor attacks [7, 20]. ",
+      "section_path": "2 RELATED WORK",
+      "order_idx": 41
+    },
+    {
+      "type": "text",
+      "sub_type": "",
+      "page_idx": 2,
+      "bbox": [
+        81.0,
+        364.0,
+        482.0,
+        667.0
+      ],
+      "text": "Different from them, we explore a more secure and efficient diffusion-based generative framework Safe-SD, with an imperceptible watermark injection module and textual prompt trigger, which is designed in a unified watermarking and tracing framework, making it possible to simultaneously achieve watermark injection and detection in a single network, greatly improving the training efficiency and convenience of use for multimedia and AIGC community. For security, the Safe-SD enables the SD-based generative network to implant the graphical watermarks (e.g., QR code) into the imperceptible structure-related pixels and retain high-fidelity image synthesis and high-traceable watermark detection capabilities, which is hard to be erased or modified as the graphical watermark is tightly bound to the progressive diffusion process. For robustness, we introduce a fine-tuned latent diffuser with an elaborately designed ??-encryption algorithm for high-traceable watermarking training. Moreover, we also conduct a hacker attacking study (Sec. 4.5), by setting up 5 attack tests to evaluate the robustness of proposed Safe-SD against attacks. Note our Safe-SD methods can be easily extended to other diffusion-based models such as DALL-E2 [58], Imagen [61] and Parti [75] by only replacing the weights and bias of the U-Net’s parameters in diffusion models and adding a lightweight inject-convolution layer have pretrained in our Safe-SD. ",
+      "section_path": "2 RELATED WORK",
+      "order_idx": 42
+    },
+    {
+      "type": "title",
+      "sub_type": "",
+      "page_idx": 2,
+      "bbox": [
+        83.0,
+        683.0,
+        194.0,
+        696.0
+      ],
+      "text": "3 METHOD ",
+      "section_path": "3 METHOD",
+      "order_idx": 43
+    },
+    {
+      "type": "text",
+      "sub_type": "",
+      "page_idx": 2,
+      "bbox": [
+        81.0,
+        700.0,
+        482.0,
+        853.0
+      ],
+      "text": "As depicted in Figure 2, Safe-SD mainly contains two stages: 1) Pre-training stage for unified watermark injector/extractor (Sec.3.1) and 2) Fine-tuning stage for latent diffuser with text prompt trigger (Sec.3.2). The former aims to train a modified SD’s first-stagemodel (with a brand new dual variational autoencoder) to obtain a unified graphic watermark injection and extraction network, whereas the latter serves as a latent diffuser with an elaborately designed temporal $\\lambda$ -encryption algorithm for more secure and high-traceable watermark injection. Moreover, we introduce a novel prompt triggering mechanism to support text-driven image watermarking and copyright detection scenes. ",
+      "section_path": "3 METHOD",
+      "order_idx": 44
+    },
+    {
+      "type": "text",
+      "sub_type": "",
+      "page_idx": 2,
+      "bbox": [
+        81.0,
+        854.0,
+        482.0,
+        896.0
+      ],
+      "text": "During inference, the pipeline of our proposed model is: 1) Safe-SD first accepts a text condition ?? and an image $x$ ({“image synthesis”: $x = \\emptyset$ ; “image editing”: $x \\}$ ) as inputs, and then the ",
+      "section_path": "3 METHOD",
+      "order_idx": 45
+    },
+    {
+      "type": "text",
+      "sub_type": "",
+      "page_idx": 2,
+      "bbox": [
+        511.0,
+        294.0,
+        913.0,
+        502.0
+      ],
+      "text": "prompt trigger $p ( \\cdot )$ determines which watermark ?? should be injected based on the given condition ??. Meanwhile, Safe-SD randomly allocates a key $m \\in \\{ 0 , 1 \\} ^ { T }$ $T$ is diffusion steps) into the next step; 2) The encoder $\\varepsilon$ of the first-stage-model first encodes the image $x$ and watermark $\\boldsymbol { w }$ into latent variables $z _ { i }$ and $z _ { w }$ respectively and then feeds them immediately into the second stage; 3) The latent diffuser first accepts the latent variables $z _ { i }$ and $z _ { w }$ , condition ?? and the key $m$ , then performs temporal $\\lambda$ -encryption algorithm (Algorithm 1) for high-traceable watermark injection or performs condition-guided invert denoising (Algorithm 2) for high-fidelity image synthesis; 4) The decoder $\\mathcal { D } _ { i }$ of the first-stage-model then serves as a watermarker to generate the above watermarked images with ??-encryption for safe readout, and another decoder $\\mathcal { D } _ { w }$ serves as a detector to decode the injected watermark hidden from the images for detection, authentication and copyright trace. ",
+      "section_path": "3 METHOD",
+      "order_idx": 46
+    },
+    {
+      "type": "title",
+      "sub_type": "",
+      "page_idx": 2,
+      "bbox": [
+        513.0,
+        508.0,
+        901.0,
+        523.0
+      ],
+      "text": "3.1 Pre-training watermark injector/extractor ",
+      "section_path": "3.1 Pre-training watermark injector/extractor",
+      "order_idx": 47
+    },
+    {
+      "type": "text",
+      "sub_type": "",
+      "page_idx": 2,
+      "bbox": [
+        511.0,
+        526.0,
+        913.0,
+        651.0
+      ],
+      "text": "Our first-stage-model is designed to jointly train a watermark extractor $\\mathcal { D } _ { w }$ and an image generator $\\mathcal { D } _ { i }$ with invisible watermarking when they are equally fed the latent variables $z _ { m }$ of an image mixed with watermark features. Since it is fully pre-trained to balance the two goals of simultaneously generating high-quality images and clear watermarks, this first-stage-model can adapt to accept any latent mixture $z _ { m } ^ { * }$ with ??-encryption watermarking in the second stage, to ultimately complete the dual decodings. Details of the first-stage-model are introduced below. ",
+      "section_path": "3.1 Pre-training watermark injector/extractor",
+      "order_idx": 48
+    },
+    {
+      "type": "text",
+      "sub_type": "",
+      "page_idx": 2,
+      "bbox": [
+        513.0,
+        652.0,
+        913.0,
+        748.0
+      ],
+      "text": "Shared graphic encoder. Given an input image $x$ and a randomly searched watermark $w , x , w \\in \\mathbb { R } ^ { H \\times \\bar { W } \\times 3 }$ . The shared graphic encoder E first projects the image $x$ and watermark $\\boldsymbol { w }$ into latent variables $z _ { i }$ and $z _ { w }$ , i.e.,, $\\boldsymbol { z } _ { i } = \\boldsymbol { \\mathcal { E } } ( \\boldsymbol { x } ) , \\boldsymbol { z } _ { w } = \\boldsymbol { \\mathcal { E } } ( w ) , \\boldsymbol { z } _ { i } , \\boldsymbol { z } _ { w } \\in \\mathbb { R } ^ { h \\times w \\times d }$ , where $h$ and ?? respectively denote scaled height and width (default scaled factor $f = H / h = W / w = 8 )$ , and $d$ is the dimensionality of the projected latent variables. ",
+      "section_path": "3.1 Pre-training watermark injector/extractor",
+      "order_idx": 49
+    },
+    {
+      "type": "text",
+      "sub_type": "",
+      "page_idx": 2,
+      "bbox": [
+        513.0,
+        750.0,
+        913.0,
+        819.0
+      ],
+      "text": "Injection convolution layer. Safe-SD first concatenates the projected image $z _ { i }$ and watermark $z _ { w }$ in the channel dimension, and then obtains the mixture features $\\boldsymbol { z } _ { m } \\in \\mathbb { R } ^ { h \\times w \\times d }$ through a simple injection convolution layer ???? (·) : Rℎ×??×2?? → Rℎ×??×?? . $f _ { c } ( . ) : \\mathbb { R } ^ { h \\times w \\times 2 d }  \\mathbb { R } ^ { h \\times w \\times d }$ Formally, ",
+      "section_path": "3.1 Pre-training watermark injector/extractor",
+      "order_idx": 50
+    },
+    {
+      "type": "equation",
+      "sub_type": "",
+      "page_idx": 2,
+      "bbox": [
+        665.0,
+        821.0,
+        913.0,
+        835.0
+      ],
+      "text": "$$\nz _ {m} = f _ {c} \\left(z _ {i}, z _ {w}\\right) \\tag {1}\n$$",
+      "section_path": "3.1 Pre-training watermark injector/extractor",
+      "order_idx": 51
+    },
+    {
+      "type": "text",
+      "sub_type": "",
+      "page_idx": 2,
+      "bbox": [
+        513.0,
+        840.0,
+        913.0,
+        896.0
+      ],
+      "text": "Dual goal decoders. To synchronously train an image generator $\\mathcal { D } _ { i }$ with invisible watermarking and a watermark extractor $\\mathcal { D } _ { w }$ , we introduce a dual decoding mechanism with two decoder copies from SD’s first-stage-model (i.e., vae [13]), and one copy with frozen ",
+      "section_path": "3.1 Pre-training watermark injector/extractor",
+      "order_idx": 52
+    },
+    {
+      "type": "code",
+      "sub_type": "algorithm",
+      "page_idx": 3,
+      "bbox": [
+        83.0,
+        121.0,
+        480.0,
+        406.0
+      ],
+      "text": "",
+      "section_path": "3.1 Pre-training watermark injector/extractor",
+      "order_idx": 55
+    },
+    {
+      "type": "text",
+      "sub_type": "",
+      "page_idx": 3,
+      "bbox": [
+        81.0,
+        431.0,
+        482.0,
+        542.0
+      ],
+      "text": "parameters $\\theta _ { f }$ and the other copy with trainable parameters $\\theta _ { t }$ Note that since decoder $\\mathcal { D } _ { i }$ plays the role of an image generator with an invisible watermark injection and has been fed to the mixture variable $z _ { m }$ , it needs to be assigned to the frozen parameter $\\theta _ { f }$ for watermarking image generation, while decoder $\\mathcal { D } _ { w }$ only serves as a watermark extractor (also with the mixed variables $z _ { m }$ as input), therefore need to be assigned trainable parameters $\\theta _ { t }$ for watermark extraction. Formally, ",
+      "section_path": "3.1 Pre-training watermark injector/extractor",
+      "order_idx": 56
+    },
+    {
+      "type": "equation",
+      "sub_type": "",
+      "page_idx": 3,
+      "bbox": [
+        178.0,
+        550.0,
+        480.0,
+        566.0
+      ],
+      "text": "$$\n\\hat {x} = \\mathcal {D} _ {i} \\left(z _ {m}; \\theta_ {f}\\right), \\hat {w} = \\mathcal {D} _ {w} \\left(z _ {m}; \\theta_ {t}\\right) \\tag {2}\n$$",
+      "section_path": "3.1 Pre-training watermark injector/extractor",
+      "order_idx": 57
+    },
+    {
+      "type": "text",
+      "sub_type": "",
+      "page_idx": 3,
+      "bbox": [
+        81.0,
+        571.0,
+        482.0,
+        627.0
+      ],
+      "text": "To maximize the accuracy of watermark extraction and enable to generate high-resolution images, we set up a weighting-based loss $\\mathcal { L } _ { s ^ { 1 } }$ to supervise the entire first-stage-model, which can be formally represented as, ",
+      "section_path": "3.1 Pre-training watermark injector/extractor",
+      "order_idx": 58
+    },
+    {
+      "type": "equation",
+      "sub_type": "",
+      "page_idx": 3,
+      "bbox": [
+        163.0,
+        632.0,
+        480.0,
+        648.0
+      ],
+      "text": "$$\n\\mathcal {L} _ {s ^ {1}} = \\left\\| x - \\hat {x} \\right\\| ^ {2} + \\gamma \\cdot \\left\\| w - \\hat {w} \\right\\| ^ {2} + \\mathcal {L} _ {a d v} \\tag {3}\n$$",
+      "section_path": "3.1 Pre-training watermark injector/extractor",
+      "order_idx": 59
+    },
+    {
+      "type": "text",
+      "sub_type": "",
+      "page_idx": 3,
+      "bbox": [
+        81.0,
+        655.0,
+        482.0,
+        696.0
+      ],
+      "text": "where $\\gamma$ is the weighting hyperparameter (default $\\gamma$ equals 1), and $\\mathcal { L } _ { a d v }$ denotes the adversarial training loss, which maintains the same setting as in VQGAN [13]. ",
+      "section_path": "3.1 Pre-training watermark injector/extractor",
+      "order_idx": 60
+    },
+    {
+      "type": "title",
+      "sub_type": "",
+      "page_idx": 3,
+      "bbox": [
+        83.0,
+        696.0,
+        452.0,
+        713.0
+      ],
+      "text": "3.2 Fine-tuning latent ??-encryption diffuser ",
+      "section_path": "3.2 Fine-tuning latent ??-encryption diffuser",
+      "order_idx": 61
+    },
+    {
+      "type": "text",
+      "sub_type": "",
+      "page_idx": 3,
+      "bbox": [
+        81.0,
+        715.0,
+        482.0,
+        811.0
+      ],
+      "text": "The second-stage-model mainly serves as a temporal ??-encryption diffuser with a prompt triggering mechanism, which mainly relies on a temporal injection algorithm by accepting a binary key $m \\in$ $\\{ 0 , 1 \\} ^ { T }$ as instruction-code to control whether each diffusion step requires performing watermark injection, for cryptographic image synthesis with minor structural changes. Details of the second-stagemodel are as follows. ",
+      "section_path": "3.2 Fine-tuning latent ??-encryption diffuser",
+      "order_idx": 62
+    },
+    {
+      "type": "text",
+      "sub_type": "",
+      "page_idx": 3,
+      "bbox": [
+        81.0,
+        811.0,
+        482.0,
+        896.0
+      ],
+      "text": "Prompt trigger. The prompt trigger is designed to achieve nonsensitive watermark triggering, which accepts a textual editing- or synthesis-related instruction as input, by following a CLIP embedding layer and a linear prompt trigger layer, to ultimately obtain a watermark (pre-defined or user-defined watermark) with the highest probability for subsequent invisible watermark injection. Moreover, ",
+      "section_path": "3.2 Fine-tuning latent ??-encryption diffuser",
+      "order_idx": 63
+    },
+    {
+      "type": "code",
+      "sub_type": "algorithm",
+      "page_idx": 3,
+      "bbox": [
+        526.0,
+        122.0,
+        911.0,
+        402.0
+      ],
+      "text": "",
+      "section_path": "3.2 Fine-tuning latent ??-encryption diffuser",
+      "order_idx": 64
+    },
+    {
+      "type": "text",
+      "sub_type": "",
+      "page_idx": 3,
+      "bbox": [
+        511.0,
+        434.0,
+        913.0,
+        545.0
+      ],
+      "text": "for stable copyright protection, Safe-SD can also support watermark injection based on special instructions, such as when given the instruction: “Please help me edit this personal photo with my avatar watermark [U]” and the accompanying avatar “[U]” as a personalized watermark, Safe-SD can be triggered directly with this specified watermarking LOGO. Note that in our experiments, we adopt a public LOGO dataset 1 to represent pre-defined or userdefined watermarks for the training of the Safe-SD. ",
+      "section_path": "3.2 Fine-tuning latent ??-encryption diffuser",
+      "order_idx": 65
+    },
+    {
+      "type": "text",
+      "sub_type": "",
+      "page_idx": 3,
+      "bbox": [
+        513.0,
+        545.0,
+        913.0,
+        628.0
+      ],
+      "text": "Forward diffusion with ??-sampling. To enable the watermark to be adaptively injected into the image synthesis process with temporal diffusion and to maintain traceability, we propose the forward diffusion with ??-sampling. We first introduce the definitions of ??- sampling and ??-distribution below, and then explain how it can be used for watermark injection based on temporal encryption. ",
+      "section_path": "3.2 Fine-tuning latent ??-encryption diffuser",
+      "order_idx": 66
+    },
+    {
+      "type": "text",
+      "sub_type": "",
+      "page_idx": 3,
+      "bbox": [
+        513.0,
+        628.0,
+        913.0,
+        710.0
+      ],
+      "text": "First, for a given sequence $( x _ { 1 } , . . . , x _ { N } )$ , the ??-sampling operation is defined as: randomly selecting ?? elements from the sequence with $N$ elements for sampling, and at the same time, the unsampled elements are set to 0. Thereafter the obtained discrete distribution is referred to as the $^ { * } \\lambda$ -distribution” corresponding to this ??-sampling, abbreviated as ??-?????? (·), where, ",
+      "section_path": "3.2 Fine-tuning latent ??-encryption diffuser",
+      "order_idx": 67
+    },
+    {
+      "type": "equation",
+      "sub_type": "",
+      "page_idx": 3,
+      "bbox": [
+        612.0,
+        719.0,
+        911.0,
+        751.0
+      ],
+      "text": "$$\n\\lambda - d i s (i) = \\left\\{ \\begin{array}{l l} x _ {i} & \\text {i f} x _ {i} \\text {i s s a m p l e d ,} \\\\ 0 & \\text {o t h e r w i s e .} \\end{array} \\right. \\tag {4}\n$$",
+      "section_path": "3.2 Fine-tuning latent ??-encryption diffuser",
+      "order_idx": 68
+    },
+    {
+      "type": "text",
+      "sub_type": "",
+      "page_idx": 3,
+      "bbox": [
+        513.0,
+        761.0,
+        913.0,
+        861.0
+      ],
+      "text": "Then, we introduce this ??-sampling based temporal encryption mechanism, which aims to bind a given watermark $\\boldsymbol { w }$ to a diffusion synthesis process $q ( z _ { m } ^ { ( t ) } | z _ { i } ^ { ( t - 1 ) } , z _ { w } ^ { ( { t - 1 } ) } )$ | ?? and simultaneously generate a binary key $m$ for traceability, as illustrated in Algorithm 1. As shown in Figure 3, when $\\lambda ( t )$ equals $t$ , the Safe-SD is activated to perform the watermark injection process through a temporal injection cell (right side of Figure 3), which is consistent with the ",
+      "section_path": "3.2 Fine-tuning latent ??-encryption diffuser",
+      "order_idx": 69
+    },
+    {
+      "type": "page_footnote",
+      "sub_type": "",
+      "page_idx": 3,
+      "bbox": [
+        514.0,
+        883.0,
+        769.0,
+        895.0
+      ],
+      "text": "1https://github.com/msn199959/Logo-2k-plus-Dataset ",
+      "section_path": "3.2 Fine-tuning latent ??-encryption diffuser",
+      "order_idx": 72
+    },
+    {
+      "type": "image",
+      "sub_type": "",
+      "page_idx": 4,
+      "bbox": [
+        112.0,
+        103.0,
+        269.0,
+        205.0
+      ],
+      "text": "[image]",
+      "section_path": "3.2 Fine-tuning latent ??-encryption diffuser",
+      "order_idx": 74
+    },
+    {
+      "type": "image",
+      "sub_type": "",
+      "page_idx": 4,
+      "bbox": [
+        277.0,
+        103.0,
+        450.0,
+        207.0
+      ],
+      "text": "[image]",
+      "section_path": "3.2 Fine-tuning latent ??-encryption diffuser",
+      "order_idx": 75
+    },
+    {
+      "type": "text",
+      "sub_type": "",
+      "page_idx": 4,
+      "bbox": [
+        81.0,
+        252.0,
+        483.0,
+        279.0
+      ],
+      "text": "first-stage-model to ensure good generalization for watermark injection and can be formally described as, ",
+      "section_path": "3.2 Fine-tuning latent ??-encryption diffuser",
+      "order_idx": 76
+    },
+    {
+      "type": "equation",
+      "sub_type": "",
+      "page_idx": 4,
+      "bbox": [
+        199.0,
+        282.0,
+        480.0,
+        303.0
+      ],
+      "text": "$$\nz _ {m} ^ {(t - 1)} = f _ {c} \\left(z _ {i} ^ {(t - 1)}, z _ {w} ^ {(t - 1)}\\right) \\tag {5}\n$$",
+      "section_path": "3.2 Fine-tuning latent ??-encryption diffuser",
+      "order_idx": 77
+    },
+    {
+      "type": "equation",
+      "sub_type": "",
+      "page_idx": 4,
+      "bbox": [
+        153.0,
+        309.0,
+        482.0,
+        332.0
+      ],
+      "text": "$$\nz _ {m} ^ {(t)} = \\alpha_ {t} \\cdot z _ {m} ^ {(t - 1)} + \\sqrt {1 - \\alpha_ {t} ^ {2}} \\epsilon , \\epsilon \\sim \\mathcal {N} (\\boldsymbol {0}, I) \\tag {6}\n$$",
+      "section_path": "3.2 Fine-tuning latent ??-encryption diffuser",
+      "order_idx": 78
+    },
+    {
+      "type": "text",
+      "sub_type": "",
+      "page_idx": 4,
+      "bbox": [
+        81.0,
+        334.0,
+        483.0,
+        439.0
+      ],
+      "text": "where $f _ { c } ( \\cdot )$ denotes an aforementioned learnable injection convolution layer proposed by us for mapping the concatenation of the latent image ?? (?? $z _ { i } ^ { ( t - 1 ) }$ and watermark ?? (???? $z _ { w } ^ { ( t - 1 ) }$ into a latent watermarking mixture ?? (?? −1)?? . Whereas, when ??(?? ) equals 0, the Safe-SD $z _ { m } ^ { ( t - 1 ) }$ $\\lambda ( t )$ performs this forward diffusion simply by adding random noise $\\epsilon \\sim { \\cal N } ( 0 , I )$ to the latent vector $z _ { i } ^ { ( t - 1 ) }$ of the image from the previous step, formally, ",
+      "section_path": "3.2 Fine-tuning latent ??-encryption diffuser",
+      "order_idx": 79
+    },
+    {
+      "type": "equation",
+      "sub_type": "",
+      "page_idx": 4,
+      "bbox": [
+        151.0,
+        445.0,
+        482.0,
+        468.0
+      ],
+      "text": "$$\nz _ {m} ^ {(t)} = \\alpha_ {t} \\cdot z _ {i} ^ {(t - 1)} + \\sqrt {1 - \\alpha_ {t} ^ {2}} \\epsilon , \\epsilon \\sim \\mathcal {N} (0, I) \\tag {7}\n$$",
+      "section_path": "3.2 Fine-tuning latent ??-encryption diffuser",
+      "order_idx": 80
+    },
+    {
+      "type": "text",
+      "sub_type": "",
+      "page_idx": 4,
+      "bbox": [
+        81.0,
+        470.0,
+        480.0,
+        527.0
+      ],
+      "text": "Note Safe-SD uses a binary value of 0 or 1 to record this forward diffusion process with ??-sampling and then to compose them into a binary key $m \\in \\{ 0 , 1 \\} ^ { T }$ , which will serve as readout to control the subsequent inverted denoising. ",
+      "section_path": "3.2 Fine-tuning latent ??-encryption diffuser",
+      "order_idx": 81
+    },
+    {
+      "type": "text",
+      "sub_type": "",
+      "page_idx": 4,
+      "bbox": [
+        81.0,
+        527.0,
+        482.0,
+        678.0
+      ],
+      "text": "Inverted denoising based $\\lambda$ -encryption. To fine-tune the latent diffuser from second-stage-model to enable the input image, watermark and their latent mixture to be correctly denoised by an U-Net network, and to ultimately ensure high-fidelity image synthesis and watermark extraction, we propose this inverted denoising module based ??-encryption. Consistent with the forward process mentioned above, this inverted denoising module is controlled by an if-else-branched Markov chain, which is recorded by the binary key $m$ (e.g., 10101101) generated above. Similarly, we first introduce the ??-encryption mechanism below, and then explain how it can be used for inverted denoising. ",
+      "section_path": "3.2 Fine-tuning latent ??-encryption diffuser",
+      "order_idx": 82
+    },
+    {
+      "type": "text",
+      "sub_type": "",
+      "page_idx": 4,
+      "bbox": [
+        81.0,
+        679.0,
+        482.0,
+        790.0
+      ],
+      "text": "First, for a given sequence $( x _ { 1 } , . . . , x _ { N } )$ and a key $m \\in \\{ 0 , 1 \\} ^ { N }$ , this ??-encryption is defined as: at any position where $m _ { i } = 1$ , the original data $x _ { i }$ is modified into $x _ { i } ^ { * }$ by superimposing a perturbation $x _ { \\Delta }$ onto $x _ { i }$ (i.e., $x _ { i } ^ { * } = x _ { i } \\oplus x _ { \\Delta } )$ , while keeping the original data unchanged at other positions where $m _ { i } = 0$ , to finally obtain the encrypted sequence. The advantage of this ??-encryption method is that it maintains the distribution of the original data as much as possible while achieving controllable encryption. ",
+      "section_path": "3.2 Fine-tuning latent ??-encryption diffuser",
+      "order_idx": 83
+    },
+    {
+      "type": "text",
+      "sub_type": "",
+      "page_idx": 4,
+      "bbox": [
+        81.0,
+        790.0,
+        482.0,
+        873.0
+      ],
+      "text": "Then, we introduce a ??-encryption based inverted denoising strategy, which treats the latent watermark $z _ { w }$ as a perturbation when $m = 1$ , and $z _ { w }$ is subsequently superimposed on the latent variable $z _ { i }$ of the image (i.e., $z _ { m } ^ { * } = z _ { i } \\oplus z _ { w } )$ by an injection convolution layer $f _ { c } ( \\cdot )$ to ultimately obtain a watermarked image (i.e., encrypted vector) in latent space, as shown in Figure 3(b). Formally, ",
+      "section_path": "3.2 Fine-tuning latent ??-encryption diffuser",
+      "order_idx": 84
+    },
+    {
+      "type": "equation",
+      "sub_type": "",
+      "page_idx": 4,
+      "bbox": [
+        151.0,
+        877.0,
+        482.0,
+        898.0
+      ],
+      "text": "$$\nz _ {m} ^ {(t)} = z _ {i} ^ {(t - 1)} \\oplus z _ {w} ^ {(t - 1)} = f _ {c} \\left(z _ {i} ^ {(t - 1)}, z _ {w} ^ {(t - 1)}\\right) \\tag {8}\n$$",
+      "section_path": "3.2 Fine-tuning latent ??-encryption diffuser",
+      "order_idx": 85
+    },
+    {
+      "type": "image",
+      "sub_type": "",
+      "page_idx": 4,
+      "bbox": [
+        540.0,
+        104.0,
+        696.0,
+        205.0
+      ],
+      "text": "[image]",
+      "section_path": "3.2 Fine-tuning latent ??-encryption diffuser",
+      "order_idx": 86
+    },
+    {
+      "type": "image",
+      "sub_type": "",
+      "page_idx": 4,
+      "bbox": [
+        705.0,
+        104.0,
+        880.0,
+        210.0
+      ],
+      "text": "[image]",
+      "section_path": "3.2 Fine-tuning latent ??-encryption diffuser",
+      "order_idx": 87
+    },
+    {
+      "type": "text",
+      "sub_type": "",
+      "page_idx": 4,
+      "bbox": [
+        511.0,
+        256.0,
+        913.0,
+        369.0
+      ],
+      "text": "Furthermore, as illustrated in Algorithm 2, when $m = 0$ , the latent variable $z _ { i }$ of the original image is directly sent to U-Net for denoising without adding any disturbance. As shown in Figure 4, when denoising the perturbed image $z _ { m } ^ { ( t ) }$ , the watermark $z _ { w } ^ { ( t ) }$ ?? is simultaneously fed into U-Net for balancing image generation and watermark extraction. Note that this does not require using U-Net twice but simply by first concatenating them and then feeding them together into a shared U-Net network $\\epsilon _ { \\theta } ( \\cdot )$ for denoising as, ",
+      "section_path": "3.2 Fine-tuning latent ??-encryption diffuser",
+      "order_idx": 88
+    },
+    {
+      "type": "equation",
+      "sub_type": "",
+      "page_idx": 4,
+      "bbox": [
+        575.0,
+        373.0,
+        911.0,
+        396.0
+      ],
+      "text": "$$\n\\left. \\left(z _ {m} ^ {(t - 1)}, z _ {w} ^ {(t - 1)}\\right) = \\mathcal {S} _ {d d i m} \\left(\\epsilon_ {\\theta} ^ {(t)} \\left(z _ {m} ^ {(t)}, z _ {w} ^ {(t)} \\mid c, t\\right)\\right) \\right. \\tag {9}\n$$",
+      "section_path": "3.2 Fine-tuning latent ??-encryption diffuser",
+      "order_idx": 89
+    },
+    {
+      "type": "text",
+      "sub_type": "",
+      "page_idx": 4,
+      "bbox": [
+        513.0,
+        398.0,
+        913.0,
+        483.0
+      ],
+      "text": "where $S _ { d d i m } ( \\cdot )$ denotes the DDIM [62] sampling strategy executed during inference, which is sampled from the predicted $\\dot { \\epsilon } _ { \\theta } ^ { ( t ) }$ to obtain the final ?? (?? −?? $z _ { m } ^ { ( t - 1 ) }$ and $z _ { w } ^ { ( t - 1 ) }$ (through a tensor split operation torch.chunk()). Similarly, when an unperturbed image $z _ { i } ^ { ( t ) }$ as input, the watermark ?? (?? )?? i $z _ { w } ^ { ( t ) }$ s also sent to U-Net for denoising as, ",
+      "section_path": "3.2 Fine-tuning latent ??-encryption diffuser",
+      "order_idx": 90
+    },
+    {
+      "type": "equation",
+      "sub_type": "",
+      "page_idx": 4,
+      "bbox": [
+        584.0,
+        486.0,
+        911.0,
+        508.0
+      ],
+      "text": "$$\n\\left. \\left(z _ {i} ^ {(t - 1)}, z _ {w} ^ {(t - 1)}\\right) = \\mathcal {S} _ {d d i m} \\left(\\epsilon_ {\\theta} ^ {(t)} \\left(z _ {i} ^ {(t)}, z _ {w} ^ {(t)} | c, t\\right)\\right) \\right. \\tag {10}\n$$",
+      "section_path": "3.2 Fine-tuning latent ??-encryption diffuser",
+      "order_idx": 91
+    },
+    {
+      "type": "text",
+      "sub_type": "",
+      "page_idx": 4,
+      "bbox": [
+        513.0,
+        513.0,
+        911.0,
+        555.0
+      ],
+      "text": "Fine-tuning objectives. To fine-tune this latent diffuser with ??-sampling and $\\lambda$ -encryption to adapt to the dual goal decoders from the first-stage-model, we set up a stepwise denoising loss, ",
+      "section_path": "3.2 Fine-tuning latent ??-encryption diffuser",
+      "order_idx": 92
+    },
+    {
+      "type": "equation",
+      "sub_type": "",
+      "page_idx": 4,
+      "bbox": [
+        535.0,
+        556.0,
+        911.0,
+        601.0
+      ],
+      "text": "$$\n\\mathcal {L} _ {s ^ {2}} = \\left| \\left| \\underbrace {\\epsilon - \\epsilon_ {\\theta} ^ {(t)} \\left(z _ {m} ^ {(t)} , z _ {w} ^ {(t)}\\right)} _ {m _ {t} = 1} \\right| \\right| _ {2} ^ {2} + \\left| \\left| \\underbrace {\\epsilon - \\epsilon_ {\\theta} ^ {(t)} \\left(z _ {i} ^ {(t)} , z _ {w} ^ {(t)}\\right)} _ {m _ {t} = 0} \\right| \\right| _ {2} ^ {2} \\tag {11}\n$$",
+      "section_path": "3.2 Fine-tuning latent ??-encryption diffuser",
+      "order_idx": 93
+    },
+    {
+      "type": "text",
+      "sub_type": "",
+      "page_idx": 4,
+      "bbox": [
+        513.0,
+        604.0,
+        915.0,
+        646.0
+      ],
+      "text": "where $\\epsilon \\sim { \\cal N } ( 0 , I )$ denotes standard Gaussian noise, which is consistent with Stable Diffusion [59]. Moreover, the classifier-free guidance technique [23] is also used in the training of Safe-SD. ",
+      "section_path": "3.2 Fine-tuning latent ??-encryption diffuser",
+      "order_idx": 94
+    },
+    {
+      "type": "title",
+      "sub_type": "",
+      "page_idx": 4,
+      "bbox": [
+        514.0,
+        657.0,
+        671.0,
+        671.0
+      ],
+      "text": "4 EXPERIMENTS ",
+      "section_path": "4 EXPERIMENTS",
+      "order_idx": 95
+    },
+    {
+      "type": "title",
+      "sub_type": "",
+      "page_idx": 4,
+      "bbox": [
+        514.0,
+        676.0,
+        732.0,
+        693.0
+      ],
+      "text": "4.1 Experimental Setting ",
+      "section_path": "4.1 Experimental Setting",
+      "order_idx": 96
+    },
+    {
+      "type": "text",
+      "sub_type": "",
+      "page_idx": 4,
+      "bbox": [
+        511.0,
+        696.0,
+        913.0,
+        876.0
+      ],
+      "text": "Datasets. We follow [13] to pre-train the first-stage-model of our Safe-SD on LSUN-Churches [74], COCO [37], FFHQ 2 [26] and Logo-2K [69] datasets with image resolution $2 5 6 \\times 2 5 6$ , and further follow Dreambooth [60] to fine-tune the latent diffuser of the second-stage-model for ??−encrypted watermark injection. For the training of the text-conditional diffusion models, we follow [60] to leverage a textual prompt (e.g., “a photo of a church with watermark [V] (or [U])”) as the guidance condition and adopt the graphical LOGOs from Logo-2K as pre-defined watermarks to finetune our Safe-SD model in our experiments. Specifically, 126, 227 images on the training set of LSUN-Churches, 63, 000 images on the training set of FFHQ and 167, 140 watermarks on Logo-2K are utilized to train the models. During testing, 1, 000 images and 1, 000 ",
+      "section_path": "4.1 Experimental Setting",
+      "order_idx": 97
+    },
+    {
+      "type": "page_footnote",
+      "sub_type": "",
+      "page_idx": 4,
+      "bbox": [
+        514.0,
+        882.0,
+        707.0,
+        895.0
+      ],
+      "text": "2https://github.com/NVlabs/ffhq-dataset ",
+      "section_path": "4.1 Experimental Setting",
+      "order_idx": 99
+    },
+    {
+      "type": "image",
+      "sub_type": "",
+      "page_idx": 5,
+      "bbox": [
+        125.0,
+        104.0,
+        867.0,
+        377.0
+      ],
+      "text": "[image]",
+      "section_path": "4.1 Experimental Setting",
+      "order_idx": 101
+    },
+    {
+      "type": "text",
+      "sub_type": "",
+      "page_idx": 5,
+      "bbox": [
+        81.0,
+        429.0,
+        480.0,
+        455.0
+      ],
+      "text": "watermarks are randomly composed to perform the quantitatively experimental evaluations. ",
+      "section_path": "4.1 Experimental Setting",
+      "order_idx": 102
+    },
+    {
+      "type": "text",
+      "sub_type": "",
+      "page_idx": 5,
+      "bbox": [
+        81.0,
+        455.0,
+        482.0,
+        583.0
+      ],
+      "text": "Implementation details. We follow SD [59] to resize all the images to a resolution of $2 5 6 \\times 2 5 6$ , and the batch size is set to 4. The scaling factor $f$ is set to 8 and the guidance factor of the classifierfree is set to 7.5. During inference, the pre-trained CLIP embedding layer [57] is leveraged to match the suitable watermarks for adaptive prompt triggering strategy and DDIM [62] sampling is executed for final image synthesis. All the experiments are performed for 20 epochs on 2 NVIDIA RTX3090 GPUs with PyTorch framework and the optimization and schedule setups are consistent with [59]. ",
+      "section_path": "4.1 Experimental Setting",
+      "order_idx": 103
+    },
+    {
+      "type": "title",
+      "sub_type": "",
+      "page_idx": 5,
+      "bbox": [
+        81.0,
+        614.0,
+        482.0,
+        631.0
+      ],
+      "text": "4.2 Image generation quality for watermarking ",
+      "section_path": "4.2 Image generation quality for watermarking",
+      "order_idx": 104
+    },
+    {
+      "type": "text",
+      "sub_type": "",
+      "page_idx": 5,
+      "bbox": [
+        81.0,
+        632.0,
+        482.0,
+        896.0
+      ],
+      "text": "Qualitative Evaluation. To evaluate the image generation quality and the fidelity with watermarking, we first conduct the qualitative experiments by visualizing the pixel-level differences $( \\times 1 0 )$ between the original image and watermarked image (marked as W/. Watermark), which are presented in Figure 5. Specifically, in Figure 5, we respectively test Safe-SD on natural images from COCO [37] (Top), facial images from FFHQ [26] (Mid), and text-generated images (Bottom). From Figure 5, we can observe that: 1) All watermarked images by our Safe-SD maintain high-fidelity. Particularly, even for challenging facial images, the watermarked results still can finely preserve the details of hair. Moreover, combined with the results of Figure 6 (additionally presenting the detected watermarks), we can notice that our Safe-SD can simultaneously balance the quality of the detected watermarks and the watermarked images. It is worth noting that compared to previous digital watermarking methods [16, 80], our Safe-SD has higher fault tolerance. For example, when several pixels are incorrectly predicted, it will not lead to incorrect detection and authentication in our method, but in the digital watermarking method, the incorrect prediction of ",
+      "section_path": "4.2 Image generation quality for watermarking",
+      "order_idx": 105
+    },
+    {
+      "type": "table",
+      "sub_type": "",
+      "page_idx": 5,
+      "bbox": [
+        516.0,
+        426.0,
+        913.0,
+        541.0
+      ],
+      "text": "<table><tr><td>Methods</td><td>Type</td><td>PSNR ↑</td><td>FID ↓</td><td>LPIPS ↓</td><td>CLIP ↑</td></tr><tr><td>SSL Watermark [2022]</td><td>string</td><td>31.60</td><td>19.63</td><td>0.261</td><td>84.03</td></tr><tr><td>Baluja et.al. [2019]</td><td>graphics</td><td>30.41</td><td>20.39</td><td>0.317</td><td>83.63</td></tr><tr><td>FNNS [2021]</td><td>string</td><td>32.71</td><td>19.03</td><td>0.243</td><td>85.99</td></tr><tr><td>HiDDeN [2018]</td><td>string</td><td>32.99</td><td>19.49</td><td>0.244</td><td>85.43</td></tr><tr><td>Stable Signature [2023]</td><td>string</td><td>31.09</td><td>19.47</td><td>0.263</td><td>87.90</td></tr><tr><td>Safe-SD (Ours)</td><td>graphics</td><td>33.17</td><td>18.89</td><td>0.232</td><td>88.15</td></tr></table>",
+      "section_path": "4.2 Image generation quality for watermarking",
+      "order_idx": 106
+    },
+    {
+      "type": "text",
+      "sub_type": "",
+      "page_idx": 5,
+      "bbox": [
+        511.0,
+        590.0,
+        913.0,
+        867.0
+      ],
+      "text": "2) There are still subtle textured differences in enlarged pixel-level, but that’s almost imperceptible and well ensures traceability. According to the enlarged $( \\times 1 0 )$ pixel-wise results, it can be observed that the generative differences mainly come from visual contents with dense texture, such as hair and eyes in facial images, but note that it is almost impossible to discern by the human eyes. That also reveals that the information hidden in the image cannot disappear, but can only be moved to an imperceptible location to ensure traceability. 3) Safe-SD is suitable for a wide variety of images and well supports text-driven generative watermarking. As shown in Figure 5, the experiments are conducted on a wide variety of images, such as the natural images from COCO [37], facial images from FFHQ [26], and text-generated images (bottom), showing all the generated images watermarked by our Safe-SD maintain high-fidelity, which demonstrates the powerful generalization ability of our Safe-SD. Besides, Figure 6 presents more qualitative comparison results with the previous graphical watermarking method [2], which further verifies the superiority of our model in balancing high-resolution image synthesis and high-traceable watermark detection. ",
+      "section_path": "4.2 Image generation quality for watermarking",
+      "order_idx": 107
+    },
+    {
+      "type": "text",
+      "sub_type": "",
+      "page_idx": 5,
+      "bbox": [
+        513.0,
+        867.0,
+        913.0,
+        896.0
+      ],
+      "text": "Quantitative Evaluation. Following [16], we further quantitatively evaluate our approach in PSNR, FID, LPIPS and CLIP-Score ",
+      "section_path": "4.2 Image generation quality for watermarking",
+      "order_idx": 108
+    },
+    {
+      "type": "image",
+      "sub_type": "",
+      "page_idx": 6,
+      "bbox": [
+        127.0,
+        104.0,
+        248.0,
+        208.0
+      ],
+      "text": "[image]",
+      "section_path": "4.2 Image generation quality for watermarking",
+      "order_idx": 112
+    },
+    {
+      "type": "image",
+      "sub_type": "",
+      "page_idx": 6,
+      "bbox": [
+        253.0,
+        104.0,
+        370.0,
+        208.0
+      ],
+      "text": "[image]",
+      "section_path": "4.2 Image generation quality for watermarking",
+      "order_idx": 113
+    },
+    {
+      "type": "image",
+      "sub_type": "",
+      "page_idx": 6,
+      "bbox": [
+        372.0,
+        104.0,
+        493.0,
+        208.0
+      ],
+      "text": "[image]",
+      "section_path": "4.2 Image generation quality for watermarking",
+      "order_idx": 114
+    },
+    {
+      "type": "image",
+      "sub_type": "",
+      "page_idx": 6,
+      "bbox": [
+        500.0,
+        104.0,
+        617.0,
+        208.0
+      ],
+      "text": "[image]",
+      "section_path": "4.2 Image generation quality for watermarking",
+      "order_idx": 115
+    },
+    {
+      "type": "image",
+      "sub_type": "",
+      "page_idx": 6,
+      "bbox": [
+        622.0,
+        104.0,
+        740.0,
+        208.0
+      ],
+      "text": "[image]",
+      "section_path": "4.2 Image generation quality for watermarking",
+      "order_idx": 116
+    },
+    {
+      "type": "image",
+      "sub_type": "",
+      "page_idx": 6,
+      "bbox": [
+        743.0,
+        104.0,
+        861.0,
+        208.0
+      ],
+      "text": "[image]",
+      "section_path": "4.2 Image generation quality for watermarking",
+      "order_idx": 117
+    },
+    {
+      "type": "image",
+      "sub_type": "",
+      "page_idx": 6,
+      "bbox": [
+        127.0,
+        213.0,
+        248.0,
+        316.0
+      ],
+      "text": "[image]",
+      "section_path": "4.2 Image generation quality for watermarking",
+      "order_idx": 118
+    },
+    {
+      "type": "image",
+      "sub_type": "",
+      "page_idx": 6,
+      "bbox": [
+        253.0,
+        213.0,
+        370.0,
+        316.0
+      ],
+      "text": "[image]",
+      "section_path": "4.2 Image generation quality for watermarking",
+      "order_idx": 119
+    },
+    {
+      "type": "image",
+      "sub_type": "",
+      "page_idx": 6,
+      "bbox": [
+        372.0,
+        213.0,
+        493.0,
+        316.0
+      ],
+      "text": "[image]",
+      "section_path": "4.2 Image generation quality for watermarking",
+      "order_idx": 120
+    },
+    {
+      "type": "image",
+      "sub_type": "",
+      "page_idx": 6,
+      "bbox": [
+        500.0,
+        213.0,
+        617.0,
+        316.0
+      ],
+      "text": "[image]",
+      "section_path": "4.2 Image generation quality for watermarking",
+      "order_idx": 121
+    },
+    {
+      "type": "image",
+      "sub_type": "",
+      "page_idx": 6,
+      "bbox": [
+        622.0,
+        213.0,
+        740.0,
+        316.0
+      ],
+      "text": "[image]",
+      "section_path": "4.2 Image generation quality for watermarking",
+      "order_idx": 122
+    },
+    {
+      "type": "image",
+      "sub_type": "",
+      "page_idx": 6,
+      "bbox": [
+        743.0,
+        213.0,
+        861.0,
+        316.0
+      ],
+      "text": "[image]",
+      "section_path": "4.2 Image generation quality for watermarking",
+      "order_idx": 123
+    },
+    {
+      "type": "table",
+      "sub_type": "",
+      "page_idx": 6,
+      "bbox": [
+        84.0,
+        369.0,
+        482.0,
+        484.0
+      ],
+      "text": "<table><tr><td>Methods</td><td>Type</td><td>PSNR ↑</td><td>FID ↓</td><td>LPIPS ↓</td><td>CLIP ↑</td></tr><tr><td>HiDDeN [2018]</td><td>string</td><td>32.19</td><td>19.58</td><td>0.217</td><td>93.32</td></tr><tr><td>Baluja et.al. [2019]</td><td>graphics</td><td>29.17</td><td>20.85</td><td>0.403</td><td>91.93</td></tr><tr><td>FNNS [2021]</td><td>string</td><td>31.96</td><td>19.56</td><td>0.220</td><td>92.00</td></tr><tr><td>SSL Watermark [2022]</td><td>string</td><td>30.47</td><td>19.91</td><td>0.262</td><td>91.51</td></tr><tr><td>Stable Signature [2023]</td><td>string</td><td>30.88</td><td>20.33</td><td>0.231</td><td>93.01</td></tr><tr><td>Safe-SD (Ours)</td><td>graphics</td><td>32.73</td><td>19.36</td><td>0.215</td><td>93.99</td></tr></table>",
+      "section_path": "4.2 Image generation quality for watermarking",
+      "order_idx": 124
+    },
+    {
+      "type": "text",
+      "sub_type": "",
+      "page_idx": 6,
+      "bbox": [
+        81.0,
+        505.0,
+        482.0,
+        656.0
+      ],
+      "text": "metrics on LSUN-Churches and FFHQ datasets, which is shown in Table 1 and Table 2. From the results in the two tables, we can observe that our model Safe-SD achieves state-of-the-art performance on all four metrics and obtains the best generative results, even with more challenging graphical watermarking, i.e., directly interfering with pixels, compared to string-based methods [16, 17, 31, 81]. In particular, our model outperforms Stable Signature, a recent generative work, by $6 . 6 9 \\%$ , $2 . 9 8 \\%$ , $1 1 . 7 9 \\%$ and $0 . 2 8 \\%$ in four metrics on the LSUN-Churches dataset, and exceeds by $5 . 9 9 \\%$ , $4 . 7 7 \\%$ , $6 . 9 3 \\%$ and $1 . 0 5 \\%$ on the FFHQ dataset, which further verifies the superiority and effectiveness of Safe-SD. ",
+      "section_path": "4.2 Image generation quality for watermarking",
+      "order_idx": 125
+    },
+    {
+      "type": "title",
+      "sub_type": "",
+      "page_idx": 6,
+      "bbox": [
+        83.0,
+        670.0,
+        446.0,
+        686.0
+      ],
+      "text": "4.3 Explore on $\\lambda$ -encryption watermarking ",
+      "section_path": "4.3 Explore on $\\lambda$ -encryption watermarking",
+      "order_idx": 126
+    },
+    {
+      "type": "text",
+      "sub_type": "",
+      "page_idx": 6,
+      "bbox": [
+        81.0,
+        688.0,
+        482.0,
+        813.0
+      ],
+      "text": "The frequency of ??-encryption. To deeply explore the performance of ??-encryption in image watermarking in our approach, we perform a study on the impact of watermarking frequency ?? on image synthesis quality, as shown in Figure 7. It can be observed that with the increase of ?? (i.e., from 5 to 15), the performance of generated images may be affected due to the interference of watermark information, so we need to balance the frequency of watermark injection and the image’s fidelity and finally choose $\\lambda = 1 0$ (50 steps in total) as the appropriate watermarking frequency. ",
+      "section_path": "4.3 Explore on $\\lambda$ -encryption watermarking",
+      "order_idx": 127
+    },
+    {
+      "type": "text",
+      "sub_type": "",
+      "page_idx": 6,
+      "bbox": [
+        81.0,
+        813.0,
+        482.0,
+        896.0
+      ],
+      "text": "The time period of ??-encryption. To further explore the influence of different injection times of watermark on image synthesis quality, we also perform a study on the watermarking time period $t$ , as shown in Figure 7. From Figure 7, we can observe that the earlier the injection occurs, the less high-frequency information in the image is retained in the final generative results. Particularly, when ",
+      "section_path": "4.3 Explore on $\\lambda$ -encryption watermarking",
+      "order_idx": 128
+    },
+    {
+      "type": "image",
+      "sub_type": "",
+      "page_idx": 6,
+      "bbox": [
+        540.0,
+        371.0,
+        705.0,
+        435.0
+      ],
+      "text": "[image]",
+      "section_path": "4.3 Explore on $\\lambda$ -encryption watermarking",
+      "order_idx": 129
+    },
+    {
+      "type": "image",
+      "sub_type": "",
+      "page_idx": 6,
+      "bbox": [
+        720.0,
+        371.0,
+        885.0,
+        435.0
+      ],
+      "text": "[image]",
+      "section_path": "4.3 Explore on $\\lambda$ -encryption watermarking",
+      "order_idx": 130
+    },
+    {
+      "type": "image",
+      "sub_type": "",
+      "page_idx": 6,
+      "bbox": [
+        540.0,
+        435.0,
+        704.0,
+        502.0
+      ],
+      "text": "[image]",
+      "section_path": "4.3 Explore on $\\lambda$ -encryption watermarking",
+      "order_idx": 131
+    },
+    {
+      "type": "image",
+      "sub_type": "",
+      "page_idx": 6,
+      "bbox": [
+        720.0,
+        435.0,
+        885.0,
+        502.0
+      ],
+      "text": "[image]",
+      "section_path": "4.3 Explore on $\\lambda$ -encryption watermarking",
+      "order_idx": 132
+    },
+    {
+      "type": "image",
+      "sub_type": "",
+      "page_idx": 6,
+      "bbox": [
+        722.0,
+        502.0,
+        885.0,
+        571.0
+      ],
+      "text": "[image]",
+      "section_path": "4.3 Explore on $\\lambda$ -encryption watermarking",
+      "order_idx": 133
+    },
+    {
+      "type": "text",
+      "sub_type": "",
+      "page_idx": 6,
+      "bbox": [
+        513.0,
+        643.0,
+        913.0,
+        726.0
+      ],
+      "text": "$\\lambda = 1 5$ and the watermarking time period is in the early stage (refer to the first column of each case in Figure 7(c)), it will cause image distortion, which indicates that the watermarking unit (Figure 3) should be activated set as often as possible during the middle to end time period of latent diffusion, for better balancing watermark injection and generative effects. ",
+      "section_path": "4.3 Explore on $\\lambda$ -encryption watermarking",
+      "order_idx": 134
+    },
+    {
+      "type": "title",
+      "sub_type": "",
+      "page_idx": 6,
+      "bbox": [
+        514.0,
+        739.0,
+        810.0,
+        755.0
+      ],
+      "text": "4.4 Analysis on hyper-parameter ?? ",
+      "section_path": "4.4 Analysis on hyper-parameter ??",
+      "order_idx": 135
+    },
+    {
+      "type": "text",
+      "sub_type": "",
+      "page_idx": 6,
+      "bbox": [
+        511.0,
+        757.0,
+        913.0,
+        896.0
+      ],
+      "text": "To further trade off the high-fidelity image synthesis and hightraceable watermark injection, we perform this study on hyperparameter ?? (refer to Formula 3), as illustrated in Figure 8. From Figure 8(a), we can observe that: 1) When the loss of image reconstruction and the loss of watermark decoding have the same weight (i.e., $\\gamma = 1 \\mathrm { \\dot { \\Omega } }$ ), both of them can steadily decrease until the model converges; 2) When reducing ?? to make the model focus on image synthesis (i.e., $\\gamma = 0 . 1$ ), the loss curves of both have a significant decline in the early stage, but after that the watermark decoding becomes difficult to converge. Correspondingly, the decoded LOGO ",
+      "section_path": "4.4 Analysis on hyper-parameter ??",
+      "order_idx": 136
+    },
+    {
+      "type": "image",
+      "sub_type": "",
+      "page_idx": 7,
+      "bbox": [
+        106.0,
+        103.0,
+        890.0,
+        314.0
+      ],
+      "text": "[image]",
+      "section_path": "4.4 Analysis on hyper-parameter ??",
+      "order_idx": 139
+    },
+    {
+      "type": "table",
+      "sub_type": "",
+      "page_idx": 7,
+      "bbox": [
+        94.0,
+        349.0,
+        467.0,
+        468.0
+      ],
+      "text": "<table><tr><td></td><td>PSNR ↑</td><td>FID ↓</td><td>LPIPS ↓</td><td>CLIP-Score ↑</td></tr><tr><td>None (Ours)</td><td>33.17</td><td>18.89</td><td>0.232</td><td>88.15</td></tr><tr><td>Rotate 90</td><td>32.96</td><td>18.94</td><td>0.228</td><td>87.72</td></tr><tr><td>Resize 0.7</td><td>32.18</td><td>19.11</td><td>0.242</td><td>87.03</td></tr><tr><td>Brightness 2.0</td><td>30.53</td><td>19.77</td><td>0.257</td><td>86.09</td></tr><tr><td>Crop 10%</td><td>31.01</td><td>19.30</td><td>0.250</td><td>85.01</td></tr><tr><td>Combined</td><td>29.24</td><td>20.18</td><td>0.275</td><td>83.49</td></tr></table>",
+      "section_path": "4.4 Analysis on hyper-parameter ??",
+      "order_idx": 140
+    },
+    {
+      "type": "text",
+      "sub_type": "",
+      "page_idx": 7,
+      "bbox": [
+        81.0,
+        500.0,
+        482.0,
+        556.0
+      ],
+      "text": "has become obviously blurred at this time; 3) When $\\gamma$ further decreases (i.e., $\\gamma = 0 . 0 1 \\mathrm { \\Omega }$ ), a similar conclusion is further verified. Based on the above discussion, we finally choose $\\gamma = 1$ to balance image synthesis and watermark decoding. ",
+      "section_path": "4.4 Analysis on hyper-parameter ??",
+      "order_idx": 141
+    },
+    {
+      "type": "title",
+      "sub_type": "",
+      "page_idx": 7,
+      "bbox": [
+        83.0,
+        571.0,
+        393.0,
+        588.0
+      ],
+      "text": "4.5 The robustness of watermarking ",
+      "section_path": "4.5 The robustness of watermarking",
+      "order_idx": 142
+    },
+    {
+      "type": "text",
+      "sub_type": "",
+      "page_idx": 7,
+      "bbox": [
+        81.0,
+        590.0,
+        482.0,
+        811.0
+      ],
+      "text": "Anti-attack test. We conduct the anti-attack test to evaluate the robustness of our graphical watermarking against a variety of attacks, as shown in Table 3. Specifically, we follow Stable Signature [16] to set up 5 attack tests: 1) Rotate 90, 2) Resize 0.7, 3) Brightness 2.0, 4) Crop $1 0 \\%$ , 5) Combined. From Table 3, we can observe that our approach is robust to the various attacks. For example, the PSNR metric under the most challenging combined attack is still higher than $2 9 \\%$ , and the LPIPS metric is still lower than $0 . 2 8 \\%$ , which demonstrate the excellent robustness of our Safe-SD. Moreover, the CLIP-Scores under all attacks are still higher than $8 3 \\%$ , which demonstrates most of the semantic information is still retained in the watermarked images. Moreover, it can be observed that the brightness has a relatively maximal impact on generation quality (e.g., PSNR, FID, LPIPS), and even if the image is cropped to $1 0 \\%$ of the original image, it still retains a high watermark recognition rate, which verifies the effectiveness of Safe-SD. ",
+      "section_path": "4.5 The robustness of watermarking",
+      "order_idx": 143
+    },
+    {
+      "type": "text",
+      "sub_type": "",
+      "page_idx": 7,
+      "bbox": [
+        81.0,
+        811.0,
+        482.0,
+        896.0
+      ],
+      "text": "Multi-watermarking test. Figure 9 shows the test results of multi-watermarking. From Figure 9, we notice that when multiple watermarks are injected at the same time, Safe-SD still maintains the high-quality image characteristics. Meanwhile, the two injected watermarks in Figure 9 can still be clearly extracted, demonstrating the superiority of our model in multi-watermarking scenarios. ",
+      "section_path": "4.5 The robustness of watermarking",
+      "order_idx": 144
+    },
+    {
+      "type": "image",
+      "sub_type": "",
+      "page_idx": 7,
+      "bbox": [
+        535.0,
+        356.0,
+        890.0,
+        580.0
+      ],
+      "text": "[image]",
+      "section_path": "4.5 The robustness of watermarking",
+      "order_idx": 145
+    },
+    {
+      "type": "title",
+      "sub_type": "",
+      "page_idx": 7,
+      "bbox": [
+        514.0,
+        642.0,
+        661.0,
+        655.0
+      ],
+      "text": "5 CONCLUSION ",
+      "section_path": "5 CONCLUSION",
+      "order_idx": 146
+    },
+    {
+      "type": "text",
+      "sub_type": "",
+      "page_idx": 7,
+      "bbox": [
+        511.0,
+        660.0,
+        915.0,
+        896.0
+      ],
+      "text": "In this paper, we have presented Safe-SD, a safe and high-traceable Stable Diffusion framework with a text prompt trigger for unified generative watermarking and detection. Specifically, we design a simple and unified architecture, which makes it possible to simultaneously train watermark injection and detection in a single network, greatly improving the efficiency and convenience of use. Moreover, to further support text-driven generative watermarking, we elaborately design a ??-sampling and ??-encryption algorithm to fine-tune a latent diffuser wrapped by a VAE for balancing highfidelity image synthesis and high-traceable watermark detection. Besides, we introduce a novel prompt triggering mechanism to enable adaptive watermark injection for facilitating copyright protection. Note the proposed approach can be easily extended to other diffusion models and can adapt to various downstream tasks. Experiments on the representative LSUN-Churches, COCO, and FFHQ datasets demonstrate the effectiveness and superior performance of our Safe-SD model in both quantitative and qualitative evaluations. ",
+      "section_path": "5 CONCLUSION",
+      "order_idx": 147
+    },
+    {
+      "type": "title",
+      "sub_type": "",
+      "page_idx": 8,
+      "bbox": [
+        84.0,
+        104.0,
+        279.0,
+        119.0
+      ],
+      "text": "ACKNOWLEDGMENTS ",
+      "section_path": "ACKNOWLEDGMENTS",
+      "order_idx": 151
+    },
+    {
+      "type": "text",
+      "sub_type": "",
+      "page_idx": 8,
+      "bbox": [
+        81.0,
+        125.0,
+        482.0,
+        165.0
+      ],
+      "text": "This work was supported by the China Postdoctoral Science Foundation under Grant No.2023M741950, and the Nationally Funded Postdoctoral Researcher Program under Grant No.GZB20230347. ",
+      "section_path": "ACKNOWLEDGMENTS",
+      "order_idx": 152
+    },
+    {
+      "type": "title",
+      "sub_type": "",
+      "page_idx": 8,
+      "bbox": [
+        84.0,
+        181.0,
+        202.0,
+        196.0
+      ],
+      "text": "REFERENCES ",
+      "section_path": "REFERENCES",
+      "order_idx": 153
+    },
+    {
+      "type": "list",
+      "sub_type": "ref_text",
+      "page_idx": 8,
+      "bbox": [
+        86.0,
+        199.0,
+        482.0,
+        895.0
+      ],
+      "text": "",
+      "section_path": "REFERENCES",
+      "order_idx": 154
+    },
+    {
+      "type": "list",
+      "sub_type": "ref_text",
+      "page_idx": 8,
+      "bbox": [
+        517.0,
+        109.0,
+        913.0,
+        895.0
+      ],
+      "text": "",
+      "section_path": "REFERENCES",
+      "order_idx": 155
+    },
+    {
+      "type": "list",
+      "sub_type": "ref_text",
+      "page_idx": 9,
+      "bbox": [
+        86.0,
+        109.0,
+        480.0,
+        895.0
+      ],
+      "text": "",
+      "section_path": "REFERENCES",
+      "order_idx": 158
+    },
+    {
+      "type": "list",
+      "sub_type": "ref_text",
+      "page_idx": 9,
+      "bbox": [
+        516.0,
+        109.0,
+        911.0,
+        371.0
+      ],
+      "text": "",
+      "section_path": "REFERENCES",
+      "order_idx": 159
+    }
+  ]
+}

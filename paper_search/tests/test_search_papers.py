@@ -22,13 +22,9 @@ class SearchPapersFlowTest(unittest.IsolatedAsyncioTestCase):
         # Keep environment deterministic and network-free.
         safe_env = {
             "PAPERSEARCH_DOI_ENRICH_ENABLED": "0",
-            "PAPERSEARCH_UNPAYWALL_EMAIL": "",
-            "PAPERSEARCH_CORE_API_KEY": "",
             "PAPERSEARCH_LLM_BASEURL": "",
             "PAPERSEARCH_LLM_APIKEY": "",
             "PAPERSEARCH_RERANK_MODELNAME": "",
-            "PAPERSEARCH_SUMMARY_MODELNAME": "",
-            "PAPERSEARCH_SUMMARY_ENABLED": "0",
         }
 
         raw = [
@@ -112,7 +108,6 @@ class SearchPapersFlowTest(unittest.IsolatedAsyncioTestCase):
     async def test_output_fields_filter(self) -> None:
         safe_env = {
             "PAPERSEARCH_DOI_ENRICH_ENABLED": "0",
-            "PAPERSEARCH_SUMMARY_ENABLED": "0",
         }
         raw = [
             Paper(

@@ -1,0 +1,37 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(wc:*)",
+      "Bash(grep:*)",
+      "Bash(find:*)",
+      "mcp__context7__resolve-library-id",
+      "mcp__context7__query-docs",
+      "Bash(uv sync:*)",
+      "Bash(.venv/bin/python:*)",
+      "Bash(npm install:*)",
+      "Bash(npx next build:*)",
+      "Bash(lsof:*)",
+      "Bash(.venv/bin/python3:*)",
+      "Bash(python:*)",
+      "Bash(uv run python:*)",
+      "Bash(python3:*)",
+      "WebSearch",
+      "WebFetch(domain:docs.openalex.org)",
+      "WebFetch(domain:api.semanticscholar.org)",
+      "WebFetch(domain:api.crossref.org)",
+      "WebFetch(domain:www.semanticscholar.org)",
+      "WebFetch(domain:community.crossref.org)",
+      "Bash(xargs:*)",
+      "Bash(npx tsc:*)",
+      "Bash(npm run build:*)",
+      "Bash(ls:*)",
+      "Bash(npm audit:*)",
+      "Bash(docker compose build:*)",
+      "Bash(docker info:*)",
+      "Bash(curl -sI --connect-timeout 5 https://ghcr.io)",
+      "Bash(docker compose:*)",
+      "Bash(curl:*)",
+      "Bash(git -C /mnt/d/AI/scholar status --short)"
+    ]
+  }
+}
