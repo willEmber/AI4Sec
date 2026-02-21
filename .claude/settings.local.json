@@ -31,7 +31,12 @@
       "Bash(curl -sI --connect-timeout 5 https://ghcr.io)",
       "Bash(docker compose:*)",
       "Bash(curl:*)",
-      "Bash(git -C /mnt/d/AI/scholar status --short)"
+      "Bash(git -C /mnt/d/AI/scholar status --short)",
+      "Bash(PAPERSEARCH_CONTACT_EMAILS=\"alice@test.com, bob@test.com, carol@test.com\" uv run python:*)",
+      "Bash(PAPERSEARCH_IEEE_API_KEY=test123 PAPERSEARCH_SEMANTICSCHOLAR_API_KEY=testS2 PAPERSEARCH_CONTACT_EMAILS=\"a@test.com,b@test.com\" uv run python:*)",
+      "Bash(PAPERSEARCH_IEEE_API_KEY=test123 PAPERSEARCH_SEMANTICSCHOLAR_API_KEY=testS2 PAPERSEARCH_CONTACT_EMAILS=\"a@test.com,b@test.com\" PYTHONPATH=/mnt/d/AI/scholar uv run python:*)",
+      "WebFetch(domain:help.aliyun.com)",
+      "Bash(PYTHONPATH=/mnt/d/AI/scholar uv run python:*)"
     ]
   }
 }

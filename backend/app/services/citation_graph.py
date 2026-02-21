@@ -17,11 +17,18 @@ _project_root = Path(__file__).resolve().parents[3]
 if str(_project_root) not in sys.path:
     sys.path.insert(0, str(_project_root))
 
+from paper_search.paper_search.config import Settings as PSSettings, load_env_file
 from paper_search.paper_search.utils import (
     jaccard_similarity,
     normalize_whitespace,
     openalex_abstract_from_inverted_index,
 )
+
+# Ensure .env is loaded so PAPERSEARCH_* vars are available.
+load_env_file(str(Path(__file__).resolve().parents[3] / ".env"))
+
+# Shared paper_search settings for email round-robin
+_ps_settings = PSSettings.from_env()
 
 # ---------------------------------------------------------------------------
 # Shared data class
@@ -137,7 +144,7 @@ _OA_SELECT = "id,title,publication_year,primary_location,authorships,cited_by_co
 
 
 def _oa_mailto_param() -> dict[str, str]:
-    email = os.getenv("PAPERSEARCH_CONTACT_EMAIL", "").split(",")[0].strip()
+    email = _ps_settings.pick_openalex_mailto()
     if email:
         return {"mailto": email}
     return {}
@@ -547,7 +554,7 @@ async def crossref_resolve_doi(
         "rows": "3",
         "select": "DOI,title",
     }
-    email = os.getenv("PAPERSEARCH_CONTACT_EMAIL", "").split(",")[0].strip()
+    email = _ps_settings.pick_crossref_mailto()
     if email:
         params["mailto"] = email
 

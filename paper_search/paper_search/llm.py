@@ -178,6 +178,14 @@ async def embeddings(
     return all_vecs
 
 
+def _is_dashscope(base_url: str) -> bool:
+    return "dashscope" in (base_url or "").lower()
+
+
+def _dashscope_rerank_url() -> str:
+    return "https://dashscope.aliyuncs.com/api/v1/services/rerank/text-rerank/text-rerank"
+
+
 async def rerank(
     client: HTTPClient,
     *,
@@ -193,17 +201,34 @@ async def rerank(
     if not (cfg.base_url and model and query):
         return []
 
-    url = _endpoint(cfg.base_url, "/rerank")
-    headers = {"Authorization": f"Bearer {cfg.api_key}"} if cfg.api_key else {}
-    payload: dict[str, Any] = {
-        "model": model,
-        "query": query,
-        "documents": documents,
-        "top_n": min(max(int(top_n), 1), len(documents)),
-        "return_documents": False,
-    }
-    if instruction:
+    use_dashscope = _is_dashscope(cfg.base_url)
+
+    if use_dashscope:
+        url = _dashscope_rerank_url()
+        payload: dict[str, Any] = {
+            "model": model,
+            "input": {
+                "query": query,
+                "documents": documents,
+            },
+            "parameters": {
+                "top_n": min(max(int(top_n), 1), len(documents)),
+                "return_documents": False,
+            },
+        }
+    else:
+        url = _endpoint(cfg.base_url, "/rerank")
+        payload = {
+            "model": model,
+            "query": query,
+            "documents": documents,
+            "top_n": min(max(int(top_n), 1), len(documents)),
+            "return_documents": False,
+        }
+    if instruction and not use_dashscope:
         payload["instruction"] = instruction
+
+    headers = {"Authorization": f"Bearer {cfg.api_key}"} if cfg.api_key else {}
 
     delay = max(cfg.retry_base_delay, 0.0)
     attempt = 0
@@ -211,9 +236,11 @@ async def rerank(
         attempt += 1
         try:
             data = await client.post_json(url, json_body=payload, headers=headers)
-            results: Any = data.get("results")
-            if results is None:
-                results = data.get("data")
+
+            # Parse results — DashScope nests under "output"
+            results: Any = data
+            if use_dashscope:
+                results = data.get("output") or data
             if isinstance(results, dict):
                 results = results.get("results") or results.get("data") or results.get("items")
             if not isinstance(results, list):

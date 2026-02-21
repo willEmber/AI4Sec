@@ -333,6 +333,80 @@ async def step_3_resolve_canonical_ids(
 
 
 # ──────────────────────────────────────────────────────────────────────
+# Search query extraction (LLM)
+# ──────────────────────────────────────────────────────────────────────
+
+_QUERY_EXTRACTION_SYSTEM = """You are a research paper keyword extractor. Given a paper's title, abstract, and introduction, generate 3-5 diverse search queries for finding related academic literature.
+
+Requirements:
+- Each query should be a concise phrase (3-8 words) focusing on a different research aspect
+- Cover different dimensions: core methodology, application domain, key technique, related approaches or baselines
+- Do NOT simply repeat or paraphrase the full title
+- Queries should be effective for academic search engines (Semantic Scholar, arXiv, etc.)
+
+Return a JSON array of strings, for example:
+["diffusion model watermarking", "robust image steganography deep learning", "edge-guided content generation"]
+
+Return ONLY a valid JSON array, no markdown fences or explanation."""
+
+
+async def _extract_search_queries(
+    paper_ir: PaperIR,
+    center: SphereNode,
+    model: str,
+    run_id: str,
+    paper_id: str,
+) -> list[str]:
+    """Use LLM to extract 3-5 diverse search queries from the paper content."""
+    # Build context from PaperIR: title + abstract + keywords + introduction
+    parts: list[str] = [f"Title: {paper_ir.title}"]
+
+    abstract_text = ""
+    keywords_text = ""
+    intro_text = ""
+
+    for block in paper_ir.blocks:
+        section_lower = block.section_path.lower()
+        if "abstract" in section_lower and block.type == "text":
+            abstract_text += block.text.strip() + " "
+        elif "keyword" in section_lower and block.type in ("text", "list"):
+            keywords_text += block.text.strip() + " "
+        elif "introduction" in section_lower and block.type == "text":
+            intro_text += block.text.strip() + " "
+
+    if abstract_text:
+        parts.append(f"Abstract: {abstract_text[:1000]}")
+    if keywords_text:
+        parts.append(f"Keywords: {keywords_text[:300]}")
+    if intro_text:
+        parts.append(f"Introduction (excerpt): {intro_text[:1500]}")
+
+    context = "\n\n".join(parts)
+
+    try:
+        llm = get_llm_service()
+        messages = [
+            {"role": "system", "content": _QUERY_EXTRACTION_SYSTEM},
+            {"role": "user", "content": context},
+        ]
+        response = await llm.chat(messages, model=model, temperature=0.3, max_tokens=512)
+        response = _strip_json_fences(response)
+        queries = json.loads(response)
+        if isinstance(queries, list) and all(isinstance(q, str) for q in queries):
+            queries = [q.strip() for q in queries if q.strip()]
+            if queries:
+                logger.info(
+                    f"[{paper_id}] sphere: extracted {len(queries)} search queries: {queries}"
+                )
+                return queries[:5]
+    except Exception as e:
+        logger.warning(f"[{paper_id}] sphere: query extraction failed, falling back to title: {e}")
+
+    # Fallback: use title
+    return [center.title]
+
+
+# ──────────────────────────────────────────────────────────────────────
 # Step 4: Expand graph candidates
 # ──────────────────────────────────────────────────────────────────────
 
@@ -470,62 +544,106 @@ async def step_4_expand_graph_candidates(
 
                 logger.info(f"[{paper_id}] sphere step 4: {label} -> {count} new nodes")
 
-    # Brief delay to let S2 rate limits recover before paper_search fires more S2 calls
+    # Extract diverse search queries via LLM while waiting for S2 rate limits
+    paper_ir = PaperIR.model_validate_json(state["paper_ir_json"])
+    query_task = asyncio.create_task(
+        _extract_search_queries(
+            paper_ir, center, state.get("llm_model", ""), run_id, paper_id,
+        )
+    )
+    # Brief delay to let S2 rate limits recover; LLM extraction runs in parallel
     await asyncio.sleep(2.0)
+    queries = await query_task
 
-    # Paper search channel
+    # Paper search channel — multiple keyword-driven queries
     try:
-        from paper_search.paper_search.config import Settings as PSSettings
+        from paper_search.paper_search.config import Settings as PSSettings, load_env_file
         from paper_search.paper_search.search import search_papers
 
-        # Build a paper_search Settings from backend config — no os.environ mutation.
+        # Ensure .env is loaded so PAPERSEARCH_* vars are available.
+        load_env_file(str(Path(__file__).resolve().parents[3] / ".env"))
+
+        # Load full settings from env (API keys, emails, etc.),
+        # then override LLM fields from backend config.
         _cfg = get_settings()
+        _ps_base = PSSettings.from_env()
         _ps_settings = PSSettings(
-            llm_base_url=_cfg.llm_base_url,
-            llm_api_key=_cfg.llm_api_key,
-            rerank_model=_cfg.rerank_model,
+            **{
+                **{f.name: getattr(_ps_base, f.name) for f in _ps_base.__dataclass_fields__.values()},
+                "llm_base_url": _cfg.llm_base_url,
+                "llm_api_key": _cfg.llm_api_key,
+                "rerank_model": _cfg.rerank_model,
+            }
         )
 
-        search_json = await search_papers(
-            center.title,
-            platforms=["OpenAlex", "SemanticScholar", "arXiv", "Crossref", "IEEE Xplore"],
-            final_limit=30,
-            settings=_ps_settings,
-        )
-        search_results = json.loads(search_json)
-        search_count = 0
-        for paper in search_results:
-            title = paper.get("title", "")
-            doi = paper.get("doi", "")
-            if not title:
-                continue
-            node_id = make_node_id(doi=doi, title=title)
-            if node_id == center.node_id or node_id in sphere.nodes:
-                continue
+        per_query_limit = 15
+        _search_sem = asyncio.Semaphore(2)  # max 2 concurrent searches
 
-            authors_raw = paper.get("authors", "")
-            if isinstance(authors_raw, list):
-                authors_raw = ", ".join(
-                    a if isinstance(a, str) else a.get("name", "")
-                    for a in authors_raw[:5]
+        async def _run_search(query: str) -> list[dict]:
+            async with _search_sem:
+                result_json = await search_papers(
+                    query,
+                    platforms=["OpenAlex", "SemanticScholar", "arXiv", "Crossref", "IEEE Xplore"],
+                    final_limit=per_query_limit,
+                    settings=_ps_settings,
                 )
+                return json.loads(result_json)
 
-            node = SphereNode(
-                node_id=node_id,
-                title=title,
-                doi=doi,
-                abstract_text=paper.get("abstract", ""),
-                authors=authors_raw,
-                source=CandidateSource.QUERY_SEARCH,
+        results_lists = await asyncio.gather(
+            *[_run_search(q) for q in queries],
+            return_exceptions=True,
+        )
+
+        # Merge results from all queries into sphere nodes
+        search_count = 0
+        for qi, result_list in enumerate(results_lists):
+            if isinstance(result_list, Exception):
+                logger.warning(
+                    f"[{paper_id}] sphere step 4: query_search[{qi}] "
+                    f"q={queries[qi]!r} failed: {result_list}"
+                )
+                continue
+            q_count = 0
+            for paper in result_list:
+                title = paper.get("title", "")
+                doi = paper.get("doi", "")
+                if not title:
+                    continue
+                node_id = make_node_id(doi=doi, title=title)
+                if node_id == center.node_id or node_id in sphere.nodes:
+                    continue
+
+                authors_raw = paper.get("authors", "")
+                if isinstance(authors_raw, list):
+                    authors_raw = ", ".join(
+                        a if isinstance(a, str) else a.get("name", "")
+                        for a in authors_raw[:5]
+                    )
+
+                node = SphereNode(
+                    node_id=node_id,
+                    title=title,
+                    doi=doi,
+                    abstract_text=paper.get("abstract", ""),
+                    authors=authors_raw,
+                    source=CandidateSource.QUERY_SEARCH,
+                )
+                sphere.nodes[node_id] = node
+                sphere.edges.append(SphereEdge(
+                    source_node_id=center.node_id,
+                    target_node_id=node_id,
+                    edge_type=EdgeType.RELATED,
+                ))
+                q_count += 1
+                search_count += 1
+            logger.info(
+                f"[{paper_id}] sphere step 4: query_search[{qi}] "
+                f"q={queries[qi]!r} -> {q_count} new nodes"
             )
-            sphere.nodes[node_id] = node
-            sphere.edges.append(SphereEdge(
-                source_node_id=center.node_id,
-                target_node_id=node_id,
-                edge_type=EdgeType.RELATED,
-            ))
-            search_count += 1
-        logger.info(f"[{paper_id}] sphere step 4: query_search -> {search_count} new nodes")
+        logger.info(
+            f"[{paper_id}] sphere step 4: query_search total -> "
+            f"{search_count} new nodes from {len(queries)} queries"
+        )
     except Exception as e:
         logger.warning(f"[{paper_id}] sphere step 4: paper_search failed: {e}")
 
