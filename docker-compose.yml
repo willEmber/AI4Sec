@@ -1,7 +1,8 @@
 services:
   backend:
     build:
-      context: ./backend
+      context: .
+      dockerfile: backend/Dockerfile
       args:
         REGISTRY_MIRROR: ${REGISTRY_MIRROR:-docker.1ms.run}
     container_name: scholar-backend
@@ -9,7 +10,7 @@ services:
     environment:
       - CORS_ORIGINS=["http://localhost:3000"]
     volumes:
-      - ./docker-data:/app/data
+      - ./docker-data:/scholar/backend/data
     ports:
       - "8000:8000"
     restart: unless-stopped

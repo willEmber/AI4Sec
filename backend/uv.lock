@@ -851,6 +851,7 @@ dependencies = [
     { name = "pydantic-settings" },
     { name = "python-dotenv" },
     { name = "python-multipart" },
+    { name = "requests" },
     { name = "slowapi" },
     { name = "uvicorn", extra = ["standard"] },
 ]
@@ -866,6 +867,7 @@ requires-dist = [
     { name = "pydantic-settings", specifier = ">=2.0" },
     { name = "python-dotenv", specifier = ">=1.0" },
     { name = "python-multipart", specifier = ">=0.0.9" },
+    { name = "requests", specifier = ">=2.31" },
     { name = "slowapi", specifier = ">=0.1.9" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.30" },
 ]

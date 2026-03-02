@@ -1,0 +1,32 @@
+# Backend Docker build context filter.
+# Only backend/ and paper_search/ are needed.
+
+.git/
+frontend/
+docker-data/
+PublicationRank/
+papersdownload/
+paper_converter/
+test_doc/
+
+# Python caches
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+
+# IDE / OS
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Secrets (injected at runtime via env_file)
+.env
+.env.local
+.env.example
+
+# Logs
+*.log

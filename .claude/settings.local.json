@@ -36,7 +36,8 @@
       "Bash(PAPERSEARCH_IEEE_API_KEY=test123 PAPERSEARCH_SEMANTICSCHOLAR_API_KEY=testS2 PAPERSEARCH_CONTACT_EMAILS=\"a@test.com,b@test.com\" uv run python:*)",
       "Bash(PAPERSEARCH_IEEE_API_KEY=test123 PAPERSEARCH_SEMANTICSCHOLAR_API_KEY=testS2 PAPERSEARCH_CONTACT_EMAILS=\"a@test.com,b@test.com\" PYTHONPATH=/mnt/d/AI/scholar uv run python:*)",
       "WebFetch(domain:help.aliyun.com)",
-      "Bash(PYTHONPATH=/mnt/d/AI/scholar uv run python:*)"
+      "Bash(PYTHONPATH=/mnt/d/AI/scholar uv run python:*)",
+      "Bash(uv lock:*)"
     ]
   }
 }
