@@ -1,7 +1,7 @@
 ARG REGISTRY_MIRROR=docker.1ms.run
 FROM ${REGISTRY_MIRROR}/library/python:3.13-slim
 
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+RUN pip install --no-cache-dir uv
 
 # Mirror the dev layout: /scholar/backend/ + /scholar/paper_search/
 # so that sys.path hacks (parents[3]) resolve identically in both envs.
