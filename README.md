@@ -33,9 +33,9 @@ Required variables in `.env`:
 docker compose up -d
 ```
 
-- Frontend: http://localhost:3000
-- Backend API: http://localhost:8000
-- API docs: http://localhost:8000/docs
+- Frontend: http://localhost:3001
+- Backend API: http://localhost:8001
+- API docs: http://localhost:8001/docs
 
 ### 3. Stop
 

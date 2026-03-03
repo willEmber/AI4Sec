@@ -11,7 +11,7 @@ const API_BASE = "/api";
 // SSE/EventSource must connect directly to backend — Next.js rewrite proxy
 // buffers streaming responses, preventing real-time SSE delivery.
 const BACKEND_SSE_BASE =
-  process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
+  process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8001";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, init);
