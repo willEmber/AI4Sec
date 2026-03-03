@@ -113,6 +113,20 @@ export default function RunPage() {
     setTargetPage(page);
   }, []);
 
+  const handleExportMarkdown = useCallback(() => {
+    if (!markdown) return;
+    const title = paper?.title || paperId;
+    const mode = run?.mode || "analysis";
+    const filename = `${title.replace(/[^a-zA-Z0-9\u4e00-\u9fff]+/g, "_").slice(0, 60)}_${mode}.md`;
+    const blob = new Blob([markdown], { type: "text/markdown;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+  }, [markdown, paper?.title, paperId, run?.mode]);
+
   // Progress steps from events — deduplicate by step name, keeping latest status
   const progressSteps = (() => {
     const all = events
@@ -145,7 +159,17 @@ export default function RunPage() {
             Mode: {run?.mode || "..."} | Run: {runId}
           </p>
         </div>
-        <div className="shrink-0">
+        <div className="shrink-0 flex items-center gap-3">
+          {markdown && (
+            <button
+              onClick={handleExportMarkdown}
+              className="inline-flex items-center gap-1.5 px-3 py-1 text-sm border border-[var(--border)] rounded-md hover:bg-[var(--accent)] transition-colors"
+              title="Export as Markdown"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+              Export .md
+            </button>
+          )}
           {isRunning && (
             <span className="inline-flex items-center gap-2 text-sm text-[var(--primary)]">
               <span className="w-2 h-2 bg-[var(--primary)] rounded-full animate-pulse" />

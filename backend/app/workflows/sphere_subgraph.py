@@ -43,6 +43,15 @@ if str(_project_root) not in sys.path:
 from paper_search.paper_search.utils import normalize_whitespace, title_fingerprint
 
 
+def _is_center_paper(center: SphereNode, title: str, doi: str = "") -> bool:
+    """Check if a candidate is actually the center paper (via DOI or title fingerprint)."""
+    if doi and center.doi and doi.strip().lower() == center.doi.strip().lower():
+        return True
+    if title and center.title:
+        return title_fingerprint(title) == title_fingerprint(center.title)
+    return False
+
+
 # ──────────────────────────────────────────────────────────────────────
 # SSE progress helper
 # ──────────────────────────────────────────────────────────────────────
@@ -183,6 +192,9 @@ async def step_1_init_from_pdf(
         node_id = make_node_id(doi=doi, title=title)
         if node_id == center_id or node_id in sphere.nodes:
             continue
+        # Skip refs that are actually the center paper (title/DOI match)
+        if _is_center_paper(center, title, doi):
+            continue
 
         year = 0
         if ref.get("year"):
@@ -198,6 +210,7 @@ async def step_1_init_from_pdf(
             arxiv_id=ref.get("arxiv_id", ""),
             year=year,
             source=CandidateSource.SEED_REF,
+            sources=[CandidateSource.SEED_REF],
         )
         sphere.nodes[node_id] = node
         sphere.edges.append(SphereEdge(
@@ -490,6 +503,9 @@ async def step_4_expand_graph_candidates(
                     node_id = make_node_id(doi=meta.doi, title=meta.title)
                     if node_id == center.node_id:
                         continue
+                    # Skip candidates that are actually the center paper
+                    if _is_center_paper(center, meta.title, meta.doi):
+                        continue
 
                     if node_id in sphere.nodes:
                         # Merge metadata into existing node
@@ -510,6 +526,9 @@ async def step_4_expand_graph_candidates(
                             existing.authors = meta.authors
                         if meta.year and not existing.year:
                             existing.year = meta.year
+                        # Track all sources that contributed to this node
+                        if source not in existing.sources:
+                            existing.sources.append(source)
                     else:
                         node = SphereNode(
                             node_id=node_id,
@@ -524,6 +543,7 @@ async def step_4_expand_graph_candidates(
                             abstract_text=meta.abstract_text,
                             cited_by_count=meta.cited_by_count,
                             source=source,
+                            sources=[source],
                         )
                         sphere.nodes[node_id] = node
                         count += 1
@@ -612,6 +632,9 @@ async def step_4_expand_graph_candidates(
                 node_id = make_node_id(doi=doi, title=title)
                 if node_id == center.node_id or node_id in sphere.nodes:
                     continue
+                # Skip candidates that are actually the center paper
+                if _is_center_paper(center, title, doi):
+                    continue
 
                 authors_raw = paper.get("authors", "")
                 if isinstance(authors_raw, list):
@@ -627,6 +650,7 @@ async def step_4_expand_graph_candidates(
                     abstract_text=paper.get("abstract", ""),
                     authors=authors_raw,
                     source=CandidateSource.QUERY_SEARCH,
+                    sources=[CandidateSource.QUERY_SEARCH],
                 )
                 sphere.nodes[node_id] = node
                 sphere.edges.append(SphereEdge(
@@ -727,7 +751,8 @@ async def step_5_dedup_and_score(
                 n.node_id, run_id, n.doi, n.arxiv_id, n.openalex_id,
                 n.s2_paper_id, n.title, n.year, n.venue, n.authors,
                 n.abstract_text, n.cited_by_count, n.pdf_path,
-                1 if n.mineru_parsed else 0, n.source.value,
+                1 if n.mineru_parsed else 0,
+                ",".join(s.value for s in n.sources) if n.sources else n.source.value,
                 n.score_total, n.layer, n.cluster_id,
             )
             for n in sphere.nodes.values()
@@ -777,8 +802,12 @@ async def step_6_layer0_summarize_metadata(
         if node == sphere.center_node:
             continue
         parts: list[str] = []
-        if node.source != CandidateSource.SEED_REF:
-            parts.append(f"Source: {node.source.value.replace('_', ' ')}")
+        # Show all sources that contributed to this node
+        all_sources = node.sources if node.sources else [node.source]
+        non_seed = [s for s in all_sources if s != CandidateSource.SEED_REF]
+        if non_seed:
+            labels = [s.value.replace("_", " ") for s in non_seed]
+            parts.append(f"Source: {', '.join(labels)}")
         if node.cited_by_count > 0:
             parts.append(f"Cited by {node.cited_by_count}")
         if node.year:
@@ -1039,7 +1068,11 @@ async def step_9_synthesize_landscape(
     papers_context = "\n\n".join(_paper_desc(i, p) for i, p in enumerate(paper_list))
 
     # ── Prepare Comparator inputs (needed before launching gather) ──
-    comparison_papers = paper_list[:sphere.config.comparison_top_k]
+    # Filter out any nodes that are duplicates of the center paper
+    comparison_papers = [
+        p for p in paper_list[:sphere.config.comparison_top_k]
+        if not _is_center_paper(center, p.title, p.doi)
+    ]
     paper_ir = PaperIR.model_validate_json(state["paper_ir_json"])
     center_text_parts = []
     for block in paper_ir.blocks:
@@ -1101,8 +1134,9 @@ async def step_9_synthesize_landscape(
                 if nid in sphere.nodes:
                     sphere.nodes[nid].cluster_id = len(sphere.output.themes) - 1
 
-    # Process Comparator results
+    # Process Comparator results (with dedup by node_id)
     if comparator_data:
+        seen_comp_nids: set[str] = set()
         for row_data in comparator_data.get("rows", []):
             idx = row_data.get("idx", -1)
             if idx == 0:
@@ -1113,6 +1147,11 @@ async def step_9_synthesize_landscape(
                 title = comparison_papers[idx - 1].title
             else:
                 continue
+
+            # Skip duplicate rows for the same paper
+            if nid in seen_comp_nids:
+                continue
+            seen_comp_nids.add(nid)
 
             sphere.output.comparison_table.append(ComparisonRow(
                 node_id=nid,

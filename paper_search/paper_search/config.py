@@ -166,7 +166,7 @@ class Settings:
     # Rerank controls
     rerank_timeout_s: float = 30.0
     rerank_max_retries: int = 1
-    rerank_max_doc_chars: int = 2000
+    rerank_max_doc_chars: int = 3000
 
     # LLM runtime controls
     llm_max_concurrency: int = 1
@@ -248,7 +248,7 @@ class Settings:
         doi_enrich_max_concurrency = _env_int("PAPERSEARCH_DOI_ENRICH_MAX_CONCURRENCY", 2)
         rerank_timeout_s = _env_float("PAPERSEARCH_RERANK_TIMEOUT_S", 30.0)
         rerank_max_retries = _env_int("PAPERSEARCH_RERANK_MAX_RETRIES", 1)
-        rerank_max_doc_chars = _env_int("PAPERSEARCH_RERANK_MAX_DOC_CHARS", 2000)
+        rerank_max_doc_chars = _env_int("PAPERSEARCH_RERANK_MAX_DOC_CHARS", 3000)
         ieee_per_second_limit = _env_int(
             "PAPERSEARCH_IEEE_PER_SECOND_LIMIT",
             _env_int("PAPERSEARCH_IEEE_RATE_LIMIT_PER_SECOND", 10),

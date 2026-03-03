@@ -53,6 +53,7 @@ class SphereNode(BaseModel):
     pdf_path: str = ""
     mineru_parsed: bool = False
     source: CandidateSource = CandidateSource.SEED_REF
+    sources: list[CandidateSource] = Field(default_factory=list)
 
     # Scoring
     score_text: float = 0.0
