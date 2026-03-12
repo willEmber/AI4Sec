@@ -32,3 +32,6 @@ Thumbs.db
 
 # === Test artifacts ===
 test_doc/
+
+# === Cache databases ===
+rank_cache.sqlite3

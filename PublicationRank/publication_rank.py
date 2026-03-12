@@ -3,16 +3,33 @@
 查询期刊的 SCI 分区和 CCF 等级
 """
 
+import os
 import time
 import re
-import urllib.parse
+from pathlib import Path
 from typing import Optional
 import requests
+from dotenv import load_dotenv
+
+
+load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
 
 # EasyScholar API 配置
-EASYSCHOLAR_API_URL = "https://www.easyscholar.cc/open/getPublicationRank"
-EASYSCHOLAR_SECRET_KEY = "7fb456bc2ee9440a818d9c46b615dce1"
+DEFAULT_EASYSCHOLAR_API_URL = "https://www.easyscholar.cc/open/getPublicationRank"
+
+
+def _get_env_value(name: str, default: str = "") -> str:
+    value = os.getenv(name, default)
+    return value.strip() if isinstance(value, str) else default
+
+
+def _get_default_api_url() -> str:
+    return _get_env_value("EASYSCHOLAR_API_URL", DEFAULT_EASYSCHOLAR_API_URL) or DEFAULT_EASYSCHOLAR_API_URL
+
+
+def _get_default_secret_key() -> str:
+    return _get_env_value("EASYSCHOLAR_SECRET_KEY")
 
 # 速率限制：每秒最多1次请求（保守策略）
 MIN_REQUEST_INTERVAL = 1.0
@@ -95,13 +112,13 @@ def _validate_publication_name(name: str) -> str:
 class EasyScholarClient:
     """EasyScholar 期刊等级查询客户端"""
 
-    def __init__(self, secret_key: str = EASYSCHOLAR_SECRET_KEY,
-                 api_url: str = EASYSCHOLAR_API_URL,
+    def __init__(self, secret_key: str | None = None,
+                 api_url: str | None = None,
                  min_interval: float = MIN_REQUEST_INTERVAL,
                  max_retries: int = 3,
                  timeout: float = 10.0):
-        self.secret_key = secret_key
-        self.api_url = api_url
+        self.secret_key = secret_key.strip() if isinstance(secret_key, str) else _get_default_secret_key()
+        self.api_url = api_url.strip() if isinstance(api_url, str) else _get_default_api_url()
         self.max_retries = max_retries
         self.timeout = timeout
         self._rate_limiter = RateLimiter(min_interval)
@@ -141,6 +158,13 @@ class EasyScholarClient:
                 name=publication_name if isinstance(publication_name, str) else str(publication_name),
                 success=False,
                 error=str(e),
+            )
+
+        if not self.secret_key:
+            return PublicationRankResult(
+                name=publication_name,
+                success=False,
+                error="缺少 EasyScholar 密钥配置，请在项目根目录 .env 中设置 EASYSCHOLAR_SECRET_KEY",
             )
 
         # 速率限制
@@ -280,7 +304,7 @@ class EasyScholarClient:
 
 
 def query_publication_rank(publication_name: str,
-                           secret_key: str = EASYSCHOLAR_SECRET_KEY) -> PublicationRankResult:
+                           secret_key: str | None = None) -> PublicationRankResult:
     """
     便捷函数：查询单个期刊的 SCI 和 CCF 等级。
 

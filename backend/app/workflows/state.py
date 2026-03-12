@@ -15,6 +15,7 @@ class MainGraphState(TypedDict, total=False):
     parse_id: str
     output_dir: str
     paper_ir_json: str      # serialized PaperIR
+    pub_rank_json: str      # serialized {"venue":"...","year":2024,"sci":"Q1","ccf":"A"}
 
     # Output
     final_markdown: str

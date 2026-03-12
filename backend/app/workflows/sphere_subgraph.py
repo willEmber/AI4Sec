@@ -647,6 +647,8 @@ async def step_4_expand_graph_candidates(
                     node_id=node_id,
                     title=title,
                     doi=doi,
+                    year=paper.get("year", 0) or 0,
+                    venue=paper.get("venue", "") or "",
                     abstract_text=paper.get("abstract", ""),
                     authors=authors_raw,
                     source=CandidateSource.QUERY_SEARCH,

@@ -2,6 +2,10 @@ export interface PaperResponse {
   paper_id: string;
   title: string;
   doi: string;
+  venue: string;
+  year: number;
+  sci_rank: string;
+  ccf_rank: string;
   created_at: string;
 }
 

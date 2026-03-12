@@ -7,12 +7,14 @@ import { useRunStream } from "@/hooks/useRunStream";
 import MarkdownRenderer from "@/components/MarkdownRenderer";
 import PdfViewer from "@/components/PdfViewer";
 import SplitPane from "@/components/SplitPane";
+import RankBadges from "@/components/RankBadges";
 import type { RunResponse, PaperResponse, SSEEvent } from "@/lib/types";
 
 const STEP_LABELS: Record<string, string> = {
   ingest_pdf: "Verifying PDF",
   mineru_parse: "Parsing with MinerU",
   build_paper_ir: "Building document structure",
+  enrich_metadata: "Looking up publication rank",
   run_snap: "Generating Insight Snap",
   run_lens: "Generating Logic Lens",
   run_sphere: "Generating Research Sphere",
@@ -104,10 +106,14 @@ export default function RunPage() {
           }).catch(() => {});
         }
       }).catch(() => {});
+      // Re-fetch paper to pick up venue/rank data from enrich_metadata
+      if (!paper?.venue || (!paper?.sci_rank && !paper?.ccf_rank)) {
+        getPaper(paperId).then((p) => setPaper(p)).catch(() => {});
+      }
     }, 3000);
 
     return () => clearInterval(interval);
-  }, [runId, markdown, run?.status]);
+  }, [runId, paperId, markdown, run?.status, paper?.venue]);
 
   const handleCitationClick = useCallback((page: number) => {
     setTargetPage(page);
@@ -155,9 +161,10 @@ export default function RunPage() {
           <p className="font-medium text-sm truncate">
             {paper?.title || paperId}
           </p>
-          <p className="text-xs text-[var(--muted-foreground)]">
-            Mode: {run?.mode || "..."} | Run: {runId}
-          </p>
+          <div className="flex items-center gap-2 text-xs text-[var(--muted-foreground)]">
+            <span>Mode: {run?.mode || "..."} | Run: {runId}</span>
+            {paper && <RankBadges venue={paper.venue} year={paper.year} sciRank={paper.sci_rank} ccfRank={paper.ccf_rank} />}
+          </div>
         </div>
         <div className="shrink-0 flex items-center gap-3">
           {markdown && (

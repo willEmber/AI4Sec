@@ -11,7 +11,7 @@ class AppSettings(BaseSettings):
     # --- paths ---
     data_dir: Path = Path("data")
 
-    # --- LLM (OpenAI-compatible) ---
+    # --- LLM (Qwen Responses API) ---
     llm_base_url: str = Field(default="", alias="LLM_BASEURL")
     llm_api_key: str = Field(default="", alias="LLM_APIKEY")
     thinking_model: str = Field(default="", alias="THINKING_MODELNAME")

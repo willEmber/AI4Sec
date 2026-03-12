@@ -1,10 +1,9 @@
 # Backend Docker build context filter.
-# Only backend/ and paper_search/ are needed.
+# Only backend/, paper_search/, and PublicationRank/ are needed.
 
 .git/
 frontend/
 docker-data/
-PublicationRank/
 papersdownload/
 paper_converter/
 test_doc/

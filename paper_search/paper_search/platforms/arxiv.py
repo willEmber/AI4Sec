@@ -52,6 +52,23 @@ async def search_arxiv(
                 author_names.append(name)
         authors = "; ".join(author_names)
 
+        # year: extract from <published> tag (format: 2023-01-15T...)
+        published = normalize_whitespace(
+            entry.findtext("atom:published", default="", namespaces=ATOM_NS) or ""
+        )
+        year = 0
+        if published and len(published) >= 4:
+            try:
+                year = int(published[:4])
+            except ValueError:
+                pass
+
+        # venue: arXiv has primary_category as the closest equivalent
+        category_el = entry.find("arxiv:primary_category", ATOM_NS)
+        venue = ""
+        if category_el is not None:
+            venue = f"arXiv [{category_el.get('term', '')}]"
+
         papers.append(
             Paper(
             title=title,
@@ -60,6 +77,8 @@ async def search_arxiv(
             doi=doi,
             authors=authors,
             source_platform="arXiv",
+            year=year,
+            venue=venue,
         )
         )
     return papers

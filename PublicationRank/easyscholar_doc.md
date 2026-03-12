@@ -1,9 +1,3 @@
-
-|   |   |   |   |   |   |
-|---|---|---|---|---|---|
-|用户名|18782202187|密钥SecretKey|7fb456bc2ee9440a818d9c46b615dce1|已调用次数|131|
-|快速生成接口|https://www.easyscholar.cc/open/getPublicationRank?secretKey=7fb456bc2ee9440a818d9c46b615dce1&publicationName=|测试接口|[调用接口](https://www.easyscholar.cc/open/getPublicationRank?secretKey=7fb456bc2ee9440a818d9c46b615dce1&publicationName=)|   |   |
-
 # 期刊等级查询接口文档
 
 ## 产品概述
@@ -18,6 +12,7 @@
 4. 实际开发中请注意对期刊名进行encodeURIComponent()编码，防止&等符号影响传参
 5. 实际开发中请对请求速度做限制，每秒最多2次请求。
 6. 可以参考此文章对Zotero进行配置。[如何在Zotero上与easyScholar联动](https://www.easyscholar.cc/blogs/10007)
+7. 本项目内统一通过根目录 `.env` 中的 `EASYSCHOLAR_SECRET_KEY` 管理密钥。
 
 ## API
 

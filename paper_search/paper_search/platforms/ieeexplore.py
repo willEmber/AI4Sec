@@ -135,6 +135,17 @@ async def search_ieeexplore(
         url = _extract_url(item, doi)
         authors = _extract_authors(item)
 
+        # year
+        year = 0
+        raw_year = item.get("publication_year")
+        if isinstance(raw_year, int):
+            year = raw_year
+        elif isinstance(raw_year, str) and raw_year.isdigit():
+            year = int(raw_year)
+
+        # venue: publication_title is the journal/conference name
+        venue = normalize_whitespace(item.get("publication_title") or "")
+
         papers.append(
             Paper(
                 title=title,
@@ -143,6 +154,8 @@ async def search_ieeexplore(
                 doi=doi,
                 authors=authors,
                 source_platform="IEEE Xplore",
+                year=year,
+                venue=venue,
             )
         )
     return papers

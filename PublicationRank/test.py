@@ -1,3 +1,22 @@
-request="https://www.easyscholar.cc/open/getPublicationRank?secretKey=7fb456bc2ee9440a818d9c46b615dce1&publicationName=IEEE%20Transactions%20on%20Medical%20Imaging"
+import os
+from pathlib import Path
+from urllib.parse import quote
 
-response=""
+from dotenv import load_dotenv
+
+
+load_dotenv(Path(__file__).resolve().parent.parent / ".env")
+
+publication_name = "IEEE Transactions on Medical Imaging"
+api_url = (
+    os.getenv("EASYSCHOLAR_API_URL", "https://www.easyscholar.cc/open/getPublicationRank").strip()
+    or "https://www.easyscholar.cc/open/getPublicationRank"
+)
+secret_key = os.getenv("EASYSCHOLAR_SECRET_KEY", "").strip()
+request = (
+    f"{api_url}?secretKey={quote(secret_key)}&publicationName={quote(publication_name)}"
+    if secret_key
+    else ""
+)
+
+response = ""

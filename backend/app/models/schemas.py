@@ -17,6 +17,10 @@ class PaperResponse(BaseModel):
     paper_id: str
     title: str
     doi: str
+    venue: str = ""
+    year: int = 0
+    sci_rank: str = ""
+    ccf_rank: str = ""
     created_at: str
 
 

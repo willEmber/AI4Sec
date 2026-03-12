@@ -26,6 +26,7 @@ Required variables in `.env`:
 | `EMBED_MODELNAME` | Embedding model name |
 | `RERANK_MODELNAME` | Reranking model name |
 | `MINERU_TOKEN` | MinerU PDF parsing API token |
+| `EASYSCHOLAR_SECRET_KEY` | EasyScholar API key for PublicationRank |
 
 ### 2. Build and start
 

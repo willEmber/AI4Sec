@@ -37,6 +37,23 @@ async def search_crossref(
                 author_parts.append(name)
         authors = "; ".join(author_parts)
 
+        # year: try published-print → published-online → issued
+        year = 0
+        for date_key in ("published-print", "published-online", "issued"):
+            date_parts = (item.get(date_key) or {}).get("date-parts")
+            if date_parts and isinstance(date_parts, list) and date_parts[0]:
+                try:
+                    year = int(date_parts[0][0])
+                    break
+                except (IndexError, ValueError, TypeError):
+                    continue
+
+        # venue: container-title (journal/conference name)
+        venue = ""
+        container = item.get("container-title") or []
+        if container and isinstance(container, list):
+            venue = normalize_whitespace(container[0] or "")
+
         papers.append(
             Paper(
                 title=title,
@@ -45,6 +62,8 @@ async def search_crossref(
                 doi=doi,
                 authors=authors,
                 source_platform="Crossref",
+                year=year,
+                venue=venue,
             )
         )
     return papers

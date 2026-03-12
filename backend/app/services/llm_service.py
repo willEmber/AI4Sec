@@ -18,7 +18,7 @@ _TIMEOUT_CAP = 900.0
 
 
 class LLMService:
-    """Async OpenAI-compatible LLM client with retry and backoff."""
+    """Async Qwen Responses API client with retry and backoff."""
 
     def __init__(
         self,
@@ -71,9 +71,8 @@ class LLMService:
 
         payload: dict[str, Any] = {
             "model": model,
-            "messages": messages,
+            "input": messages,
             "temperature": temperature,
-            "max_tokens": max_tokens,
         }
 
         # Scale timeout with expected output size + prompt size
@@ -103,7 +102,7 @@ class LLMService:
                 )
                 async with httpx.AsyncClient(timeout=timeout) as client:
                     resp = await client.post(
-                        f"{self.base_url}/chat/completions",
+                        f"{self.base_url}/responses",
                         headers=self._headers(),
                         json=payload,
                     )
@@ -145,13 +144,19 @@ class LLMService:
 
                 resp.raise_for_status()
                 data = resp.json()
-                content = data["choices"][0]["message"]["content"]
+                content = ""
+                for item in data.get("output", []):
+                    if item.get("type") == "message":
+                        for part in item.get("content", []):
+                            if part.get("type") == "output_text":
+                                content += part.get("text", "")
+                        break
                 total_elapsed = time.perf_counter() - t0
 
                 # Log usage if available
                 usage = data.get("usage", {})
-                prompt_tokens = usage.get("prompt_tokens", "?")
-                completion_tokens = usage.get("completion_tokens", "?")
+                prompt_tokens = usage.get("input_tokens", "?")
+                completion_tokens = usage.get("output_tokens", "?")
                 logger.info(
                     f"LLM chat: DONE in {total_elapsed:.1f}s (http={req_elapsed:.1f}s) — "
                     f"tokens={prompt_tokens}+{completion_tokens} response={len(content)} chars"
@@ -222,9 +227,8 @@ class LLMService:
 
         payload: dict[str, Any] = {
             "model": model,
-            "messages": messages,
+            "input": messages,
             "temperature": temperature,
-            "max_tokens": max_tokens,
             "stream": True,
         }
 
@@ -240,26 +244,29 @@ class LLMService:
         async with httpx.AsyncClient(timeout=timeout) as client:
             async with client.stream(
                 "POST",
-                f"{self.base_url}/chat/completions",
+                f"{self.base_url}/responses",
                 headers=self._headers(),
                 json=payload,
             ) as resp:
                 resp.raise_for_status()
                 async for line in resp.aiter_lines():
-                    if not line.startswith("data: "):
+                    if not line.startswith("data:"):
                         continue
-                    data_str = line[6:]
-                    if data_str.strip() == "[DONE]":
-                        break
+                    data_str = line[5:].strip()
+                    if not data_str:
+                        continue
                     try:
                         chunk = json.loads(data_str)
-                        delta = chunk["choices"][0].get("delta", {})
-                        content = delta.get("content", "")
+                    except json.JSONDecodeError:
+                        continue
+                    event_type = chunk.get("type", "")
+                    if event_type == "response.output_text.delta":
+                        content = chunk.get("delta", "")
                         if content:
                             token_count += 1
                             yield content
-                    except (KeyError, IndexError, json.JSONDecodeError):
-                        continue
+                    elif event_type == "response.completed":
+                        break
 
         logger.info(f"LLM stream: DONE in {time.perf_counter()-t0:.1f}s — {token_count} chunks")
 

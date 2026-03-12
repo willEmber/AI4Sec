@@ -39,7 +39,10 @@
       "Bash(PYTHONPATH=/mnt/d/AI/scholar uv run python:*)",
       "Bash(uv lock:*)",
       "Bash(docker run:*)",
-      "Bash(docker exec:*)"
+      "Bash(docker exec:*)",
+      "Bash(pip install aiosqlite python-dotenv 2>&1 | tail -5)",
+      "Bash(pip install httpx 2>&1 | tail -3)",
+      "Bash(find /mnt/d/AI/scholar/backend/data/papers -name \"paper_ir.json\" -exec grep -h '\"type\"' {} \\\\; 2>/dev/null | sed 's/.*\"type\":\"\\\\\\([^\"]*\\\\\\)\".*/\\\\1/' | sort -u)"
     ]
   }
 }

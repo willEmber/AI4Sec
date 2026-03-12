@@ -17,6 +17,9 @@ COPY backend/app ./app
 # Copy paper_search module (used by sphere, citation_graph, sphere_scorer)
 COPY paper_search /scholar/paper_search
 
+# Copy PublicationRank module (used by enrich_metadata for SCI/CCF ranking)
+COPY PublicationRank /scholar/PublicationRank
+
 EXPOSE 8000
 
 CMD ["uv", "run", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

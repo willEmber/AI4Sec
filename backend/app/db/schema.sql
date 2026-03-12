@@ -5,6 +5,10 @@ CREATE TABLE IF NOT EXISTS papers (
     file_path  TEXT NOT NULL,                -- relative to data_dir
     title      TEXT DEFAULT '',
     doi        TEXT DEFAULT '',
+    venue      TEXT DEFAULT '',              -- journal/conference name from Crossref
+    year       INTEGER DEFAULT 0,            -- publication year
+    sci_rank   TEXT DEFAULT '',              -- SCI tier: Q1/Q2/Q3/Q4
+    ccf_rank   TEXT DEFAULT '',              -- CCF rating: A/B/C
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 

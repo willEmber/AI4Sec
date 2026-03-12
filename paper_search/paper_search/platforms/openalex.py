@@ -38,6 +38,19 @@ async def search_openalex(
                 author_names.append(name)
         authors = "; ".join(author_names)
 
+        # year
+        year = 0
+        raw_year = item.get("publication_year")
+        if isinstance(raw_year, int):
+            year = raw_year
+        elif isinstance(raw_year, str) and raw_year.isdigit():
+            year = int(raw_year)
+
+        # venue: from primary_location → source → display_name
+        venue = ""
+        source = (primary.get("source") or {})
+        venue = normalize_whitespace(source.get("display_name") or "")
+
         papers.append(
             Paper(
                 title=title,
@@ -46,6 +59,8 @@ async def search_openalex(
                 doi=doi,
                 authors=authors,
                 source_platform="OpenAlex",
+                year=year,
+                venue=venue,
             )
         )
     return papers

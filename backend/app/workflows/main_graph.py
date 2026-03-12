@@ -2,12 +2,20 @@ from __future__ import annotations
 
 import json
 import logging
+import re
+import sys
 import time
 import uuid
 from pathlib import Path
 from typing import Any
 
+import httpx
 from langgraph.graph import END, StateGraph
+
+# Ensure project root (/scholar/) is in sys.path so PublicationRank is importable
+_project_root = Path(__file__).resolve().parents[3]
+if str(_project_root) not in sys.path:
+    sys.path.insert(0, str(_project_root))
 
 from app.config import get_settings
 from app.db import database as db
@@ -115,6 +123,264 @@ async def build_paper_ir(state: MainGraphState) -> dict[str, Any]:
         }
 
 
+_DOI_RE = re.compile(r"\b(10\.\d{4,9}/[^\s,;\"')\]>]+)", re.ASCII)
+_ARXIV_RE = re.compile(r"arXiv[:\s]*(\d{4}\.\d{4,5}(?:v\d+)?)", re.IGNORECASE)
+
+
+async def _extract_doi_from_ir(paper_ir_json: str) -> str:
+    """Extract DOI from paper text blocks (prefer first few pages)."""
+    from app.models.paper_ir import PaperIR
+
+    ir = PaperIR.model_validate_json(paper_ir_json)
+    # Search text blocks from early pages first
+    for block in sorted(ir.blocks, key=lambda b: (b.page_idx, b.order_idx)):
+        if block.page_idx > 3:
+            break
+        m = _DOI_RE.search(block.text)
+        if m:
+            doi = m.group(1).rstrip(".")
+            return doi
+    # Fallback: scan all blocks
+    for block in ir.blocks:
+        m = _DOI_RE.search(block.text)
+        if m:
+            doi = m.group(1).rstrip(".")
+            return doi
+    return ""
+
+
+async def _extract_arxiv_id_from_ir(paper_ir_json: str) -> str:
+    """Extract arXiv ID (e.g. 2301.12345) from paper text blocks."""
+    from app.models.paper_ir import PaperIR
+
+    ir = PaperIR.model_validate_json(paper_ir_json)
+    for block in sorted(ir.blocks, key=lambda b: (b.page_idx, b.order_idx)):
+        if block.page_idx > 3:
+            break
+        m = _ARXIV_RE.search(block.text)
+        if m:
+            return m.group(1)
+    for block in ir.blocks:
+        m = _ARXIV_RE.search(block.text)
+        if m:
+            return m.group(1)
+    return ""
+
+
+async def _crossref_lookup(doi: str) -> dict[str, Any]:
+    """Query Crossref API for venue and year. Returns {"venue": ..., "year": ...}."""
+    if not doi:
+        return {}
+    url = f"https://api.crossref.org/works/{doi}"
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.get(url, headers={"User-Agent": "ScholarApp/1.0 (mailto:scholar@example.com)"})
+            resp.raise_for_status()
+            data = resp.json().get("message", {})
+
+        venue = ""
+        container = data.get("container-title", [])
+        if container:
+            venue = container[0]
+
+        year = 0
+        for date_field in ("published-print", "published-online", "issued"):
+            date_parts = data.get(date_field, {}).get("date-parts", [])
+            if date_parts and date_parts[0] and date_parts[0][0]:
+                year = int(date_parts[0][0])
+                break
+
+        return {"venue": venue, "year": year}
+    except Exception as e:
+        logger.warning("Crossref lookup failed for DOI %s: %s", doi, e)
+        return {}
+
+
+def _parse_s2_response(data: dict) -> dict[str, Any]:
+    """Extract venue + year from Semantic Scholar paper record."""
+    venue = ""
+    pub_venue = data.get("publicationVenue") or {}
+    if pub_venue.get("name"):
+        venue = pub_venue["name"]
+    if not venue:
+        venue = data.get("venue", "")
+    return {"venue": venue, "year": data.get("year", 0)}
+
+
+async def _s2_lookup(doi: str = "", arxiv_id: str = "", title: str = "") -> dict[str, Any]:
+    """Query Semantic Scholar for venue and year. Tries DOI -> arXiv -> title match."""
+    fields = "venue,year,externalIds,publicationVenue"
+
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        if doi:
+            try:
+                resp = await client.get(
+                    f"https://api.semanticscholar.org/graph/v1/paper/DOI:{doi}",
+                    params={"fields": fields},
+                )
+                if resp.status_code == 200:
+                    return _parse_s2_response(resp.json())
+            except Exception as e:
+                logger.warning("S2 DOI lookup failed: %s", e)
+
+        if arxiv_id:
+            try:
+                resp = await client.get(
+                    f"https://api.semanticscholar.org/graph/v1/paper/ARXIV:{arxiv_id}",
+                    params={"fields": fields},
+                )
+                if resp.status_code == 200:
+                    return _parse_s2_response(resp.json())
+            except Exception as e:
+                logger.warning("S2 arXiv lookup failed: %s", e)
+
+        if title:
+            try:
+                resp = await client.get(
+                    "https://api.semanticscholar.org/graph/v1/paper/search/match",
+                    params={"query": title[:200], "fields": fields},
+                )
+                if resp.status_code == 200:
+                    matches = resp.json().get("data", [])
+                    if matches:
+                        return _parse_s2_response(matches[0])
+            except Exception as e:
+                logger.warning("S2 title match failed: %s", e)
+
+    return {}
+
+
+async def enrich_metadata(state: MainGraphState) -> dict[str, Any]:
+    """Extract DOI/arXiv from paper text, query Crossref → Semantic Scholar for venue,
+    then PublicationRank for SCI/CCF.
+
+    Multi-source fallback chain:
+      Level 1: DOI → Crossref
+      Level 2: DOI/arXiv → Semantic Scholar
+      Level 3: Title → Semantic Scholar /paper/search/match
+
+    This node is fault-tolerant: any failure logs a warning but does not block the pipeline.
+    """
+    if state.get("error"):
+        return {}
+
+    paper_id = state["paper_id"]
+    t0 = time.perf_counter()
+
+    try:
+        # 1. Check if paper already has full rank data (venue + at least one rank)
+        existing = await db.fetch_one(
+            "SELECT doi, venue, year, sci_rank, ccf_rank FROM papers WHERE paper_id = ?",
+            (paper_id,),
+        )
+        if existing and existing.get("venue") and (existing.get("sci_rank") or existing.get("ccf_rank")):
+            pub_rank = {
+                "venue": existing["venue"],
+                "year": existing.get("year", 0) or 0,
+                "sci": existing.get("sci_rank", ""),
+                "ccf": existing.get("ccf_rank", ""),
+            }
+            logger.info("[%s] enrich_metadata: CACHED from DB (venue=%s sci=%s ccf=%s) in %.2fs",
+                         paper_id, existing["venue"], existing.get("sci_rank", "-"), existing.get("ccf_rank", "-"),
+                         time.perf_counter() - t0)
+            return {
+                "pub_rank_json": json.dumps(pub_rank),
+                "progress": state.get("progress", []) + [{"step": "enrich_metadata", "status": "done", "cached": True}],
+            }
+
+        # 2. Extract DOI + arXiv ID from paper text (or reuse DOI from DB)
+        doi = ""
+        arxiv_id = ""
+        if existing and existing.get("doi"):
+            doi = existing["doi"]
+        if not doi and state.get("paper_ir_json"):
+            doi = await _extract_doi_from_ir(state["paper_ir_json"])
+        if state.get("paper_ir_json"):
+            arxiv_id = await _extract_arxiv_id_from_ir(state["paper_ir_json"])
+        logger.info("[%s] enrich_metadata: DOI=%s arXiv=%s", paper_id, doi or "-", arxiv_id or "-")
+
+        # 3. Multi-source venue + year lookup
+        venue = ""
+        year = 0
+
+        # Reuse venue from DB if already stored (skip external queries for venue)
+        if existing and existing.get("venue"):
+            venue = existing["venue"]
+            year = existing.get("year", 0) or 0
+            logger.info("[%s] enrich_metadata: venue=%s (cached from DB)", paper_id, venue)
+        else:
+            # Level 1: Crossref (by DOI) — most authoritative for journals
+            if doi:
+                crossref = await _crossref_lookup(doi)
+                venue = crossref.get("venue", "")
+                year = crossref.get("year", 0)
+                if venue:
+                    logger.info("[%s] enrich_metadata: Crossref -> venue=%s year=%d", paper_id, venue, year)
+
+            # Level 2+3: Semantic Scholar (by DOI/arXiv/title) — stronger for conferences
+            if not venue:
+                title = ""
+                if state.get("paper_ir_json"):
+                    from app.models.paper_ir import PaperIR
+                    ir = PaperIR.model_validate_json(state["paper_ir_json"])
+                    title = ir.title
+                s2 = await _s2_lookup(doi=doi, arxiv_id=arxiv_id, title=title)
+                if s2.get("venue"):
+                    venue = s2["venue"]
+                    year = s2.get("year", 0) or year
+                    logger.info("[%s] enrich_metadata: S2 -> venue=%s year=%d", paper_id, venue, year)
+                elif s2.get("year"):
+                    year = s2["year"] or year
+
+            if not venue:
+                logger.warning("[%s] enrich_metadata: No venue found from any source", paper_id)
+
+        # 4. Query PublicationRank for SCI/CCF
+        sci_rank = ""
+        ccf_rank = ""
+        if venue:
+            try:
+                logger.info("[%s] enrich_metadata: Querying PublicationRank for '%s'...", paper_id, venue)
+                from PublicationRank.llm_rank import UnifiedRankClient
+                async with UnifiedRankClient() as rank_client:
+                    result = await rank_client.query(venue)
+                    logger.info("[%s] enrich_metadata: PublicationRank result: success=%s sci=%s ccf=%s error=%s",
+                                 paper_id, result.success, result.sci, result.ccf, result.error)
+                    if result.success:
+                        sci_rank = result.sci or ""
+                        ccf_rank = result.ccf or ""
+                    else:
+                        logger.warning("[%s] enrich_metadata: PublicationRank query failed for '%s': %s", paper_id, venue, result.error)
+            except Exception as e:
+                logger.warning("[%s] enrich_metadata: PublicationRank import/call error: %s", paper_id, e, exc_info=True)
+        else:
+            logger.info("[%s] enrich_metadata: No venue found, skipping PublicationRank query", paper_id)
+
+        # 5. Persist to DB
+        if doi or venue or arxiv_id:
+            await db.execute(
+                "UPDATE papers SET doi = ?, venue = ?, year = ?, sci_rank = ?, ccf_rank = ? WHERE paper_id = ?",
+                (doi, venue, year, sci_rank, ccf_rank, paper_id),
+            )
+
+        pub_rank = {"venue": venue, "year": year, "sci": sci_rank, "ccf": ccf_rank}
+        elapsed = time.perf_counter() - t0
+        logger.info("[%s] enrich_metadata: DONE in %.1fs — venue=%s year=%d sci=%s ccf=%s",
+                     paper_id, elapsed, venue or "(none)", year, sci_rank or "-", ccf_rank or "-")
+        return {
+            "pub_rank_json": json.dumps(pub_rank),
+            "progress": state.get("progress", []) + [{"step": "enrich_metadata", "status": "done"}],
+        }
+
+    except Exception as e:
+        elapsed = time.perf_counter() - t0
+        logger.warning("[%s] enrich_metadata: FAILED in %.1fs — %s (non-blocking)", paper_id, elapsed, e)
+        return {
+            "pub_rank_json": json.dumps({}),
+            "progress": state.get("progress", []) + [{"step": "enrich_metadata", "status": "skipped", "error": str(e)}],
+        }
+
+
 def route_by_mode(state: MainGraphState) -> str:
     """Route to appropriate subgraph based on mode."""
     if state.get("error"):
@@ -202,6 +468,7 @@ def build_main_graph() -> StateGraph:
     graph.add_node("ingest_pdf", ingest_pdf)
     graph.add_node("mineru_parse", mineru_parse)
     graph.add_node("build_paper_ir", build_paper_ir)
+    graph.add_node("enrich_metadata", enrich_metadata)
     graph.add_node("run_snap", run_snap)
     graph.add_node("run_lens", run_lens)
     graph.add_node("run_sphere", run_sphere)
@@ -210,7 +477,8 @@ def build_main_graph() -> StateGraph:
     graph.set_entry_point("ingest_pdf")
     graph.add_edge("ingest_pdf", "mineru_parse")
     graph.add_edge("mineru_parse", "build_paper_ir")
-    graph.add_conditional_edges("build_paper_ir", route_by_mode, {
+    graph.add_edge("build_paper_ir", "enrich_metadata")
+    graph.add_conditional_edges("enrich_metadata", route_by_mode, {
         "run_snap": "run_snap",
         "run_lens": "run_lens",
         "run_sphere": "run_sphere",

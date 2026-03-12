@@ -61,7 +61,7 @@ You MUST format your output as structured Markdown with the following sections e
 - Limitations: ... (with page citations)
 
 ## Worth Reading?
-(Yes/No with brief justification)
+(Yes/No with brief justification. Consider the publication venue's reputation if available.)
 
 IMPORTANT RULES:
 1. Every factual claim MUST include a page citation in the format [p.X] where X is the page number.
@@ -89,6 +89,23 @@ async def run_insight_snap(state: MainGraphState) -> dict[str, Any]:
             "final_json": json.dumps({"error": "no_content"}),
             "progress": state.get("progress", []) + [{"step": "run_snap", "status": "failed"}],
         }
+
+    # Inject publication rank context if available
+    pub_rank_json = state.get("pub_rank_json", "")
+    if pub_rank_json:
+        try:
+            pub_rank = json.loads(pub_rank_json)
+            meta_parts: list[str] = []
+            if pub_rank.get("venue"):
+                meta_parts.append(f"Published in: {pub_rank['venue']}")
+            if pub_rank.get("sci"):
+                meta_parts.append(f"SCI Tier: {pub_rank['sci']}")
+            if pub_rank.get("ccf"):
+                meta_parts.append(f"CCF Rating: {pub_rank['ccf']}")
+            if meta_parts:
+                key_content = f"[Publication Info: {' | '.join(meta_parts)}]\n\n" + key_content
+        except (json.JSONDecodeError, TypeError):
+            pass
 
     # Truncate if too long (rough token estimate: ~4 chars per token)
     max_chars = 12000
