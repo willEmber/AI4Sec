@@ -1,0 +1,12 @@
+{
+  "current_task": "多语言切换功能（英语/中文）",
+  "status": "done",
+  "last_updated": "2026-03-18",
+  "steps": [
+    { "id": 1, "desc": "后端 schema 变更：RunCreate/RunResponse/MainGraphState/DB 增加 language 字段", "state": "completed" },
+    { "id": 2, "desc": "后端翻译节点：创建 translate.py 并注册到 LangGraph 主图", "state": "completed" },
+    { "id": 3, "desc": "前端 i18n 基础设施：创建 i18n.tsx，翻译字典 + Context + Toggle 组件", "state": "completed" },
+    { "id": 4, "desc": "前端组件国际化：layout/page/upload/run/PdfViewer/MarkdownRenderer", "state": "completed" },
+    { "id": 5, "desc": "验证：TypeScript 类型检查 + 生产构建 + 后端导入检查", "state": "completed" }
+  ]
+}

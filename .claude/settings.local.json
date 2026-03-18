@@ -42,7 +42,10 @@
       "Bash(docker exec:*)",
       "Bash(pip install aiosqlite python-dotenv 2>&1 | tail -5)",
       "Bash(pip install httpx 2>&1 | tail -3)",
-      "Bash(find /mnt/d/AI/scholar/backend/data/papers -name \"paper_ir.json\" -exec grep -h '\"type\"' {} \\\\; 2>/dev/null | sed 's/.*\"type\":\"\\\\\\([^\"]*\\\\\\)\".*/\\\\1/' | sort -u)"
+      "Bash(find /mnt/d/AI/scholar/backend/data/papers -name \"paper_ir.json\" -exec grep -h '\"type\"' {} \\\\; 2>/dev/null | sed 's/.*\"type\":\"\\\\\\([^\"]*\\\\\\)\".*/\\\\1/' | sort -u)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(grep '\"\"next\"\"' package.json)"
     ]
   }
 }

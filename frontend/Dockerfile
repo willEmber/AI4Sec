@@ -1,5 +1,5 @@
-ARG REGISTRY_MIRROR=docker.1ms.run
-FROM ${REGISTRY_MIRROR}/library/node:22-alpine AS base
+ARG NODE_IMAGE=node:22-alpine
+FROM ${NODE_IMAGE} AS base
 
 # --- deps stage: install node_modules ---
 FROM base AS deps

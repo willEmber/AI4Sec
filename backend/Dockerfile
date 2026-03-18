@@ -1,5 +1,5 @@
-ARG REGISTRY_MIRROR=docker.1ms.run
-FROM ${REGISTRY_MIRROR}/library/python:3.13-slim
+ARG PYTHON_IMAGE=python:3.13-slim
+FROM ${PYTHON_IMAGE}
 
 RUN pip install --no-cache-dir uv
 
