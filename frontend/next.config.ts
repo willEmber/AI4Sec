@@ -4,6 +4,9 @@ const backendUrl = process.env.BACKEND_URL || "http://localhost:8001";
 
 const nextConfig: NextConfig = {
   output: "standalone",
+  experimental: {
+    middlewareClientMaxBodySize: 100 * 1024 * 1024, // 100MB for PDF uploads
+  },
   async rewrites() {
     return [
       {
