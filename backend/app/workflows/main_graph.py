@@ -22,6 +22,7 @@ from app.db import database as db
 from app.services import mineru_adapter
 from app.services.paper_ir import build_and_store_paper_ir
 from app.workflows.state import MainGraphState
+from app.workflows.translate import translate_output
 
 logger = logging.getLogger("scholar.graph")
 
@@ -472,6 +473,7 @@ def build_main_graph() -> StateGraph:
     graph.add_node("run_snap", run_snap)
     graph.add_node("run_lens", run_lens)
     graph.add_node("run_sphere", run_sphere)
+    graph.add_node("translate_output", translate_output)
     graph.add_node("persist_output", persist_output)
 
     graph.set_entry_point("ingest_pdf")
@@ -484,9 +486,10 @@ def build_main_graph() -> StateGraph:
         "run_sphere": "run_sphere",
         "persist_output": "persist_output",
     })
-    graph.add_edge("run_snap", "persist_output")
-    graph.add_edge("run_lens", "persist_output")
-    graph.add_edge("run_sphere", "persist_output")
+    graph.add_edge("run_snap", "translate_output")
+    graph.add_edge("run_lens", "translate_output")
+    graph.add_edge("run_sphere", "translate_output")
+    graph.add_edge("translate_output", "persist_output")
     graph.add_edge("persist_output", END)
 
     return graph

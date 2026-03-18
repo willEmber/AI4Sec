@@ -4,38 +4,18 @@ import { useCallback, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { getRun, getRunOutput, getPaperPdfUrl, getPaper } from "@/lib/api";
 import { useRunStream } from "@/hooks/useRunStream";
+import { useTranslation } from "@/lib/i18n";
 import MarkdownRenderer from "@/components/MarkdownRenderer";
 import PdfViewer from "@/components/PdfViewer";
 import SplitPane from "@/components/SplitPane";
 import RankBadges from "@/components/RankBadges";
 import type { RunResponse, PaperResponse, SSEEvent } from "@/lib/types";
 
-const STEP_LABELS: Record<string, string> = {
-  ingest_pdf: "Verifying PDF",
-  mineru_parse: "Parsing with MinerU",
-  build_paper_ir: "Building document structure",
-  enrich_metadata: "Looking up publication rank",
-  run_snap: "Generating Insight Snap",
-  run_lens: "Generating Logic Lens",
-  run_sphere: "Generating Research Sphere",
-  persist_output: "Saving results",
-  // Sphere pipeline steps
-  sphere_init_from_pdf: "Extracting references from PDF",
-  extract_core_metadata: "Extracting core metadata",
-  resolve_canonical_ids: "Resolving paper identifiers",
-  expand_graph_candidates: "Expanding citation graph",
-  dedup_and_score: "Scoring and selecting candidates",
-  layer0_summarize_metadata: "Summarizing metadata",
-  layer1_abstract_snap: "Analyzing abstracts",
-  download_and_mineru_parse: "Downloading and parsing papers",
-  synthesize_landscape: "Synthesizing research landscape",
-  render_output: "Rendering final output",
-};
-
 export default function RunPage() {
   const params = useParams();
   const paperId = params.paperId as string;
   const runId = params.runId as string;
+  const { t } = useTranslation();
 
   const [run, setRun] = useState<RunResponse | null>(null);
   const [paper, setPaper] = useState<PaperResponse | null>(null);
@@ -44,6 +24,11 @@ export default function RunPage() {
   const [pageLoadTime] = useState(() => performance.now());
 
   const { events, isConnected, isDone, error, connect } = useRunStream();
+
+  const stepLabel = useCallback(
+    (step: string) => t(`step.${step}`) || step,
+    [t],
+  );
 
   // Load paper info
   useEffect(() => {
@@ -80,11 +65,11 @@ export default function RunPage() {
     if (!isDone) return;
     const t0 = performance.now();
     getRun(runId).then((r) => {
-      console.log(`[RunPage] SSE done → getRun: ${(performance.now() - t0).toFixed(0)}ms status=${r.status}`);
+      console.log(`[RunPage] SSE done -> getRun: ${(performance.now() - t0).toFixed(0)}ms status=${r.status}`);
       setRun(r);
     });
     getRunOutput(runId).then((o) => {
-      console.log(`[RunPage] SSE done → getRunOutput: ${(performance.now() - t0).toFixed(0)}ms markdown=${o.markdown.length} chars`);
+      console.log(`[RunPage] SSE done -> getRunOutput: ${(performance.now() - t0).toFixed(0)}ms markdown=${o.markdown.length} chars`);
       console.log(`[RunPage] Total time from page load to output: ${((performance.now() - pageLoadTime) / 1000).toFixed(1)}s`);
       setMarkdown(o.markdown);
     }).catch(() => {});
@@ -101,7 +86,7 @@ export default function RunPage() {
         if (r.status === "done") {
           console.log(`[RunPage] Polling detected completion, fetching output...`);
           getRunOutput(runId).then((o) => {
-            console.log(`[RunPage] Poll → getRunOutput: markdown=${o.markdown.length} chars`);
+            console.log(`[RunPage] Poll -> getRunOutput: markdown=${o.markdown.length} chars`);
             setMarkdown(o.markdown);
           }).catch(() => {});
         }
@@ -162,7 +147,7 @@ export default function RunPage() {
             {paper?.title || paperId}
           </p>
           <div className="flex items-center gap-2 text-xs text-[var(--muted-foreground)]">
-            <span>Mode: {run?.mode || "..."} | Run: {runId}</span>
+            <span>{t("run.mode")}: {run?.mode || "..."} | Run: {runId}</span>
             {paper && <RankBadges venue={paper.venue} year={paper.year} sciRank={paper.sci_rank} ccfRank={paper.ccf_rank} />}
           </div>
         </div>
@@ -171,24 +156,24 @@ export default function RunPage() {
             <button
               onClick={handleExportMarkdown}
               className="inline-flex items-center gap-1.5 px-3 py-1 text-sm border border-[var(--border)] rounded-md hover:bg-[var(--accent)] transition-colors"
-              title="Export as Markdown"
+              title={t("run.export_md")}
             >
               <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-              Export .md
+              {t("run.export_md")}
             </button>
           )}
           {isRunning && (
             <span className="inline-flex items-center gap-2 text-sm text-[var(--primary)]">
               <span className="w-2 h-2 bg-[var(--primary)] rounded-full animate-pulse" />
-              {currentStep ? STEP_LABELS[currentStep.step] || currentStep.step : "Running..."}
+              {currentStep ? stepLabel(currentStep.step) : t("run.status.running")}
             </span>
           )}
           {isComplete && (
-            <span className="text-sm text-green-600">Complete</span>
+            <span className="text-sm text-green-600">{t("run.status.complete")}</span>
           )}
           {isFailed && (
             <span className="text-sm text-[var(--destructive)]">
-              Failed: {error || run?.error_msg || "Unknown error"}
+              {error || run?.error_msg || t("run.status.unknown")}
             </span>
           )}
         </div>
@@ -200,18 +185,18 @@ export default function RunPage() {
           <div className="text-center">
             <div className="w-10 h-10 border-4 border-[var(--primary)] border-t-transparent rounded-full animate-spin mx-auto mb-4" />
             <p className="text-[var(--muted-foreground)]">
-              {currentStep ? STEP_LABELS[currentStep.step] || currentStep.step : "Starting analysis..."}
+              {currentStep ? stepLabel(currentStep.step) : t("run.starting")}
             </p>
             {/* Progress steps */}
             <div className="mt-6 text-left max-w-xs mx-auto">
               {progressSteps.map((step, i) => (
                 <div key={i} className="flex items-center gap-2 text-sm py-1">
-                  {step.status === "done" ? (
-                    <span className="text-green-600">✓</span>
+                  {step.status === "done" || step.status === "skipped" ? (
+                    <span className="text-green-600">{"\u2713"}</span>
                   ) : (
                     <span className="w-3.5 h-3.5 border-2 border-[var(--primary)] border-t-transparent rounded-full animate-spin inline-block" />
                   )}
-                  <span>{STEP_LABELS[step.step] || step.step}</span>
+                  <span>{stepLabel(step.step)}</span>
                 </div>
               ))}
             </div>
@@ -220,9 +205,9 @@ export default function RunPage() {
       ) : isFailed && !markdown ? (
         <div className="flex-1 flex items-center justify-center">
           <div className="text-center max-w-md">
-            <p className="text-[var(--destructive)] font-medium mb-2">Analysis Failed</p>
+            <p className="text-[var(--destructive)] font-medium mb-2">{t("run.status.failed_label")}</p>
             <p className="text-sm text-[var(--muted-foreground)]">
-              {error || run?.error_msg || "An unknown error occurred"}
+              {error || run?.error_msg || t("run.status.unknown")}
             </p>
           </div>
         </div>

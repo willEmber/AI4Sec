@@ -9,6 +9,7 @@ class RunCreate(BaseModel):
     paper_id: str
     mode: str = "snap"          # snap | lens | sphere
     llm_model: str = ""
+    language: str = "en"        # en | zh
 
 
 # --- Response models ---
@@ -34,6 +35,7 @@ class RunResponse(BaseModel):
     paper_id: str
     mode: str
     llm_model: str
+    language: str = "en"
     status: str
     error_msg: str
     started_at: str

@@ -9,6 +9,7 @@ class MainGraphState(TypedDict, total=False):
     run_id: str
     mode: str               # snap | lens | sphere
     llm_model: str
+    language: str            # en | zh
 
     # Pipeline progress
     pdf_path: str

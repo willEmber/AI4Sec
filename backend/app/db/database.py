@@ -27,7 +27,7 @@ async def init_db() -> None:
         schema = _SCHEMA_PATH.read_text(encoding="utf-8")
         await db.executescript(schema)
         await db.commit()
-        # Migrate existing papers table: add new columns if missing
+        # Migrate existing tables: add new columns if missing
         for col, col_def in [
             ("venue", "TEXT DEFAULT ''"),
             ("year", "INTEGER DEFAULT 0"),
@@ -39,6 +39,12 @@ async def init_db() -> None:
                 await db.commit()
             except Exception:
                 pass  # column already exists
+        # Migrate runs table: add language column if missing
+        try:
+            await db.execute("ALTER TABLE runs ADD COLUMN language TEXT NOT NULL DEFAULT 'en'")
+            await db.commit()
+        except Exception:
+            pass  # column already exists
 
 
 async def execute(sql: str, params: tuple[Any, ...] = ()) -> None:

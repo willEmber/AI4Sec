@@ -42,4 +42,5 @@ export interface RunCreate {
   paper_id: string;
   mode: ReadingMode;
   llm_model: string;
+  language?: string;  // "en" | "zh"
 }

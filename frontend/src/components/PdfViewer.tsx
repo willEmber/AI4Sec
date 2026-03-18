@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Document, Page, pdfjs } from "react-pdf";
 import "react-pdf/dist/esm/Page/AnnotationLayer.css";
 import "react-pdf/dist/esm/Page/TextLayer.css";
+import { useTranslation } from "@/lib/i18n";
 
 // Load worker from same origin (copied to public/ by postinstall script)
 pdfjs.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.mjs";
@@ -14,6 +15,7 @@ interface PdfViewerProps {
 }
 
 export default function PdfViewer({ url, targetPage }: PdfViewerProps) {
+  const { t } = useTranslation();
   const [numPages, setNumPages] = useState<number>(0);
   const [currentPage, setCurrentPage] = useState(1);
   const [scale, setScale] = useState(1.0);
@@ -42,7 +44,7 @@ export default function PdfViewer({ url, targetPage }: PdfViewerProps) {
           disabled={currentPage <= 1}
           className="px-2 py-1 rounded border border-[var(--border)] disabled:opacity-30"
         >
-          Prev
+          {t("pdf.prev")}
         </button>
         <span>
           {currentPage} / {numPages}
@@ -52,7 +54,7 @@ export default function PdfViewer({ url, targetPage }: PdfViewerProps) {
           disabled={currentPage >= numPages}
           className="px-2 py-1 rounded border border-[var(--border)] disabled:opacity-30"
         >
-          Next
+          {t("pdf.next")}
         </button>
         <div className="flex-1" />
         <button
@@ -74,7 +76,7 @@ export default function PdfViewer({ url, targetPage }: PdfViewerProps) {
       <div ref={containerRef} className="flex-1 overflow-auto bg-[var(--muted)] p-4">
         <Document file={url} onLoadSuccess={onDocumentLoadSuccess} loading={
           <div className="flex items-center justify-center h-48 text-[var(--muted-foreground)]">
-            Loading PDF...
+            {t("pdf.loading")}
           </div>
         }>
           <div id={`pdf-page-${currentPage}`}>

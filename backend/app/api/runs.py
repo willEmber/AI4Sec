@@ -48,24 +48,25 @@ async def create_run(request: Request, req: RunCreate):
         raise HTTPException(status_code=404, detail="Paper not found")
 
     run_id = uuid.uuid4().hex[:16]
+    language = req.language if req.language in ("en", "zh") else "en"
     await db.execute(
-        "INSERT INTO runs (run_id, paper_id, mode, llm_model, status) VALUES (?, ?, ?, ?, 'pending')",
-        (run_id, req.paper_id, req.mode, req.llm_model),
+        "INSERT INTO runs (run_id, paper_id, mode, llm_model, language, status) VALUES (?, ?, ?, ?, ?, 'pending')",
+        (run_id, req.paper_id, req.mode, req.llm_model, language),
     )
 
     # Create queue for SSE
     _run_queues[run_id] = asyncio.Queue()
 
-    logger.info(f"[run:{run_id}] Created run paper={req.paper_id} mode={req.mode} model={req.llm_model or '(default)'}")
+    logger.info(f"[run:{run_id}] Created run paper={req.paper_id} mode={req.mode} model={req.llm_model or '(default)'} lang={language}")
 
     # Launch graph in background
-    asyncio.create_task(_execute_run(run_id, req.paper_id, req.mode, req.llm_model))
+    asyncio.create_task(_execute_run(run_id, req.paper_id, req.mode, req.llm_model, language))
 
     row = await db.fetch_one("SELECT * FROM runs WHERE run_id = ?", (run_id,))
     return RunResponse(**row)
 
 
-async def _execute_run(run_id: str, paper_id: str, mode: str, llm_model: str) -> None:
+async def _execute_run(run_id: str, paper_id: str, mode: str, llm_model: str, language: str = "en") -> None:
     """Execute the LangGraph workflow as a background task, bounded by semaphore."""
     queue = _run_queues.get(run_id)
 
@@ -99,6 +100,7 @@ async def _execute_run(run_id: str, paper_id: str, mode: str, llm_model: str) ->
             "run_id": run_id,
             "mode": mode,
             "llm_model": llm_model,
+            "language": language,
             "progress": [],
         }
 

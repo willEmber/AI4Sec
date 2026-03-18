@@ -6,6 +6,7 @@ import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
 import rehypeRaw from "rehype-raw";
 import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
+import { useTranslation } from "@/lib/i18n";
 
 // Extend the default GitHub sanitize schema:
 // - Allow className on div/span (needed for math wrappers from remark-math)
@@ -27,6 +28,8 @@ interface MarkdownRendererProps {
 }
 
 export default function MarkdownRenderer({ content, onCitationClick }: MarkdownRendererProps) {
+  const { t } = useTranslation();
+
   // Pre-process content to convert [p.X] citations into clickable span badges
   const processed = content.replace(
     /\[p\.(\d+)\]/g,
@@ -52,7 +55,7 @@ export default function MarkdownRenderer({ content, onCitationClick }: MarkdownR
                     onCitationClick?.(page);
                   }}
                   className="inline-flex items-center px-1.5 py-0.5 text-xs font-mono bg-blue-50 text-blue-700 rounded border border-blue-200 hover:bg-blue-600 hover:text-white transition-colors cursor-pointer mx-0.5 dark:bg-blue-950 dark:text-blue-300 dark:border-blue-800"
-                  title={`Jump to page ${page}`}
+                  title={t("pdf.jump_to_page", { page: String(page) })}
                 >
                   p.{page}
                 </button>

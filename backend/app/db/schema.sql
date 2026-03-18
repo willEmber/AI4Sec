@@ -43,6 +43,7 @@ CREATE TABLE IF NOT EXISTS runs (
     paper_id    TEXT NOT NULL REFERENCES papers(paper_id),
     mode        TEXT NOT NULL DEFAULT 'snap', -- snap | lens | sphere
     llm_model   TEXT DEFAULT '',
+    language    TEXT NOT NULL DEFAULT 'en',   -- en | zh
     status      TEXT NOT NULL DEFAULT 'pending',  -- pending | running | done | failed
     error_msg   TEXT DEFAULT '',
     started_at  TEXT NOT NULL DEFAULT (datetime('now')),
