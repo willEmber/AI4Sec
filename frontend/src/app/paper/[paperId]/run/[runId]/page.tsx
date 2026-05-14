@@ -179,6 +179,22 @@ export default function RunPage() {
         </div>
       </div>
 
+      {/* Smart Q&A question + detected intent banner */}
+      {run?.user_question && (
+        <div className="border-b border-[var(--border)] px-4 py-2 shrink-0 bg-[var(--accent)]/30">
+          <p className="text-xs">
+            <span className="text-[var(--muted-foreground)]">{t("run.your_question")}</span>{" "}
+            <span className="font-medium">{run.user_question}</span>
+          </p>
+          {run.detected_intent && (
+            <p className="text-xs mt-0.5">
+              <span className="text-[var(--muted-foreground)]">{t("run.detected_intent")}</span>{" "}
+              <span className="font-medium">{t(`intent.${run.detected_intent}`)}</span>
+            </p>
+          )}
+        </div>
+      )}
+
       {/* Main content */}
       {isRunning && !markdown ? (
         <div className="flex-1 flex items-center justify-center">

@@ -10,6 +10,7 @@ const MODE_KEYS: { value: ReadingMode; labelKey: string; descKey: string }[] = [
   { value: "snap", labelKey: "upload.mode.snap.label", descKey: "upload.mode.snap.desc" },
   { value: "lens", labelKey: "upload.mode.lens.label", descKey: "upload.mode.lens.desc" },
   { value: "sphere", labelKey: "upload.mode.sphere.label", descKey: "upload.mode.sphere.desc" },
+  { value: "auto", labelKey: "upload.mode.auto.label", descKey: "upload.mode.auto.desc" },
 ];
 
 type OutputLanguage = "en" | "zh";
@@ -19,6 +20,7 @@ export default function UploadPage() {
   const { t, locale } = useTranslation();
   const [file, setFile] = useState<File | null>(null);
   const [mode, setMode] = useState<ReadingMode>("snap");
+  const [question, setQuestion] = useState("");
   const [llmModel, setLlmModel] = useState("");
   const [outputLanguage, setOutputLanguage] = useState<OutputLanguage>(locale);
   const [dragOver, setDragOver] = useState(false);
@@ -47,6 +49,10 @@ export default function UploadPage() {
 
   const handleSubmit = useCallback(async () => {
     if (!file) return;
+    if (mode === "auto" && !question.trim()) {
+      setError(t("upload.question_required"));
+      return;
+    }
     setUploading(true);
     setError(null);
 
@@ -57,13 +63,14 @@ export default function UploadPage() {
         mode,
         llm_model: llmModel,
         language: outputLanguage,
+        question: mode === "auto" ? question.trim() : "",
       });
       router.push(`/paper/${uploadRes.paper_id}/run/${runRes.run_id}`);
     } catch (e) {
       setError(e instanceof Error ? e.message : t("upload.fail"));
       setUploading(false);
     }
-  }, [file, mode, llmModel, outputLanguage, router, t]);
+  }, [file, mode, question, llmModel, outputLanguage, router, t]);
 
   return (
     <div className="max-w-2xl mx-auto px-6 py-10">
@@ -104,7 +111,7 @@ export default function UploadPage() {
       {/* Mode selection */}
       <div className="mb-6">
         <label className="block font-medium mb-3">{t("upload.mode_label")}</label>
-        <div className="grid gap-3 sm:grid-cols-3">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           {MODE_KEYS.map((m) => (
             <button
               key={m.value}
@@ -121,6 +128,22 @@ export default function UploadPage() {
           ))}
         </div>
       </div>
+
+      {/* Smart Q&A question input (only visible when mode === "auto") */}
+      {mode === "auto" && (
+        <div className="mb-6">
+          <label className="block font-medium mb-2">{t("upload.question_label")}</label>
+          <textarea
+            value={question}
+            onChange={(e) => setQuestion(e.target.value)}
+            placeholder={t("upload.question_placeholder")}
+            rows={3}
+            maxLength={2000}
+            className="w-full border border-[var(--border)] rounded-lg px-4 py-2 bg-transparent text-sm min-h-[88px] resize-y"
+          />
+          <p className="text-xs text-[var(--muted-foreground)] mt-2">{t("upload.question_hint")}</p>
+        </div>
+      )}
 
       {/* Output Language selection */}
       <div className="mb-6">

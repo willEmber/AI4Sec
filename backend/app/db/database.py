@@ -45,6 +45,16 @@ async def init_db() -> None:
             await db.commit()
         except Exception:
             pass  # column already exists
+        # Migrate runs table: add user_question + detected_intent for Smart Q&A
+        for col, col_def in [
+            ("user_question", "TEXT DEFAULT ''"),
+            ("detected_intent", "TEXT DEFAULT ''"),
+        ]:
+            try:
+                await db.execute(f"ALTER TABLE runs ADD COLUMN {col} {col_def}")
+                await db.commit()
+            except Exception:
+                pass  # column already exists
 
 
 async def execute(sql: str, params: tuple[Any, ...] = ()) -> None:

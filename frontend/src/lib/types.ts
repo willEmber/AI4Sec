@@ -23,6 +23,8 @@ export interface RunResponse {
   error_msg: string;
   started_at: string;
   finished_at: string | null;
+  user_question?: string;
+  detected_intent?: string;
 }
 
 export interface RunOutputResponse {
@@ -36,11 +38,12 @@ export interface SSEEvent {
   data: Record<string, unknown>;
 }
 
-export type ReadingMode = "snap" | "lens" | "sphere";
+export type ReadingMode = "snap" | "lens" | "sphere" | "auto";
 
 export interface RunCreate {
   paper_id: string;
   mode: ReadingMode;
   llm_model: string;
   language?: string;  // "en" | "zh"
+  question?: string;  // non-empty only when mode === "auto"
 }

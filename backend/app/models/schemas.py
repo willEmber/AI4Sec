@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel
 
 
@@ -7,9 +9,10 @@ from pydantic import BaseModel
 
 class RunCreate(BaseModel):
     paper_id: str
-    mode: str = "snap"          # snap | lens | sphere
+    mode: Literal["snap", "lens", "sphere", "auto"] = "snap"
     llm_model: str = ""
     language: str = "en"        # en | zh
+    question: str = ""          # required (non-empty) when mode == "auto"
 
 
 # --- Response models ---
@@ -33,13 +36,15 @@ class PaperUploadResponse(BaseModel):
 class RunResponse(BaseModel):
     run_id: str
     paper_id: str
-    mode: str
+    mode: str                          # post-classification mode (may be snap|lens|sphere|qa)
     llm_model: str
     language: str = "en"
     status: str
     error_msg: str
     started_at: str
     finished_at: str | None
+    user_question: str = ""
+    detected_intent: str = ""
 
 
 class RunOutputResponse(BaseModel):

@@ -39,6 +39,10 @@ def _get_graph() -> CompiledStateGraph:
     return _compiled_graph
 
 
+_VALID_INPUT_MODES = {"snap", "lens", "sphere", "auto"}
+_MAX_QUESTION_LEN = 2000
+
+
 @router.post("/runs", response_model=RunResponse)
 @limiter.limit("3/minute")
 async def create_run(request: Request, req: RunCreate):
@@ -47,26 +51,41 @@ async def create_run(request: Request, req: RunCreate):
     if not paper:
         raise HTTPException(status_code=404, detail="Paper not found")
 
-    run_id = uuid.uuid4().hex[:16]
+    mode = req.mode if req.mode in _VALID_INPUT_MODES else "snap"
     language = req.language if req.language in ("en", "zh") else "en"
+    question = (req.question or "").strip()[:_MAX_QUESTION_LEN]
+
+    if mode == "auto" and not question:
+        raise HTTPException(status_code=400, detail="Smart Q&A mode requires a non-empty question")
+
+    run_id = uuid.uuid4().hex[:16]
     await db.execute(
-        "INSERT INTO runs (run_id, paper_id, mode, llm_model, language, status) VALUES (?, ?, ?, ?, ?, 'pending')",
-        (run_id, req.paper_id, req.mode, req.llm_model, language),
+        "INSERT INTO runs (run_id, paper_id, mode, llm_model, language, status, user_question) VALUES (?, ?, ?, ?, ?, 'pending', ?)",
+        (run_id, req.paper_id, mode, req.llm_model, language, question),
     )
 
     # Create queue for SSE
     _run_queues[run_id] = asyncio.Queue()
 
-    logger.info(f"[run:{run_id}] Created run paper={req.paper_id} mode={req.mode} model={req.llm_model or '(default)'} lang={language}")
+    logger.info(
+        f"[run:{run_id}] Created run paper={req.paper_id} mode={mode} model={req.llm_model or '(default)'} lang={language} q={'(yes)' if question else '(no)'}"
+    )
 
     # Launch graph in background
-    asyncio.create_task(_execute_run(run_id, req.paper_id, req.mode, req.llm_model, language))
+    asyncio.create_task(_execute_run(run_id, req.paper_id, mode, req.llm_model, language, question))
 
     row = await db.fetch_one("SELECT * FROM runs WHERE run_id = ?", (run_id,))
     return RunResponse(**row)
 
 
-async def _execute_run(run_id: str, paper_id: str, mode: str, llm_model: str, language: str = "en") -> None:
+async def _execute_run(
+    run_id: str,
+    paper_id: str,
+    mode: str,
+    llm_model: str,
+    language: str = "en",
+    user_question: str = "",
+) -> None:
     """Execute the LangGraph workflow as a background task, bounded by semaphore."""
     queue = _run_queues.get(run_id)
 
@@ -101,6 +120,7 @@ async def _execute_run(run_id: str, paper_id: str, mode: str, llm_model: str, la
             "mode": mode,
             "llm_model": llm_model,
             "language": language,
+            "user_question": user_question,
             "progress": [],
         }
 

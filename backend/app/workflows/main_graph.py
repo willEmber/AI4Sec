@@ -383,7 +383,12 @@ async def enrich_metadata(state: MainGraphState) -> dict[str, Any]:
 
 
 def route_by_mode(state: MainGraphState) -> str:
-    """Route to appropriate subgraph based on mode."""
+    """Route to appropriate subgraph based on mode.
+
+    Reads the (possibly classifier-mutated) `mode`. Valid values at this point
+    are snap | lens | sphere | qa. If we still see `auto` (classifier no-op),
+    fall back to snap so the run produces something useful.
+    """
     if state.get("error"):
         return "persist_output"
 
@@ -391,8 +396,10 @@ def route_by_mode(state: MainGraphState) -> str:
     logger.info(f"[{state['paper_id']}] route_by_mode: -> {mode}")
     if mode == "lens":
         return "run_lens"
-    elif mode == "sphere":
+    if mode == "sphere":
         return "run_sphere"
+    if mode == "qa":
+        return "run_qa"
     return "run_snap"
 
 
@@ -432,16 +439,37 @@ async def run_sphere(state: MainGraphState) -> dict[str, Any]:
     return result
 
 
+async def run_qa(state: MainGraphState) -> dict[str, Any]:
+    """Run direct Q&A subgraph (reached only via classify_intent)."""
+    t0 = time.perf_counter()
+    logger.info(f"[{state['paper_id']}] run_qa: Starting Direct Q&A...")
+    from app.workflows.qa_subgraph import run_qa as _run_qa
+    result = await _run_qa(state)
+    elapsed = time.perf_counter() - t0
+    md_len = len(result.get("final_markdown", ""))
+    logger.info(f"[{state['paper_id']}] run_qa: DONE in {elapsed:.1f}s — markdown={md_len} chars")
+    return result
+
+
+async def classify_intent_node(state: MainGraphState) -> dict[str, Any]:
+    """Classify user question into snap|lens|sphere|qa when mode == 'auto'."""
+    from app.workflows.intent_classifier import classify_intent
+    return await classify_intent(state)
+
+
 async def persist_output(state: MainGraphState) -> dict[str, Any]:
     """Save results to DB."""
     t0 = time.perf_counter()
     run_id = state["run_id"]
     paper_id = state["paper_id"]
 
+    detected_intent = state.get("detected_intent", "")
+    final_mode = state.get("mode", "")
+
     if state.get("error"):
         await db.execute(
-            "UPDATE runs SET status = 'failed', error_msg = ?, finished_at = datetime('now') WHERE run_id = ?",
-            (state["error"], run_id),
+            "UPDATE runs SET status = 'failed', error_msg = ?, mode = ?, detected_intent = ?, finished_at = datetime('now') WHERE run_id = ?",
+            (state["error"], final_mode, detected_intent, run_id),
         )
         logger.info(f"[{paper_id}] persist_output: Saved FAILED status in {time.perf_counter()-t0:.2f}s")
         return {"progress": state.get("progress", []) + [{"step": "persist_output", "status": "failed"}]}
@@ -454,11 +482,11 @@ async def persist_output(state: MainGraphState) -> dict[str, Any]:
         (run_id, markdown, json_data),
     )
     await db.execute(
-        "UPDATE runs SET status = 'done', finished_at = datetime('now') WHERE run_id = ?",
-        (run_id,),
+        "UPDATE runs SET status = 'done', mode = ?, detected_intent = ?, finished_at = datetime('now') WHERE run_id = ?",
+        (final_mode, detected_intent, run_id),
     )
 
-    logger.info(f"[{paper_id}] persist_output: Saved run_id={run_id} markdown={len(markdown)} chars in {time.perf_counter()-t0:.2f}s")
+    logger.info(f"[{paper_id}] persist_output: Saved run_id={run_id} mode={final_mode} intent={detected_intent or '-'} markdown={len(markdown)} chars in {time.perf_counter()-t0:.2f}s")
     return {"progress": state.get("progress", []) + [{"step": "persist_output", "status": "done"}]}
 
 
@@ -470,9 +498,11 @@ def build_main_graph() -> StateGraph:
     graph.add_node("mineru_parse", mineru_parse)
     graph.add_node("build_paper_ir", build_paper_ir)
     graph.add_node("enrich_metadata", enrich_metadata)
+    graph.add_node("classify_intent", classify_intent_node)
     graph.add_node("run_snap", run_snap)
     graph.add_node("run_lens", run_lens)
     graph.add_node("run_sphere", run_sphere)
+    graph.add_node("run_qa", run_qa)
     graph.add_node("translate_output", translate_output)
     graph.add_node("persist_output", persist_output)
 
@@ -480,15 +510,18 @@ def build_main_graph() -> StateGraph:
     graph.add_edge("ingest_pdf", "mineru_parse")
     graph.add_edge("mineru_parse", "build_paper_ir")
     graph.add_edge("build_paper_ir", "enrich_metadata")
-    graph.add_conditional_edges("enrich_metadata", route_by_mode, {
+    graph.add_edge("enrich_metadata", "classify_intent")
+    graph.add_conditional_edges("classify_intent", route_by_mode, {
         "run_snap": "run_snap",
         "run_lens": "run_lens",
         "run_sphere": "run_sphere",
+        "run_qa": "run_qa",
         "persist_output": "persist_output",
     })
     graph.add_edge("run_snap", "translate_output")
     graph.add_edge("run_lens", "translate_output")
     graph.add_edge("run_sphere", "translate_output")
+    graph.add_edge("run_qa", "translate_output")
     graph.add_edge("translate_output", "persist_output")
     graph.add_edge("persist_output", END)
 

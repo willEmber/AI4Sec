@@ -39,15 +39,17 @@ CREATE INDEX IF NOT EXISTS idx_blocks_paper ON blocks(paper_id);
 CREATE INDEX IF NOT EXISTS idx_blocks_type  ON blocks(paper_id, type);
 
 CREATE TABLE IF NOT EXISTS runs (
-    run_id      TEXT PRIMARY KEY,
-    paper_id    TEXT NOT NULL REFERENCES papers(paper_id),
-    mode        TEXT NOT NULL DEFAULT 'snap', -- snap | lens | sphere
-    llm_model   TEXT DEFAULT '',
-    language    TEXT NOT NULL DEFAULT 'en',   -- en | zh
-    status      TEXT NOT NULL DEFAULT 'pending',  -- pending | running | done | failed
-    error_msg   TEXT DEFAULT '',
-    started_at  TEXT NOT NULL DEFAULT (datetime('now')),
-    finished_at TEXT DEFAULT NULL
+    run_id          TEXT PRIMARY KEY,
+    paper_id        TEXT NOT NULL REFERENCES papers(paper_id),
+    mode            TEXT NOT NULL DEFAULT 'snap', -- snap | lens | sphere | auto | qa
+    llm_model       TEXT DEFAULT '',
+    language        TEXT NOT NULL DEFAULT 'en',   -- en | zh
+    status          TEXT NOT NULL DEFAULT 'pending',  -- pending | running | done | failed
+    error_msg       TEXT DEFAULT '',
+    started_at      TEXT NOT NULL DEFAULT (datetime('now')),
+    finished_at     TEXT DEFAULT NULL,
+    user_question   TEXT DEFAULT '',
+    detected_intent TEXT DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS idx_runs_paper ON runs(paper_id);
 
