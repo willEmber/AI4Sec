@@ -18,9 +18,9 @@ const CCF_COLORS: Record<string, string> = {
   C: "bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950 dark:text-blue-300 dark:border-blue-800",
 };
 
-const BADGE_BASE = "inline-flex items-center px-1.5 py-0.5 text-xs font-semibold rounded border";
-const VENUE_STYLE = "bg-gray-50 text-gray-600 border-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-600";
-const YEAR_STYLE = "bg-gray-50 text-gray-500 border-gray-200 dark:bg-gray-800 dark:text-gray-400 dark:border-gray-600";
+const BADGE_BASE = "inline-flex items-center px-1.5 py-0.5 text-xs font-semibold rounded-md border";
+const VENUE_STYLE = "bg-muted text-foreground/70 border-border";
+const YEAR_STYLE = "bg-muted text-muted-foreground border-border";
 
 export default function RankBadges({ venue, year, sciRank, ccfRank }: RankBadgesProps) {
   const badges: { label: string; className: string }[] = [];

@@ -5,12 +5,26 @@ import { useRouter } from "next/navigation";
 import { uploadPaper, createRun } from "@/lib/api";
 import { useTranslation } from "@/lib/i18n";
 import type { ReadingMode } from "@/lib/types";
+import {
+  IconSnap,
+  IconLens,
+  IconSphere,
+  IconSparkles,
+  IconUpload,
+  IconCheck,
+} from "@/components/icons";
+import type { ComponentType } from "react";
 
-const MODE_KEYS: { value: ReadingMode; labelKey: string; descKey: string }[] = [
-  { value: "snap", labelKey: "upload.mode.snap.label", descKey: "upload.mode.snap.desc" },
-  { value: "lens", labelKey: "upload.mode.lens.label", descKey: "upload.mode.lens.desc" },
-  { value: "sphere", labelKey: "upload.mode.sphere.label", descKey: "upload.mode.sphere.desc" },
-  { value: "auto", labelKey: "upload.mode.auto.label", descKey: "upload.mode.auto.desc" },
+const MODE_KEYS: {
+  value: ReadingMode;
+  labelKey: string;
+  descKey: string;
+  Icon: ComponentType<{ className?: string }>;
+}[] = [
+  { value: "snap", labelKey: "upload.mode.snap.label", descKey: "upload.mode.snap.desc", Icon: IconSnap },
+  { value: "lens", labelKey: "upload.mode.lens.label", descKey: "upload.mode.lens.desc", Icon: IconLens },
+  { value: "sphere", labelKey: "upload.mode.sphere.label", descKey: "upload.mode.sphere.desc", Icon: IconSphere },
+  { value: "auto", labelKey: "upload.mode.auto.label", descKey: "upload.mode.auto.desc", Icon: IconSparkles },
 ];
 
 type OutputLanguage = "en" | "zh";
@@ -72,17 +86,38 @@ export default function UploadPage() {
     }
   }, [file, mode, question, llmModel, outputLanguage, router, t]);
 
+  const langBtn = (value: OutputLanguage, label: string) => (
+    <button
+      onClick={() => setOutputLanguage(value)}
+      className={`rounded-xl border p-4 text-center text-sm font-medium transition-colors ${
+        outputLanguage === value
+          ? "border-primary bg-accent text-accent-foreground"
+          : "border-border hover:border-foreground/20"
+      }`}
+    >
+      {label}
+    </button>
+  );
+
   return (
-    <div className="max-w-2xl mx-auto px-6 py-10">
-      <h1 className="text-2xl font-bold mb-6">{t("upload.title")}</h1>
+    <div className="mx-auto max-w-2xl px-6 py-12">
+      <header className="mb-8">
+        <h1 className="font-display text-3xl font-semibold tracking-tight">
+          {t("upload.title")}
+        </h1>
+      </header>
 
       {/* Drop zone */}
       <div
         onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
         onDragLeave={() => setDragOver(false)}
         onDrop={handleDrop}
-        className={`border-2 border-dashed rounded-lg p-10 text-center cursor-pointer transition-colors mb-6 ${
-          dragOver ? "border-[var(--primary)] bg-[var(--accent)]" : "border-[var(--border)]"
+        className={`mb-8 cursor-pointer rounded-2xl border-2 border-dashed p-10 text-center transition-colors ${
+          dragOver
+            ? "border-primary bg-accent"
+            : file
+              ? "border-primary/40 bg-card"
+              : "border-border bg-card hover:border-foreground/20"
         }`}
         onClick={() => document.getElementById("file-input")?.click()}
       >
@@ -93,101 +128,105 @@ export default function UploadPage() {
           onChange={handleFileChange}
           className="hidden"
         />
+        <span
+          className={`mx-auto flex h-12 w-12 items-center justify-center rounded-2xl text-2xl ${
+            file ? "bg-accent text-primary" : "bg-muted text-muted-foreground"
+          }`}
+        >
+          {file ? <IconCheck /> : <IconUpload />}
+        </span>
         {file ? (
-          <div>
+          <div className="mt-4">
             <p className="font-medium">{file.name}</p>
-            <p className="text-sm text-[var(--muted-foreground)]">
+            <p className="text-sm text-muted-foreground">
               {(file.size / 1024 / 1024).toFixed(2)} MB
             </p>
           </div>
         ) : (
-          <div>
-            <p className="font-medium mb-1">{t("upload.drop")}</p>
-            <p className="text-sm text-[var(--muted-foreground)]">{t("upload.supports")}</p>
+          <div className="mt-4">
+            <p className="font-medium">{t("upload.drop")}</p>
+            <p className="mt-1 text-sm text-muted-foreground">{t("upload.supports")}</p>
           </div>
         )}
       </div>
 
       {/* Mode selection */}
-      <div className="mb-6">
-        <label className="block font-medium mb-3">{t("upload.mode_label")}</label>
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          {MODE_KEYS.map((m) => (
-            <button
-              key={m.value}
-              onClick={() => setMode(m.value)}
-              className={`border rounded-lg p-4 text-left transition-colors ${
-                mode === m.value
-                  ? "border-[var(--primary)] bg-[var(--accent)]"
-                  : "border-[var(--border)] hover:border-[var(--muted-foreground)]"
-              }`}
-            >
-              <p className="font-medium text-sm">{t(m.labelKey)}</p>
-              <p className="text-xs text-[var(--muted-foreground)] mt-1">{t(m.descKey)}</p>
-            </button>
-          ))}
+      <div className="mb-8">
+        <label className="mb-3 block text-sm font-semibold">{t("upload.mode_label")}</label>
+        <div className="grid gap-3 sm:grid-cols-2">
+          {MODE_KEYS.map((m) => {
+            const selected = mode === m.value;
+            return (
+              <button
+                key={m.value}
+                onClick={() => setMode(m.value)}
+                className={`relative rounded-xl border p-4 text-left transition-colors ${
+                  selected
+                    ? "border-primary bg-accent"
+                    : "border-border hover:border-foreground/20"
+                }`}
+              >
+                {selected && (
+                  <span className="absolute right-3 top-3 flex h-5 w-5 items-center justify-center rounded-full bg-primary text-xs text-primary-foreground">
+                    <IconCheck />
+                  </span>
+                )}
+                <span
+                  className={`flex h-9 w-9 items-center justify-center rounded-lg text-lg ${
+                    selected ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground"
+                  }`}
+                >
+                  <m.Icon />
+                </span>
+                <p className="mt-3 text-sm font-medium">{t(m.labelKey)}</p>
+                <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{t(m.descKey)}</p>
+              </button>
+            );
+          })}
         </div>
       </div>
 
       {/* Smart Q&A question input (only visible when mode === "auto") */}
       {mode === "auto" && (
-        <div className="mb-6">
-          <label className="block font-medium mb-2">{t("upload.question_label")}</label>
+        <div className="mb-8">
+          <label className="mb-2 block text-sm font-semibold">{t("upload.question_label")}</label>
           <textarea
             value={question}
             onChange={(e) => setQuestion(e.target.value)}
             placeholder={t("upload.question_placeholder")}
             rows={3}
             maxLength={2000}
-            className="w-full border border-[var(--border)] rounded-lg px-4 py-2 bg-transparent text-sm min-h-[88px] resize-y"
+            className="min-h-[88px] w-full resize-y rounded-xl border border-border bg-card px-4 py-3 text-sm transition-colors placeholder:text-muted-foreground/70 focus:border-primary focus:outline-none"
           />
-          <p className="text-xs text-[var(--muted-foreground)] mt-2">{t("upload.question_hint")}</p>
+          <p className="mt-2 text-xs text-muted-foreground">{t("upload.question_hint")}</p>
         </div>
       )}
 
       {/* Output Language selection */}
-      <div className="mb-6">
-        <label className="block font-medium mb-3">{t("upload.language_label")}</label>
+      <div className="mb-8">
+        <label className="mb-3 block text-sm font-semibold">{t("upload.language_label")}</label>
         <div className="grid gap-3 sm:grid-cols-2">
-          <button
-            onClick={() => setOutputLanguage("en")}
-            className={`border rounded-lg p-4 text-left transition-colors ${
-              outputLanguage === "en"
-                ? "border-[var(--primary)] bg-[var(--accent)]"
-                : "border-[var(--border)] hover:border-[var(--muted-foreground)]"
-            }`}
-          >
-            <p className="font-medium text-sm">English</p>
-          </button>
-          <button
-            onClick={() => setOutputLanguage("zh")}
-            className={`border rounded-lg p-4 text-left transition-colors ${
-              outputLanguage === "zh"
-                ? "border-[var(--primary)] bg-[var(--accent)]"
-                : "border-[var(--border)] hover:border-[var(--muted-foreground)]"
-            }`}
-          >
-            <p className="font-medium text-sm">中文</p>
-          </button>
+          {langBtn("en", "English")}
+          {langBtn("zh", "中文")}
         </div>
-        <p className="text-xs text-[var(--muted-foreground)] mt-2">{t("upload.language_note")}</p>
+        <p className="mt-2 text-xs text-muted-foreground">{t("upload.language_note")}</p>
       </div>
 
       {/* Model selection */}
-      <div className="mb-6">
-        <label className="block font-medium mb-2">{t("upload.model_label")}</label>
+      <div className="mb-8">
+        <label className="mb-2 block text-sm font-semibold">{t("upload.model_label")}</label>
         <input
           type="text"
           value={llmModel}
           onChange={(e) => setLlmModel(e.target.value)}
           placeholder={t("upload.model_placeholder")}
-          className="w-full border border-[var(--border)] rounded-lg px-4 py-2 bg-transparent text-sm"
+          className="w-full rounded-xl border border-border bg-card px-4 py-3 text-sm transition-colors placeholder:text-muted-foreground/70 focus:border-primary focus:outline-none"
         />
       </div>
 
       {/* Error */}
       {error && (
-        <div className="mb-4 p-3 rounded-lg bg-red-50 dark:bg-red-950 text-[var(--destructive)] text-sm">
+        <div className="mb-5 rounded-xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
           {error}
         </div>
       )}
@@ -196,8 +235,11 @@ export default function UploadPage() {
       <button
         onClick={handleSubmit}
         disabled={!file || uploading}
-        className="w-full bg-[var(--primary)] text-[var(--primary-foreground)] py-3 rounded-lg font-medium disabled:opacity-50 hover:opacity-90 transition-opacity"
+        className="flex w-full items-center justify-center gap-2 rounded-xl bg-primary py-3.5 font-medium text-primary-foreground transition-colors hover:bg-primary-hover disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-primary"
       >
+        {uploading && (
+          <span className="h-4 w-4 animate-spin rounded-full border-2 border-primary-foreground/40 border-t-primary-foreground" />
+        )}
         {uploading ? t("upload.submitting") : t("upload.submit")}
       </button>
     </div>

@@ -25,6 +25,9 @@ const translations: Record<Locale, Record<string, string>> = {
     "home.mode.sphere.desc":
       "Reference network analysis with multi-paper comparison and research gap identification.",
     "home.cta": "Upload Paper",
+    "home.eyebrow": "AI-powered paper analysis",
+    "home.modes_heading": "Three ways to read a paper",
+    "home.modes_sub": "Pick a lens, or let Smart Q&A choose for you.",
 
     // Upload page
     "upload.title": "Upload & Analyze Paper",
@@ -117,6 +120,9 @@ const translations: Record<Locale, Record<string, string>> = {
     "home.mode.sphere.desc":
       "参考文献网络分析，多论文对比与研究空白识别。",
     "home.cta": "上传论文",
+    "home.eyebrow": "AI 驱动的论文分析",
+    "home.modes_heading": "三种论文阅读模式",
+    "home.modes_sub": "选择一种分析视角，或交给智能问答自动决定。",
 
     // Upload page
     "upload.title": "上传与分析论文",
@@ -252,7 +258,7 @@ export function LanguageToggle() {
   return (
     <button
       onClick={() => setLocale(locale === "en" ? "zh" : "en")}
-      className="px-2 py-1 text-sm border border-[var(--border)] rounded-md hover:bg-[var(--accent)] transition-colors"
+      className="rounded-full border border-border px-3 py-1.5 text-sm font-medium text-muted-foreground transition-colors hover:border-foreground/25 hover:text-foreground"
       title={locale === "en" ? "切换到中文" : "Switch to English"}
     >
       {locale === "en" ? "中文" : "EN"}

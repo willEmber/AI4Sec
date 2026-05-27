@@ -54,7 +54,7 @@ export default function MarkdownRenderer({ content, onCitationClick }: MarkdownR
                     e.preventDefault();
                     onCitationClick?.(page);
                   }}
-                  className="inline-flex items-center px-1.5 py-0.5 text-xs font-mono bg-blue-50 text-blue-700 rounded border border-blue-200 hover:bg-blue-600 hover:text-white transition-colors cursor-pointer mx-0.5 dark:bg-blue-950 dark:text-blue-300 dark:border-blue-800"
+                  className="mx-0.5 inline-flex cursor-pointer items-center rounded-md border border-primary/30 bg-accent px-1.5 py-0.5 align-baseline font-mono text-xs font-medium text-primary transition-colors hover:bg-primary hover:text-primary-foreground"
                   title={t("pdf.jump_to_page", { page: String(page) })}
                 >
                   p.{page}

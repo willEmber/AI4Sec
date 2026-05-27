@@ -44,9 +44,14 @@ export default function SplitPane({ left, right, defaultLeftWidth = 55 }: SplitP
         {left}
       </div>
       <div
-        className="w-1.5 bg-[var(--border)] hover:bg-[var(--primary)] cursor-col-resize shrink-0 transition-colors"
+        className="group relative w-px shrink-0 cursor-col-resize bg-border"
         onMouseDown={onMouseDown}
-      />
+      >
+        {/* Wider invisible hit area for easier grabbing */}
+        <div className="absolute inset-y-0 -left-2 -right-2 z-10" />
+        {/* Visible grip */}
+        <div className="absolute left-1/2 top-1/2 h-9 w-1 -translate-x-1/2 -translate-y-1/2 rounded-full bg-border transition-colors group-hover:bg-primary" />
+      </div>
       <div style={{ width: `${100 - leftWidth}%` }} className="overflow-auto">
         {right}
       </div>
