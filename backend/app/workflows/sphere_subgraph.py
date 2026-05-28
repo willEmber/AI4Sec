@@ -931,17 +931,112 @@ async def step_8_download_and_parse(
     state: MainGraphState,
     run_id: str,
 ) -> SphereState:
-    """Download and parse PDFs for layer2 nodes. Skipped in Phase A (pdf_parse_cap=0)."""
+    """Download PDFs for layer2 nodes via OA Resolver / Elsevier TDM / Wiley TDM.
+
+    MinerU parsing of the downloaded PDFs is left to a future step.
+    """
     await _emit_progress(run_id, "download_and_mineru_parse", "running")
 
     paper_id = state["paper_id"]
     if sphere.config.pdf_parse_cap <= 0 or not sphere.layer2_node_ids:
-        logger.info(f"[{paper_id}] sphere step 8: skipped (pdf_parse_cap={sphere.config.pdf_parse_cap})")
+        logger.info(
+            f"[{paper_id}] sphere step 8: skipped (pdf_parse_cap={sphere.config.pdf_parse_cap})"
+        )
         await _emit_progress(run_id, "download_and_mineru_parse", "done")
         return sphere
 
-    # Phase B: implement PDF download + MinerU parsing here
-    logger.info(f"[{paper_id}] sphere step 8: Phase B not yet implemented, skipping")
+    from app.services.paper_downloader import (
+        DownloaderCredentials,
+        DEFAULT_USER_AGENT,
+        download_paper,
+        safe_filename,
+    )
+
+    settings = get_settings()
+    credentials = DownloaderCredentials(
+        unpaywall_email=settings.unpaywall_email,
+        core_api_key=settings.core_api_key,
+        elsevier_api_key=settings.elsevier_api_key,
+        elsevier_inst_token=settings.elsevier_inst_token,
+        wiley_tdm_token=settings.wiley_tdm_token,
+    )
+
+    has_any_cred = any(
+        [
+            credentials.unpaywall_email,
+            credentials.core_api_key,
+            credentials.elsevier_api_key,
+            credentials.wiley_tdm_token,
+        ]
+    )
+    if not has_any_cred:
+        logger.warning(
+            f"[{paper_id}] sphere step 8: no downloader credentials configured, skipping"
+        )
+        await _emit_progress(run_id, "download_and_mineru_parse", "done")
+        return sphere
+
+    refs_dir = settings.data_dir / "papers" / paper_id / "refs"
+    refs_dir.mkdir(parents=True, exist_ok=True)
+
+    targets: list[tuple[str, SphereNode, Path]] = []
+    for nid in sphere.layer2_node_ids:
+        node = sphere.nodes.get(nid)
+        if not node or not node.doi:
+            continue
+        if node.pdf_path and Path(node.pdf_path).exists():
+            continue
+        dest = refs_dir / f"{safe_filename(node.doi)}.pdf"
+        targets.append((nid, node, dest))
+
+    if not targets:
+        logger.info(f"[{paper_id}] sphere step 8: no DOI-bearing layer2 nodes to download")
+        await _emit_progress(run_id, "download_and_mineru_parse", "done")
+        return sphere
+
+    semaphore = asyncio.Semaphore(4)
+
+    async with httpx.AsyncClient(
+        headers={"User-Agent": DEFAULT_USER_AGENT},
+        timeout=60.0,
+    ) as client:
+        async def _do_one(node: SphereNode, dest: Path):
+            async with semaphore:
+                return await download_paper(
+                    node.doi,
+                    dest,
+                    credentials=credentials,
+                    title=node.title,
+                    client=client,
+                    timeout=60.0,
+                    retries=3,
+                )
+
+        results = await asyncio.gather(
+            *(_do_one(node, dest) for _, node, dest in targets),
+            return_exceptions=True,
+        )
+
+    ok_count = 0
+    fail_count = 0
+    for (nid, node, dest), result in zip(targets, results):
+        if isinstance(result, Exception):
+            fail_count += 1
+            logger.warning(f"[{paper_id}] sphere step 8: {node.doi} crashed: {result}")
+            continue
+        if result.ok and result.pdf_path:
+            node.pdf_path = result.pdf_path
+            ok_count += 1
+        else:
+            fail_count += 1
+            logger.info(
+                f"[{paper_id}] sphere step 8: {node.doi} failed via {result.source}: {result.detail}"
+            )
+
+    logger.info(
+        f"[{paper_id}] sphere step 8: downloaded {ok_count}/{len(targets)} layer2 PDFs "
+        f"(fail={fail_count}) → {refs_dir}"
+    )
     await _emit_progress(run_id, "download_and_mineru_parse", "done")
     return sphere
 

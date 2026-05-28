@@ -21,6 +21,13 @@ class AppSettings(BaseSettings):
     # --- MinerU ---
     mineru_token: str = Field(default="", alias="MINERU_TOKEN")
 
+    # --- Paper downloader (OA Resolver / Elsevier TDM / Wiley TDM) ---
+    unpaywall_email: str = Field(default="", alias="UNPAYWALL_EMAIL")
+    core_api_key: str = Field(default="", alias="CORE_API_KEY")
+    elsevier_api_key: str = Field(default="", alias="ELSEVIER_API_KEY")
+    elsevier_inst_token: str = Field(default="", alias="ELSEVIER_INSTTOKEN")
+    wiley_tdm_token: str = Field(default="", alias="WILEY_TDM_TOKEN")
+
     # --- Research Sphere ---
     sphere_radius: int = Field(default=1, alias="SPHERE_RADIUS")
     sphere_candidate_cap: int = Field(default=200, alias="SPHERE_CANDIDATE_CAP")
