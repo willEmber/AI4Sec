@@ -23,6 +23,9 @@ node_modules/
 # === Docker persistent data ===
 docker-data/
 
+# === Backend runtime uploads and generated parsing data ===
+backend/data/
+
 # === IDE / Editor ===
 .vscode/
 .idea/
@@ -42,16 +45,20 @@ Thumbs.db
 
 # === Test artifacts ===
 test_doc/
+test_result/
 
 # === Cache databases ===
 rank_cache.sqlite3
+*.sqlite3
 *.sqlite3-wal
 *.sqlite3-shm
+*.sqlite3-journal
 *.db-wal
 *.db-shm
+*.db-journal
 
 # === Runtime data ===
-backend/data/app.db
+*.db
 
 # === Standalone tool packages (now inlined into backend/app/services/) ===
 paper_search/

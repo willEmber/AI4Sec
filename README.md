@@ -5,90 +5,94 @@
 <h1 align="center">Scholar Platform</h1>
 
 <p align="center">
-  Full-stack academic paper reading platform. Upload a PDF, choose a reading mode, get structured AI analysis with evidence citations linking back to PDF pages.
+  全栈学术论文阅读平台。上传 PDF，选择阅读模式，即可获得带证据引用的结构化 AI 分析，并可跳转回 PDF 原文页面。
 </p>
-
-## Preview
 
 <p align="center">
-  <img src="example.png" alt="Scholar landing page preview" width="760" />
+  <a href="./README.en.md">English README</a>
 </p>
 
-## Quick Start (Docker)
+## 预览
 
-### Prerequisites
+<p align="center">
+  <img src="example.png" alt="Scholar 首页预览" width="760" />
+</p>
+
+## 快速开始（Docker）
+
+### 前置要求
 
 - Docker >= 24.0
 - Docker Compose >= 2.20
 
-### 1. Configure environment variables
+### 1. 配置环境变量
 
 ```bash
 cp .env.example .env
-# Edit .env and fill in your API keys
+# 编辑 .env，填入 API Key 和模型名称
 ```
 
-Required variables in `.env`:
+`.env` 中的必填变量：
 
-| Variable | Description |
+| 变量 | 说明 |
 |---|---|
-| `LLM_BASEURL` | OpenAI-compatible API endpoint |
-| `LLM_APIKEY` | LLM API key |
-| `THINKING_MODELNAME` | Reasoning model name |
-| `EMBED_MODELNAME` | Embedding model name |
-| `RERANK_MODELNAME` | Reranking model name |
-| `MINERU_TOKEN` | MinerU PDF parsing API token |
-| `EASYSCHOLAR_SECRET_KEY` | EasyScholar API key for PublicationRank |
+| `LLM_BASEURL` | OpenAI 兼容 API 地址 |
+| `LLM_APIKEY` | LLM API Key |
+| `THINKING_MODELNAME` | 推理模型名称 |
+| `EMBED_MODELNAME` | 向量模型名称 |
+| `RERANK_MODELNAME` | 重排序模型名称 |
+| `MINERU_TOKEN` | MinerU PDF 解析 API Token |
+| `EASYSCHOLAR_SECRET_KEY` | PublicationRank 使用的 EasyScholar API Key |
 
-### 2. Build and start
+### 2. 构建并启动
 
 ```bash
 docker compose up -d
 ```
 
-- Frontend: http://localhost:3001
-- Backend API: http://localhost:8001
-- API docs: http://localhost:8001/docs
+- 前端：http://localhost:3001
+- 后端 API：http://localhost:8001
+- API 文档：http://localhost:8001/docs
 
-### 3. Stop
+### 3. 停止服务
 
 ```bash
 docker compose down
 ```
 
-### Data persistence
+### 数据持久化
 
-Uploaded PDFs and the SQLite database are persisted in `./docker-data/` on the host. This directory is automatically created on first run.
+上传的 PDF 和 SQLite 数据库会持久化到宿主机的 `./docker-data/` 目录。首次启动时该目录会自动创建。
 
-### Docker registry mirror (China mainland)
+### Docker 镜像源（中国大陆）
 
-The Dockerfiles default to `docker.1ms.run` as the registry mirror. To use a different mirror or Docker Hub directly, set `REGISTRY_MIRROR` before building:
+Dockerfile 默认使用 `docker.1ms.run` 作为镜像源。若要使用其他镜像源或 Docker Hub，可在构建前设置 `REGISTRY_MIRROR`：
 
 ```bash
-# Use a different mirror
+# 使用其他镜像源
 REGISTRY_MIRROR=docker.m.daocloud.io docker compose build
 
-# Use Docker Hub directly (no mirror)
+# 直接使用 Docker Hub
 REGISTRY_MIRROR=docker.io docker compose build
 ```
 
-### Rebuild after code changes
+### 代码变更后重新构建
 
 ```bash
-# Rebuild both services
+# 重新构建两个服务
 docker compose build
 
-# Rebuild only one service
+# 只重新构建单个服务
 docker compose build backend
 docker compose build frontend
 
-# Rebuild and restart
+# 重新构建并启动
 docker compose up -d --build
 ```
 
-## Local Development
+## 本地开发
 
-### Backend (FastAPI)
+### 后端（FastAPI）
 
 ```bash
 cd backend
@@ -96,7 +100,7 @@ uv sync
 uv run uvicorn app.main:app --reload --port 8000
 ```
 
-### Frontend (Next.js)
+### 前端（Next.js）
 
 ```bash
 cd frontend
@@ -104,46 +108,46 @@ npm install
 npm run dev
 ```
 
-## Architecture
+## 架构概览
 
 ```
-Upload PDF → SHA1 paper_id → store → MinerU API parse → content_list.json → PaperIR
-    → route by mode → Insight Snap / Logic Lens / Research Sphere
-    → LLM analysis with page citations → Markdown + LaTeX → SSE to frontend
-    → split-pane: rendered markdown (left) + PDF viewer (right) with citation-to-page jump
+上传 PDF → SHA1 paper_id → 存储 → MinerU API 解析 → content_list.json → PaperIR
+    → 按模式路由 → Insight Snap / Logic Lens / Research Sphere
+    → 带页码引用的 LLM 分析 → Markdown + LaTeX → SSE 推送到前端
+    → 分屏视图：左侧渲染 Markdown，右侧 PDF 查看器支持引用跳页
 ```
 
-### Reading Modes
+### 阅读模式
 
-- **Insight Snap** — Quick structured overview of key paper insights
-- **Logic Lens** — Deep analysis of equations, algorithms, and tables
-- **Research Sphere** — Reference network exploration and research gap identification
+- **Insight Snap**：快速生成论文核心洞察的结构化概览。
+- **Logic Lens**：深入分析公式、算法和表格。
+- **Research Sphere**：探索参考文献网络并识别研究空白。
 
-## Project Structure
+## 项目结构
 
 ```
 scholar/
-├── backend/             # FastAPI + LangGraph backend
+├── backend/             # FastAPI + LangGraph 后端
 │   ├── app/
-│   │   ├── api/         # REST endpoints (papers, runs)
-│   │   ├── db/          # SQLite async wrapper
-│   │   ├── models/      # Pydantic models
-│   │   ├── services/    # MinerU, LLM, PaperIR
-│   │   └── workflows/   # LangGraph subgraphs
+│   │   ├── api/         # REST 接口（papers、runs）
+│   │   ├── db/          # SQLite 异步封装
+│   │   ├── models/      # Pydantic 模型
+│   │   ├── services/    # MinerU、LLM、PaperIR 等服务
+│   │   └── workflows/   # LangGraph 子图
 │   ├── Dockerfile
 │   └── pyproject.toml
-├── frontend/            # Next.js 15 + React 19
+├── frontend/            # Next.js 15 + React 19 前端
 │   ├── src/
-│   │   ├── app/         # Pages (landing, upload, result view)
-│   │   ├── components/  # MarkdownRenderer, PdfViewer, SplitPane
-│   │   ├── hooks/       # useRunStream (SSE)
-│   │   └── lib/         # API client, types
+│   │   ├── app/         # 页面（首页、上传页、结果页）
+│   │   ├── components/  # MarkdownRenderer、PdfViewer、SplitPane
+│   │   ├── hooks/       # useRunStream（SSE）
+│   │   └── lib/         # API 客户端、类型、国际化
 │   ├── Dockerfile
 │   └── package.json
-├── paper_search/        # Async multi-platform search aggregator
-├── papersdownload/      # DOI-to-PDF batch downloader
-├── PublicationRank/     # EasyScholar journal ranking client
-├── paper_converter/     # MinerU PDF parsing integration
+├── paper_search/        # 异步多平台论文搜索聚合器
+├── papersdownload/      # DOI 到 PDF 的批量下载工具
+├── PublicationRank/     # EasyScholar 期刊排名客户端
+├── paper_converter/     # MinerU PDF 解析集成
 ├── docker-compose.yml
 ├── .env.example
 └── CLAUDE.md
