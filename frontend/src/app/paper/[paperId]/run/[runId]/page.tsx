@@ -203,69 +203,72 @@ export default function RunPage() {
         </div>
       )}
 
-      {/* Main content */}
-      {isRunning && !markdown ? (
-        <div className="flex flex-1 items-center justify-center px-6">
-          <div className="w-full max-w-sm text-center">
-            <div className="mx-auto mb-5 h-10 w-10 animate-spin rounded-full border-[3px] border-primary border-t-transparent" />
-            <p className="font-medium text-foreground">
-              {currentStep ? stepLabel(currentStep.step) : t("run.starting")}
-            </p>
-            {/* Progress steps */}
-            {progressSteps.length > 0 && (
-              <div className="mx-auto mt-7 max-w-xs space-y-0.5 text-left">
-                {progressSteps.map((step, i) => {
-                  const done = step.status === "done" || step.status === "skipped";
-                  return (
-                    <div
-                      key={i}
-                      className={`flex items-center gap-2.5 rounded-lg px-3 py-1.5 text-sm ${
-                        done ? "text-muted-foreground" : "bg-accent/50 font-medium"
-                      }`}
-                    >
-                      {done ? (
-                        <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-success/20 text-[11px] text-success">
-                          <IconCheck />
-                        </span>
-                      ) : (
-                        <span className="h-3.5 w-3.5 shrink-0 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-                      )}
-                      <span>{stepLabel(step.step)}</span>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        </div>
-      ) : isFailed && !markdown ? (
-        <div className="flex flex-1 items-center justify-center px-6">
-          <div className="max-w-md rounded-2xl border border-destructive/25 bg-destructive/5 p-8 text-center">
-            <p className="mb-2 font-semibold text-destructive">{t("run.status.failed_label")}</p>
-            <p className="text-sm text-muted-foreground">
-              {error || run?.error_msg || t("run.status.unknown")}
-            </p>
-          </div>
-        </div>
-      ) : (
-        <div className="flex-1 overflow-hidden">
-          <SplitPane
-            left={
+      {/* Main content — split pane is always mounted so PDF loads immediately,
+          while the left side shows progress / failure / markdown as state evolves. */}
+      <div className="flex-1 overflow-hidden">
+        <SplitPane
+          left={
+            markdown ? (
               <div className="px-6 py-8 sm:px-10">
                 <div className="mx-auto max-w-3xl">
                   <MarkdownRenderer content={markdown} onCitationClick={handleCitationClick} />
                 </div>
               </div>
-            }
-            right={
-              <PdfViewer
-                url={getPaperPdfUrl(paperId)}
-                targetPage={targetPage}
-              />
-            }
-          />
-        </div>
-      )}
+            ) : isFailed ? (
+              <div className="flex h-full items-center justify-center px-6">
+                <div className="max-w-md rounded-2xl border border-destructive/25 bg-destructive/5 p-8 text-center">
+                  <p className="mb-2 font-semibold text-destructive">{t("run.status.failed_label")}</p>
+                  <p className="text-sm text-muted-foreground">
+                    {error || run?.error_msg || t("run.status.unknown")}
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <div className="flex h-full items-start justify-center overflow-auto px-6 py-10">
+                <div className="w-full max-w-sm text-center">
+                  <div className="mx-auto mb-5 h-10 w-10 animate-spin rounded-full border-[3px] border-primary border-t-transparent" />
+                  <p className="font-medium text-foreground">
+                    {currentStep ? stepLabel(currentStep.step) : t("run.starting")}
+                  </p>
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    {t("run.pdf_ready_hint")}
+                  </p>
+                  {progressSteps.length > 0 && (
+                    <div className="mx-auto mt-7 max-w-xs space-y-0.5 text-left">
+                      {progressSteps.map((step, i) => {
+                        const done = step.status === "done" || step.status === "skipped";
+                        return (
+                          <div
+                            key={i}
+                            className={`flex items-center gap-2.5 rounded-lg px-3 py-1.5 text-sm ${
+                              done ? "text-muted-foreground" : "bg-accent/50 font-medium"
+                            }`}
+                          >
+                            {done ? (
+                              <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-success/20 text-[11px] text-success">
+                                <IconCheck />
+                              </span>
+                            ) : (
+                              <span className="h-3.5 w-3.5 shrink-0 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+                            )}
+                            <span>{stepLabel(step.step)}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )
+          }
+          right={
+            <PdfViewer
+              url={getPaperPdfUrl(paperId)}
+              targetPage={targetPage}
+            />
+          }
+        />
+      </div>
     </div>
   );
 }

@@ -65,6 +65,7 @@ const translations: Record<Locale, Record<string, string>> = {
     "run.export_md": "Export .md",
     "run.your_question": "Your question:",
     "run.detected_intent": "Detected intent:",
+    "run.pdf_ready_hint": "The PDF is ready on the right — feel free to start reading while the analysis runs.",
 
     // Intent labels (mirrors mode labels but used for detected_intent display)
     "intent.snap": "Insight Snap",
@@ -160,6 +161,7 @@ const translations: Record<Locale, Record<string, string>> = {
     "run.export_md": "导出 .md",
     "run.your_question": "您的问题：",
     "run.detected_intent": "识别意图：",
+    "run.pdf_ready_hint": "右侧已加载论文原文，AI 分析期间可先行阅读。",
 
     // 意图标签（对应模式名称，仅用于展示分类器识别结果）
     "intent.snap": "快速洞察",
