@@ -23,17 +23,38 @@ _STOPWORDS = frozenset({
 })
 
 _TOKEN_RE = re.compile(r"[A-Za-z][A-Za-z0-9_-]{2,}")
+_SEARCHABLE_BLOCK_TYPES = frozenset({"text", "title", "list", "equation", "table", "image"})
+
+_CJK_QUERY_EXPANSIONS: tuple[tuple[tuple[str, ...], tuple[str, ...]], ...] = (
+    (
+        ("指标", "数据", "性能", "表现", "评估", "实验", "结果", "对比", "准确率", "鲁棒", "保真", "攻击"),
+        (
+            "metric", "metrics", "performance", "evaluation", "experiment", "experiments",
+            "result", "results", "accuracy", "robust", "robustness", "fidelity",
+            "psnr", "ssim", "lpips", "fid", "ablation", "comparison", "baseline",
+            "table",
+        ),
+    ),
+    (
+        ("方法", "方案", "算法", "模型", "框架"),
+        ("method", "approach", "proposed", "model", "framework", "architecture"),
+    ),
+)
 
 
 def _tokenize(question: str) -> list[str]:
     """Lowercase tokens, drop stopwords + short words. Keeps CJK characters as their own tokens."""
     tokens: list[str] = []
-    for m in _TOKEN_RE.findall(question.lower()):
+    question_l = question.lower()
+    for m in _TOKEN_RE.findall(question_l):
         if m not in _STOPWORDS:
             tokens.append(m)
     # Also include CJK runs as tokens (each 2-4 char run is treated as a phrase)
     for run in re.findall(r"[一-鿿]{2,4}", question):
         tokens.append(run)
+    for triggers, expansions in _CJK_QUERY_EXPANSIONS:
+        if any(trigger in question for trigger in triggers):
+            tokens.extend(expansions)
     # Deduplicate while preserving order
     seen: set[str] = set()
     ordered: list[str] = []
@@ -50,26 +71,54 @@ def _score_blocks(paper_ir: PaperIR, tokens: list[str]) -> list[tuple[int, Any]]
         return []
     scored: list[tuple[int, Any]] = []
     for b in paper_ir.blocks:
-        if b.type not in ("text", "title", "list", "equation"):
+        if b.type not in _SEARCHABLE_BLOCK_TYPES:
             continue
-        text_l = (b.text or "").lower()
+        text_l = " ".join(
+            part for part in (b.text, b.section_path, b.sub_type, b.type) if part
+        ).lower()
         if not text_l:
             continue
         score = 0
         for t in tokens:
             if t in text_l:
                 score += 1
+        if b.type == "table" and any(
+            t in tokens for t in ("metric", "metrics", "table", "performance")
+        ):
+            score += 2
         if score > 0:
             scored.append((score, b))
     scored.sort(key=lambda x: (-x[0], x[1].page_idx, x[1].order_idx))
     return scored
 
 
-def _assemble_context(paper_ir: PaperIR, question: str, max_chars: int = 12000) -> tuple[str, int]:
+def _expand_with_neighbors(paper_ir: PaperIR, blocks: list[Any], window: int = 1) -> list[Any]:
+    """Include nearby blocks so captions, section titles, and tables stay together."""
+    by_order = {b.order_idx: b for b in paper_ir.blocks}
+    expanded: list[Any] = []
+    seen: set[tuple[int, int]] = set()
+
+    for block in blocks:
+        for order_idx in range(block.order_idx - window, block.order_idx + window + 1):
+            neighbor = by_order.get(order_idx)
+            if neighbor is None:
+                continue
+            if neighbor.type not in _SEARCHABLE_BLOCK_TYPES:
+                continue
+            key = (neighbor.page_idx, neighbor.order_idx)
+            if key in seen:
+                continue
+            seen.add(key)
+            expanded.append(neighbor)
+
+    return expanded
+
+
+def _assemble_context(paper_ir: PaperIR, question: str, max_chars: int = 20000) -> tuple[str, int]:
     """Pick top-K relevant blocks + always-include early-page anchors, format with [p.X] markers."""
     tokens = _tokenize(question)
     scored = _score_blocks(paper_ir, tokens)
-    top = [b for _, b in scored[:25]]
+    top = _expand_with_neighbors(paper_ir, [b for _, b in scored[:30]])
 
     # Always include first-page title/text blocks for grounding
     anchors = [
@@ -97,12 +146,14 @@ def _assemble_context(paper_ir: PaperIR, question: str, max_chars: int = 12000) 
 _SYSTEM_PROMPT = """You are answering a specific user question about a single academic paper.
 
 Rules:
-1. Use ONLY the provided excerpts. Each excerpt is prefixed with `[p.X]` indicating its page number.
-2. Every factual claim MUST be followed by a `[p.X]` citation copied from the relevant excerpt.
-3. If the paper does NOT contain the answer, say so explicitly and (if possible) suggest which section likely covers it.
-4. Use LaTeX for math: `$inline$` or `$$display$$`.
-5. Be concise and direct. This is a focused answer, not a full report. Markdown is fine; avoid restating the question.
-6. Do not fabricate. Quote sparingly; paraphrase mostly.
+1. Use ONLY the provided paper context. Each block is prefixed with `[p.X]` indicating its page number.
+2. The context is assembled from parsed paper blocks and may include tables or section-local snippets.
+3. Every factual claim MUST be followed by a `[p.X]` citation copied from the relevant block.
+4. If the retrieved paper context does NOT contain the answer, say so explicitly and (if possible) suggest which section likely covers it.
+5. Do not describe the context as "abstract only" or "provided excerpts" unless that is literally all that was provided.
+6. Use LaTeX for math: `$inline$` or `$$display$$`.
+7. Be concise and direct. This is a focused answer, not a full report. Markdown is fine; avoid restating the question.
+8. Do not fabricate. Quote sparingly; paraphrase mostly.
 """
 
 
@@ -150,7 +201,7 @@ async def run_qa(state: MainGraphState) -> dict[str, Any]:
     markdown = await llm.chat(
         messages=[
             {"role": "system", "content": _SYSTEM_PROMPT},
-            {"role": "user", "content": f"Question: {question}\n\nPaper excerpts:\n{context}"},
+            {"role": "user", "content": f"Question: {question}\n\nPaper context:\n{context}"},
         ],
         model=model,
         temperature=0.2,
