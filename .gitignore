@@ -9,19 +9,29 @@ __pycache__/
 dist/
 build/
 .venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
 
-# === Node.js ===
+# === Node.js / Next.js ===
 node_modules/
 .next/
+*.tsbuildinfo
 
 # === Docker persistent data ===
 docker-data/
 
-# === IDE ===
+# === IDE / Editor ===
 .vscode/
 .idea/
 *.swp
 *.swo
+
+# === AI assistant / workspace metadata ===
+.cursor/
+.claude/
 
 # === OS ===
 .DS_Store
@@ -35,3 +45,12 @@ test_doc/
 
 # === Cache databases ===
 rank_cache.sqlite3
+*.sqlite3-wal
+*.sqlite3-shm
+*.db-wal
+*.db-shm
+
+# === Standalone tool packages (now inlined into backend/app/services/) ===
+paper_search/
+papersdownload/
+PublicationRank/
