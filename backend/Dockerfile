@@ -3,7 +3,7 @@ FROM ${PYTHON_IMAGE}
 
 RUN pip install --no-cache-dir uv
 
-# Mirror the dev layout: /scholar/backend/ + /scholar/paper_search/
+# Mirror the dev layout: /scholar/backend/ + /scholar/PublicationRank/
 # so that sys.path hacks (parents[3]) resolve identically in both envs.
 WORKDIR /scholar/backend
 
@@ -11,11 +11,8 @@ WORKDIR /scholar/backend
 COPY backend/pyproject.toml backend/uv.lock ./
 RUN uv sync --frozen --no-dev
 
-# Copy application code
+# Copy application code (paper_search now lives under app/services/paper_search)
 COPY backend/app ./app
-
-# Copy paper_search module (used by sphere, citation_graph, sphere_scorer)
-COPY paper_search /scholar/paper_search
 
 # Copy PublicationRank module (used by enrich_metadata for SCI/CCF ranking)
 COPY PublicationRank /scholar/PublicationRank

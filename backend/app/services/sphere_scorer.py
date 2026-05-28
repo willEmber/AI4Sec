@@ -2,19 +2,12 @@ from __future__ import annotations
 
 import math
 import re
-import sys
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from app.models.sphere_models import SphereConfig, SphereEdge, SphereNode
 
-# Ensure paper_search utils are importable
-_project_root = Path(__file__).resolve().parents[3]
-if str(_project_root) not in sys.path:
-    sys.path.insert(0, str(_project_root))
-
-from paper_search.paper_search.utils import jaccard_similarity
+from app.services.paper_search import jaccard_similarity
 
 
 def compute_text_similarity(

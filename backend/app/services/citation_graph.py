@@ -3,26 +3,21 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
-import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 import httpx
 
-logger = logging.getLogger("scholar.citation_graph")
-
-# Ensure paper_search utils are importable
-_project_root = Path(__file__).resolve().parents[3]
-if str(_project_root) not in sys.path:
-    sys.path.insert(0, str(_project_root))
-
-from paper_search.paper_search.config import Settings as PSSettings, load_env_file
-from paper_search.paper_search.utils import (
+from app.services.paper_search import (
+    Settings as PSSettings,
     jaccard_similarity,
+    load_env_file,
     normalize_whitespace,
     openalex_abstract_from_inverted_index,
 )
+
+logger = logging.getLogger("scholar.citation_graph")
 
 # Ensure .env is loaded so PAPERSEARCH_* vars are available.
 load_env_file(str(Path(__file__).resolve().parents[3] / ".env"))

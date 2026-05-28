@@ -4,7 +4,6 @@ import asyncio
 import json
 import logging
 import re
-import sys
 import time
 from pathlib import Path
 from typing import Any, Callable, Coroutine
@@ -31,16 +30,10 @@ from app.models.sphere_models import (
     make_node_id,
 )
 from app.services.llm_service import get_llm_service
+from app.services.paper_search import normalize_whitespace, title_fingerprint
 from app.workflows.state import MainGraphState
 
 logger = logging.getLogger("scholar.graph")
-
-# Ensure project root importable for paper_search / papersdownload
-_project_root = Path(__file__).resolve().parents[3]
-if str(_project_root) not in sys.path:
-    sys.path.insert(0, str(_project_root))
-
-from paper_search.paper_search.utils import normalize_whitespace, title_fingerprint
 
 
 def _is_center_paper(center: SphereNode, title: str, doi: str = "") -> bool:
@@ -577,8 +570,11 @@ async def step_4_expand_graph_candidates(
 
     # Paper search channel — multiple keyword-driven queries
     try:
-        from paper_search.paper_search.config import Settings as PSSettings, load_env_file
-        from paper_search.paper_search.search import search_papers
+        from app.services.paper_search import (
+            Settings as PSSettings,
+            load_env_file,
+            search_papers,
+        )
 
         # Ensure .env is loaded so PAPERSEARCH_* vars are available.
         load_env_file(str(Path(__file__).resolve().parents[3] / ".env"))
