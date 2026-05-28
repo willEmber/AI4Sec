@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 import logging
 import re
-import sys
 import time
 import uuid
 from pathlib import Path
@@ -11,11 +10,6 @@ from typing import Any
 
 import httpx
 from langgraph.graph import END, StateGraph
-
-# Ensure project root (/scholar/) is in sys.path so PublicationRank is importable
-_project_root = Path(__file__).resolve().parents[3]
-if str(_project_root) not in sys.path:
-    sys.path.insert(0, str(_project_root))
 
 from app.config import get_settings
 from app.db import database as db
@@ -253,7 +247,7 @@ async def _s2_lookup(doi: str = "", arxiv_id: str = "", title: str = "") -> dict
 
 async def enrich_metadata(state: MainGraphState) -> dict[str, Any]:
     """Extract DOI/arXiv from paper text, query Crossref → Semantic Scholar for venue,
-    then PublicationRank for SCI/CCF.
+    then publication_rank for SCI/CCF.
 
     Multi-source fallback chain:
       Level 1: DOI → Crossref
@@ -336,26 +330,26 @@ async def enrich_metadata(state: MainGraphState) -> dict[str, Any]:
             if not venue:
                 logger.warning("[%s] enrich_metadata: No venue found from any source", paper_id)
 
-        # 4. Query PublicationRank for SCI/CCF
+        # 4. Query publication_rank for SCI/CCF
         sci_rank = ""
         ccf_rank = ""
         if venue:
             try:
-                logger.info("[%s] enrich_metadata: Querying PublicationRank for '%s'...", paper_id, venue)
-                from PublicationRank.llm_rank import UnifiedRankClient
+                logger.info("[%s] enrich_metadata: Querying publication_rank for '%s'...", paper_id, venue)
+                from app.services.publication_rank import UnifiedRankClient
                 async with UnifiedRankClient() as rank_client:
                     result = await rank_client.query(venue)
-                    logger.info("[%s] enrich_metadata: PublicationRank result: success=%s sci=%s ccf=%s error=%s",
+                    logger.info("[%s] enrich_metadata: publication_rank result: success=%s sci=%s ccf=%s error=%s",
                                  paper_id, result.success, result.sci, result.ccf, result.error)
                     if result.success:
                         sci_rank = result.sci or ""
                         ccf_rank = result.ccf or ""
                     else:
-                        logger.warning("[%s] enrich_metadata: PublicationRank query failed for '%s': %s", paper_id, venue, result.error)
+                        logger.warning("[%s] enrich_metadata: publication_rank query failed for '%s': %s", paper_id, venue, result.error)
             except Exception as e:
-                logger.warning("[%s] enrich_metadata: PublicationRank import/call error: %s", paper_id, e, exc_info=True)
+                logger.warning("[%s] enrich_metadata: publication_rank import/call error: %s", paper_id, e, exc_info=True)
         else:
-            logger.info("[%s] enrich_metadata: No venue found, skipping PublicationRank query", paper_id)
+            logger.info("[%s] enrich_metadata: No venue found, skipping publication_rank query", paper_id)
 
         # 5. Persist to DB
         if doi or venue or arxiv_id:
