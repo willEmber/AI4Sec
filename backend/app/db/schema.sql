@@ -38,6 +38,28 @@ CREATE TABLE IF NOT EXISTS blocks (
 CREATE INDEX IF NOT EXISTS idx_blocks_paper ON blocks(paper_id);
 CREATE INDEX IF NOT EXISTS idx_blocks_type  ON blocks(paper_id, type);
 
+CREATE TABLE IF NOT EXISTS paper_nodes (
+    node_id         TEXT PRIMARY KEY,
+    paper_id        TEXT NOT NULL REFERENCES papers(paper_id),
+    parent_id       TEXT DEFAULT '',
+    depth           INTEGER DEFAULT 0,
+    node_type       TEXT NOT NULL DEFAULT '',    -- paper | section | chunk
+    block_type      TEXT DEFAULT '',             -- original block type for chunk nodes
+    sub_type        TEXT DEFAULT '',
+    title           TEXT DEFAULT '',
+    title_path      TEXT DEFAULT '',
+    page_start      INTEGER DEFAULT 0,
+    page_end        INTEGER DEFAULT 0,
+    block_start     INTEGER DEFAULT 0,
+    block_end       INTEGER DEFAULT 0,
+    text            TEXT DEFAULT '',
+    text_for_search TEXT DEFAULT '',
+    order_idx       INTEGER DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_paper_nodes_paper ON paper_nodes(paper_id);
+CREATE INDEX IF NOT EXISTS idx_paper_nodes_parent ON paper_nodes(paper_id, parent_id);
+CREATE INDEX IF NOT EXISTS idx_paper_nodes_type ON paper_nodes(paper_id, node_type);
+
 CREATE TABLE IF NOT EXISTS runs (
     run_id          TEXT PRIMARY KEY,
     paper_id        TEXT NOT NULL REFERENCES papers(paper_id),

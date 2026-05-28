@@ -55,6 +55,16 @@ async def init_db() -> None:
                 await db.commit()
             except Exception:
                 pass  # column already exists
+        # Optional FTS index for Smart Q&A hierarchy nodes. The regular
+        # paper_nodes table remains the source of truth if FTS5 is unavailable.
+        try:
+            await db.execute(
+                "CREATE VIRTUAL TABLE IF NOT EXISTS paper_node_fts "
+                "USING fts5(node_id UNINDEXED, paper_id UNINDEXED, title_path, text_for_search)"
+            )
+            await db.commit()
+        except Exception:
+            pass
 
 
 async def execute(sql: str, params: tuple[Any, ...] = ()) -> None:

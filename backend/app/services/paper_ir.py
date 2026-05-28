@@ -6,6 +6,7 @@ from pathlib import Path
 
 from app.db import database as db
 from app.models.paper_ir import Block, PaperIR, Section
+from app.services.qa_retrieval import store_paper_nodes
 
 
 def _find_content_list(output_dir: Path) -> Path:
@@ -220,6 +221,8 @@ async def build_and_store_paper_ir(output_dir: Path, paper_id: str) -> PaperIR:
                VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
             rows,
         )
+
+    await store_paper_nodes(paper_ir)
 
     # Save normalized PaperIR JSON
     normalized_dir = Path(output_dir).parent / "normalized"

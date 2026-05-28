@@ -60,7 +60,7 @@ class QaContextAssemblyTests(unittest.TestCase):
     def test_chinese_metric_question_retrieves_experiment_blocks(self) -> None:
         context, _ = _assemble_context(_paper_ir(), "该方案的关键数据指标与性能分析是什么？")
 
-        self.assertIn("[p.5] 4 Experiments", context)
+        self.assertIn("[p.5] [4 Experiments] 4 Experiments", context)
         self.assertIn("Evaluation Metrics", context)
         self.assertIn("PSNR", context)
 
