@@ -50,6 +50,9 @@ rank_cache.sqlite3
 *.db-wal
 *.db-shm
 
+# === Runtime data ===
+backend/data/app.db
+
 # === Standalone tool packages (now inlined into backend/app/services/) ===
 paper_search/
 papersdownload/
