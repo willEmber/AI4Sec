@@ -1,8 +1,8 @@
 "use client";
 
 import { LanguageProvider, LanguageToggle, useTranslation } from "@/lib/i18n";
-import { IconBurst } from "@/components/icons";
 import type { ReactNode } from "react";
+import Image from "next/image";
 import { usePathname } from "next/navigation";
 
 function NavLink({ href, label }: { href: string; label: string }) {
@@ -27,11 +27,16 @@ function NavBar() {
 
   return (
     <nav className="sticky top-0 z-40 h-14 border-b border-border bg-background/80 backdrop-blur-md">
-      <div className="mx-auto flex h-full max-w-6xl items-center gap-6 px-5 sm:px-8">
+      <div className="flex h-full items-center gap-6 px-4 sm:px-6">
         <a href="/" className="flex items-center gap-2.5 font-semibold tracking-tight">
-          <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-primary text-[15px] text-primary-foreground">
-            <IconBurst />
-          </span>
+          <Image
+            src="/scholar.png"
+            alt="Scholar"
+            width={28}
+            height={28}
+            className="h-7 w-7 rounded-lg object-contain"
+            priority
+          />
           <span className="text-[15px]">{t("nav.brand")}</span>
         </a>
         <div className="mx-1 hidden h-5 w-px bg-border sm:block" />
