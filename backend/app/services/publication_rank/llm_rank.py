@@ -8,12 +8,13 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import os
 import random
 import re
 from typing import Any
 
 import httpx
+
+from app.config import get_settings
 
 from .publication_rank import (
     EasyScholarClient,
@@ -42,6 +43,21 @@ _SYSTEM_PROMPT = """\
 
 _VALID_SCI = {"Q1", "Q2", "Q3", "Q4"}
 _VALID_CCF = {"A", "B", "C"}
+_TRANSIENT_FAILURE_MARKERS = (
+    "LLM 查询失败",
+    "LLM_BASEURL",
+    "UnsupportedProtocol",
+    "ReadTimeout",
+    "ConnectError",
+    "HTTP ",
+)
+
+
+def _is_transient_failure(result: PublicationRankResult) -> bool:
+    if result.success:
+        return False
+    error = result.error or ""
+    return any(marker in error for marker in _TRANSIENT_FAILURE_MARKERS)
 
 
 # ---------------------------------------------------------------------------
@@ -121,9 +137,16 @@ class LLMRankClient:
         max_retries: int = 3,
         timeout: float = 60.0,
     ):
-        self.base_url = (base_url or os.getenv("LLM_BASEURL", "")).rstrip("/")
-        self.api_key = api_key or os.getenv("LLM_APIKEY", "")
-        self.model = model or os.getenv("THINKING_MODELNAME", "")
+        settings = get_settings()
+        self.base_url = (
+            base_url if base_url is not None else settings.llm_base_url
+        ).strip().rstrip("/")
+        self.api_key = (
+            api_key if api_key is not None else settings.llm_api_key
+        ).strip()
+        self.model = (
+            model if model is not None else settings.thinking_model
+        ).strip()
         self.max_retries = max_retries
         self.timeout = timeout
         self._use_chat_completions = "dashscope" in self.base_url.lower()
@@ -190,10 +213,21 @@ class LLMRankClient:
 
     async def query(self, publication_name: str) -> PublicationRankResult:
         """查询单个出版物的 SCI/CCF 等级。"""
+        if not self.base_url.startswith(("http://", "https://")):
+            return PublicationRankResult(
+                name=publication_name,
+                success=False,
+                error=(
+                    "LLM_BASEURL 配置缺失或无效，请设置包含 http:// 或 "
+                    "https:// 协议的完整地址"
+                ),
+            )
+
         url, payload = self._build_payload(publication_name)
 
         attempt = 0
         last_error: str | None = None
+        retry_exhausted = False
         while True:
             attempt += 1
             try:
@@ -239,12 +273,14 @@ class LLMRankClient:
             except httpx.HTTPStatusError as e:
                 last_error = f"HTTP {e.response.status_code}"
                 if attempt > self.max_retries:
+                    retry_exhausted = True
                     break
                 await asyncio.sleep(self._compute_delay(attempt))
 
             except (httpx.ReadTimeout, httpx.ConnectError) as e:
                 last_error = f"{type(e).__name__}: {e}"
                 if attempt > self.max_retries:
+                    retry_exhausted = True
                     break
                 await asyncio.sleep(self._compute_delay(attempt))
 
@@ -252,9 +288,12 @@ class LLMRankClient:
                 last_error = f"{type(e).__name__}: {e}"
                 break
 
+        if retry_exhausted:
+            error = f"LLM 查询失败 ({self.max_retries} 次重试后): {last_error}"
+        else:
+            error = f"LLM 查询失败: {last_error}"
         return PublicationRankResult(
-            name=publication_name, success=False,
-            error=f"LLM 查询失败 ({self.max_retries} 次重试后): {last_error}",
+            name=publication_name, success=False, error=error,
         )
 
     async def query_batch(
@@ -308,8 +347,13 @@ class UnifiedRankClient:
         # 1) 查缓存
         cached = await self._cache.get(publication_name)
         if cached is not None:
-            logger.debug("cache hit for %s", publication_name)
-            return cached
+            if not _is_transient_failure(cached):
+                logger.debug("cache hit for %s", publication_name)
+                return cached
+            logger.info(
+                "ignoring transient publication_rank cache failure for %s: %s",
+                publication_name, cached.error,
+            )
 
         # 2) EasyScholar
         if self._use_easyscholar:
@@ -321,6 +365,11 @@ class UnifiedRankClient:
                     await self._cache.put(es_result, source="easyscholar")
                     logger.info("easyscholar hit for %s", publication_name)
                     return es_result
+                if not es_result.success:
+                    logger.info(
+                        "easyscholar unavailable for %s: %s",
+                        publication_name, es_result.error,
+                    )
             except Exception as e:
                 logger.warning("easyscholar error for %s: %s", publication_name, e)
 
@@ -328,8 +377,8 @@ class UnifiedRankClient:
         if self._use_llm:
             llm_result = await self._llm.query(publication_name)
             source = "llm_websearch"
-            await self._cache.put(llm_result, source=source)
             if llm_result.success:
+                await self._cache.put(llm_result, source=source)
                 logger.info("llm hit for %s", publication_name)
             else:
                 logger.warning("llm failed for %s: %s", publication_name, llm_result.error)

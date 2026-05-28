@@ -1,0 +1,10 @@
+[2026-05-28 18:40:03 +0800]
+用户输入：按你的修改建议进行修复；提交代码
+完成：PublicationRank LLM 配置读取修复 (AI)
+  - 让 LLMRankClient 使用项目统一 settings 读取 .env 配置
+  - 增加 LLM_BASEURL 协议校验，避免 UnsupportedProtocol
+  - 跳过旧的可恢复失败负缓存，避免修复后仍命中旧错误
+
+涉及文件：
+  - backend/app/services/publication_rank/llm_rank.py：修复配置读取、错误提示、缓存重试逻辑
+  - backend/tests/test_publication_rank_llm_config.py：新增配置读取、无效 URL、旧失败缓存回归测试
