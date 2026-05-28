@@ -15,25 +15,11 @@ from app.config import get_settings
 from app.db import database as db
 from app.services import mineru_adapter
 from app.services.paper_ir import build_and_store_paper_ir
+from app.workflows.progress import emit_progress as _emit_progress
 from app.workflows.state import MainGraphState
 from app.workflows.translate import translate_output
 
 logger = logging.getLogger("scholar.graph")
-
-
-async def _emit_progress(run_id: str, step: str, status: str, **data: Any) -> None:
-    if not run_id:
-        return
-    try:
-        from app.api.runs import _run_queues
-
-        queue = _run_queues.get(run_id)
-        if queue:
-            payload = {"step": step, "status": status}
-            payload.update(data)
-            await queue.put({"event": "progress", "data": payload})
-    except Exception:
-        pass
 
 
 async def ingest_pdf(state: MainGraphState) -> dict[str, Any]:

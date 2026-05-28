@@ -45,6 +45,20 @@ class RunResponse(BaseModel):
     finished_at: str | None
     user_question: str = ""
     detected_intent: str = ""
+    current_step: str = ""
+    progress_json: str = "[]"
+
+
+class RecentRunResponse(BaseModel):
+    run_id: str
+    paper_id: str
+    paper_title: str = ""
+    mode: str
+    status: str
+    started_at: str
+    finished_at: str | None
+    current_step: str = ""
+    user_question: str = ""
 
 
 class RunOutputResponse(BaseModel):

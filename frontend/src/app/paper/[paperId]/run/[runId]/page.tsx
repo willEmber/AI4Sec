@@ -10,7 +10,7 @@ import PdfViewer from "@/components/PdfViewer";
 import SplitPane from "@/components/SplitPane";
 import RankBadges from "@/components/RankBadges";
 import { IconDownload, IconCheck } from "@/components/icons";
-import type { RunResponse, PaperResponse, SSEEvent } from "@/lib/types";
+import type { RunResponse, PaperResponse, SSEEvent, ProgressEntry } from "@/lib/types";
 
 export default function RunPage() {
   const params = useParams();
@@ -119,14 +119,28 @@ export default function RunPage() {
     URL.revokeObjectURL(url);
   }, [markdown, paper?.title, paperId, run?.mode]);
 
-  // Progress steps from events — deduplicate by step name, keeping latest status
+  // Progress steps merged from two sources:
+  //   1. persisted `run.progress_json` (full history, even if SSE wasn't connected)
+  //   2. live SSE events received this session
+  // Deduplicate by step name, keeping the latest status per step.
   const progressSteps = (() => {
-    const all = events
+    const persisted: ProgressEntry[] = (() => {
+      if (!run?.progress_json) return [];
+      try {
+        const parsed = JSON.parse(run.progress_json);
+        return Array.isArray(parsed) ? (parsed as ProgressEntry[]) : [];
+      } catch {
+        return [];
+      }
+    })();
+
+    const live = events
       .filter((e: SSEEvent) => e.event === "progress")
-      .map((e: SSEEvent) => e.data as { step: string; status: string });
-    const map = new Map<string, { step: string; status: string }>();
-    for (const s of all) {
-      map.set(s.step, s);
+      .map((e: SSEEvent) => e.data as ProgressEntry);
+
+    const map = new Map<string, ProgressEntry>();
+    for (const s of [...persisted, ...live]) {
+      if (s && typeof s.step === "string") map.set(s.step, s);
     }
     return Array.from(map.values());
   })();

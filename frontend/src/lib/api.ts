@@ -1,6 +1,7 @@
 import type {
   PaperResponse,
   PaperUploadResponse,
+  RecentRunResponse,
   RunCreate,
   RunResponse,
   RunOutputResponse,
@@ -54,6 +55,17 @@ export async function getRunOutput(runId: string): Promise<RunOutputResponse> {
 
 export async function listPaperRuns(paperId: string): Promise<RunResponse[]> {
   return request(`/papers/${paperId}/runs`);
+}
+
+export async function listRecentRuns(
+  limit = 20,
+  activeOnly = false,
+): Promise<RecentRunResponse[]> {
+  const qs = new URLSearchParams({
+    limit: String(limit),
+    active_only: activeOnly ? "true" : "false",
+  });
+  return request(`/runs/recent?${qs.toString()}`);
 }
 
 export function getPaperPdfUrl(paperId: string): string {

@@ -13,8 +13,9 @@ from langgraph.graph.state import CompiledStateGraph
 
 from app.db import database as db
 from app.rate_limit import limiter
-from app.models.schemas import RunCreate, RunOutputResponse, RunResponse
+from app.models.schemas import RecentRunResponse, RunCreate, RunOutputResponse, RunResponse
 from app.workflows.main_graph import build_main_graph
+from app.workflows.progress import emit_progress
 from app.workflows.state import MainGraphState
 
 logger = logging.getLogger("scholar.runs")
@@ -136,8 +137,10 @@ async def _execute_run(
                 progress = node_output.get("progress", [])
                 latest = progress[-1] if progress else {"step": node_name, "status": "done"}
                 logger.info(f"[run:{run_id}] ✔ Node '{node_name}' done at {elapsed:.1f}s — {latest}")
-                if queue:
-                    await queue.put({"event": "progress", "data": latest})
+                step = latest.get("step", node_name)
+                status = latest.get("status", "done")
+                extra = {k: v for k, v in latest.items() if k not in ("step", "status")}
+                await emit_progress(run_id, step, status, **extra)
 
         elapsed = time.perf_counter() - t0
         if queue:
@@ -169,6 +172,38 @@ async def _execute_run(
         _run_semaphore.release()
         if queue:
             await queue.put(None)  # Signal end of stream
+
+
+@router.get("/runs/recent", response_model=list[RecentRunResponse])
+@limiter.limit("30/minute")
+async def list_recent_runs(
+    request: Request,
+    limit: int = 20,
+    active_only: bool = False,
+):
+    """Recent runs across all papers, with paper title joined for display.
+
+    When `active_only=true`, only pending/running runs are returned —
+    used by the upload page banner to surface tasks the user navigated
+    away from. Declared before `/runs/{run_id}` so the literal path wins.
+    """
+    limit = max(1, min(limit, 100))
+    where = "WHERE r.status IN ('pending', 'running')" if active_only else ""
+    rows = await db.fetch_all(
+        f"""
+        SELECT r.run_id, r.paper_id, COALESCE(p.title, '') AS paper_title,
+               r.mode, r.status, r.started_at, r.finished_at,
+               COALESCE(r.current_step, '') AS current_step,
+               COALESCE(r.user_question, '') AS user_question
+          FROM runs r
+          LEFT JOIN papers p ON p.paper_id = r.paper_id
+          {where}
+         ORDER BY r.started_at DESC
+         LIMIT ?
+        """,
+        (limit,),
+    )
+    return [RecentRunResponse(**r) for r in rows]
 
 
 @router.get("/runs/{run_id}", response_model=RunResponse)

@@ -49,16 +49,26 @@ async def init_db() -> None:
             await db.commit()
         except Exception:
             pass  # column already exists
-        # Migrate runs table: add user_question + detected_intent for Smart Q&A
+        # Migrate runs table: add user_question + detected_intent for Smart Q&A,
+        # current_step + progress_json for resumable progress display.
         for col, col_def in [
             ("user_question", "TEXT DEFAULT ''"),
             ("detected_intent", "TEXT DEFAULT ''"),
+            ("current_step", "TEXT DEFAULT ''"),
+            ("progress_json", "TEXT DEFAULT '[]'"),
         ]:
             try:
                 await db.execute(f"ALTER TABLE runs ADD COLUMN {col} {col_def}")
                 await db.commit()
             except Exception:
                 pass  # column already exists
+        try:
+            await db.execute(
+                "CREATE INDEX IF NOT EXISTS idx_runs_status_started ON runs(status, started_at DESC)"
+            )
+            await db.commit()
+        except Exception:
+            pass
         # Migrate mineru_parses table: add remote poll diagnostics.
         for col, col_def in [
             ("remote_batch_id", "TEXT DEFAULT ''"),

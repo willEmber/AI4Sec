@@ -31,6 +31,7 @@ from app.models.sphere_models import (
 )
 from app.services.llm_service import get_llm_service
 from app.services.paper_search import normalize_whitespace, title_fingerprint
+from app.workflows.progress import emit_progress as _emit_progress
 from app.workflows.state import MainGraphState
 
 logger = logging.getLogger("scholar.graph")
@@ -43,21 +44,6 @@ def _is_center_paper(center: SphereNode, title: str, doi: str = "") -> bool:
     if title and center.title:
         return title_fingerprint(title) == title_fingerprint(center.title)
     return False
-
-
-# ──────────────────────────────────────────────────────────────────────
-# SSE progress helper
-# ──────────────────────────────────────────────────────────────────────
-
-async def _emit_progress(run_id: str, step: str, status: str) -> None:
-    """Emit SSE progress event to the run queue if available."""
-    try:
-        from app.api.runs import _run_queues
-        queue = _run_queues.get(run_id)
-        if queue:
-            await queue.put({"event": "progress", "data": {"step": step, "status": status}})
-    except Exception:
-        pass
 
 
 # ──────────────────────────────────────────────────────────────────────

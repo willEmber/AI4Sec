@@ -25,6 +25,26 @@ export interface RunResponse {
   finished_at: string | null;
   user_question?: string;
   detected_intent?: string;
+  current_step?: string;
+  progress_json?: string;
+}
+
+export interface RecentRunResponse {
+  run_id: string;
+  paper_id: string;
+  paper_title: string;
+  mode: string;
+  status: string;
+  started_at: string;
+  finished_at: string | null;
+  current_step: string;
+  user_question: string;
+}
+
+export interface ProgressEntry {
+  step: string;
+  status: string;
+  [key: string]: unknown;
 }
 
 export interface RunOutputResponse {

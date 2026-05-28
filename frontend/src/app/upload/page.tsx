@@ -13,6 +13,7 @@ import {
   IconUpload,
   IconCheck,
 } from "@/components/icons";
+import RecentRuns from "@/components/RecentRuns";
 import type { ComponentType } from "react";
 
 const MODE_KEYS: {
@@ -106,6 +107,8 @@ export default function UploadPage() {
           {t("upload.title")}
         </h1>
       </header>
+
+      <RecentRuns />
 
       {/* Drop zone */}
       <div

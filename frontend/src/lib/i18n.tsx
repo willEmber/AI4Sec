@@ -55,6 +55,12 @@ const translations: Record<Locale, Record<string, string>> = {
     "upload.submitting": "Uploading & starting analysis...",
     "upload.fail": "Upload failed",
 
+    // Recent runs panel
+    "recent.active_header": "{count} run(s) still in progress — click to resume",
+    "recent.history_header": "Recent runs ({count})",
+    "recent.starting": "Starting...",
+    "recent.resumed_toast": "Reconnected — showing latest progress",
+
     // Run page
     "run.mode": "Mode",
     "run.status.running": "Running...",
@@ -150,6 +156,12 @@ const translations: Record<Locale, Record<string, string>> = {
     "upload.submit": "开始分析",
     "upload.submitting": "正在上传并启动分析...",
     "upload.fail": "上传失败",
+
+    // 最近运行面板
+    "recent.active_header": "{count} 个任务仍在进行中 — 点击恢复查看",
+    "recent.history_header": "最近运行（{count}）",
+    "recent.starting": "启动中...",
+    "recent.resumed_toast": "已重新连接 — 已显示最新进度",
 
     // Run page
     "run.mode": "模式",
