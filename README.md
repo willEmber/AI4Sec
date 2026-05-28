@@ -1,6 +1,18 @@
-# Scholar Platform
+<p align="center">
+  <img src="scholar.png" alt="Scholar logo" width="160" />
+</p>
 
-Full-stack academic paper reading platform. Upload a PDF, choose a reading mode, get structured AI analysis with evidence citations linking back to PDF pages.
+<h1 align="center">Scholar Platform</h1>
+
+<p align="center">
+  Full-stack academic paper reading platform. Upload a PDF, choose a reading mode, get structured AI analysis with evidence citations linking back to PDF pages.
+</p>
+
+## Preview
+
+<p align="center">
+  <img src="example.png" alt="Scholar landing page preview" width="760" />
+</p>
 
 ## Quick Start (Docker)
 
