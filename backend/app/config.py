@@ -20,6 +20,10 @@ class AppSettings(BaseSettings):
 
     # --- MinerU ---
     mineru_token: str = Field(default="", alias="MINERU_TOKEN")
+    mineru_model_version: str = Field(default="vlm", alias="MINERU_MODEL_VERSION")
+    mineru_poll_interval_seconds: int = Field(default=6, alias="MINERU_POLL_INTERVAL_SECONDS")
+    mineru_parse_timeout_seconds: int = Field(default=1800, alias="MINERU_PARSE_TIMEOUT_SECONDS")
+    mineru_batch_timeout_seconds: int = Field(default=7200, alias="MINERU_BATCH_TIMEOUT_SECONDS")
 
     # --- Paper downloader (OA Resolver / Elsevier TDM / Wiley TDM) ---
     unpaywall_email: str = Field(default="", alias="UNPAYWALL_EMAIL")

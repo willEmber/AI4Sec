@@ -19,6 +19,10 @@ CREATE TABLE IF NOT EXISTS mineru_parses (
     status     TEXT NOT NULL DEFAULT 'pending',  -- pending | running | done | failed
     output_dir TEXT DEFAULT '',
     error_msg  TEXT DEFAULT '',
+    remote_batch_id TEXT DEFAULT '',
+    poll_count INTEGER DEFAULT 0,
+    last_state_counts TEXT DEFAULT '',
+    last_poll_at TEXT DEFAULT '',
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );

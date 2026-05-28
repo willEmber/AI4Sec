@@ -21,6 +21,21 @@ from app.workflows.translate import translate_output
 logger = logging.getLogger("scholar.graph")
 
 
+async def _emit_progress(run_id: str, step: str, status: str, **data: Any) -> None:
+    if not run_id:
+        return
+    try:
+        from app.api.runs import _run_queues
+
+        queue = _run_queues.get(run_id)
+        if queue:
+            payload = {"step": step, "status": status}
+            payload.update(data)
+            await queue.put({"event": "progress", "data": payload})
+    except Exception:
+        pass
+
+
 async def ingest_pdf(state: MainGraphState) -> dict[str, Any]:
     """Verify PDF exists and set path."""
     t0 = time.perf_counter()
@@ -71,6 +86,12 @@ async def mineru_parse(state: MainGraphState) -> dict[str, Any]:
 
     logger.info(f"[{paper_id}] mineru_parse: Starting MinerU API parse (parse_id={parse_id})...")
     try:
+        await _emit_progress(
+            state.get("run_id", ""),
+            "mineru_parse",
+            "running",
+            parse_id=parse_id,
+        )
         output_dir = await mineru_adapter.parse_pdf(paper_id, parse_id)
         elapsed = time.perf_counter() - t0
         logger.info(f"[{paper_id}] mineru_parse: DONE in {elapsed:.1f}s -> {output_dir}")

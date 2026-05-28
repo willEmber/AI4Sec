@@ -20,6 +20,10 @@ def _get_db_path() -> Path:
     return _db_path
 
 
+def get_db_path() -> Path:
+    return _get_db_path()
+
+
 async def init_db() -> None:
     path = _get_db_path()
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -52,6 +56,18 @@ async def init_db() -> None:
         ]:
             try:
                 await db.execute(f"ALTER TABLE runs ADD COLUMN {col} {col_def}")
+                await db.commit()
+            except Exception:
+                pass  # column already exists
+        # Migrate mineru_parses table: add remote poll diagnostics.
+        for col, col_def in [
+            ("remote_batch_id", "TEXT DEFAULT ''"),
+            ("poll_count", "INTEGER DEFAULT 0"),
+            ("last_state_counts", "TEXT DEFAULT ''"),
+            ("last_poll_at", "TEXT DEFAULT ''"),
+        ]:
+            try:
+                await db.execute(f"ALTER TABLE mineru_parses ADD COLUMN {col} {col_def}")
                 await db.commit()
             except Exception:
                 pass  # column already exists
