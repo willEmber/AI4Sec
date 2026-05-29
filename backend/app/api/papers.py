@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import re
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Request, UploadFile
@@ -14,6 +15,17 @@ from app.models.schemas import PaperResponse, PaperUploadResponse
 router = APIRouter(tags=["papers"])
 
 MAX_UPLOAD_SIZE = 100 * 1024 * 1024  # 100 MB
+
+# Figure images extracted by MinerU are named as a content hash + extension.
+# Restrict to that shape so the filename can never contain path separators.
+_SAFE_IMAGE_NAME_RE = re.compile(r"^[A-Za-z0-9._-]+\.(jpg|jpeg|png|gif|webp)$", re.IGNORECASE)
+_IMAGE_MEDIA_TYPES = {
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".png": "image/png",
+    ".gif": "image/gif",
+    ".webp": "image/webp",
+}
 
 
 @router.post("/papers/upload", response_model=PaperUploadResponse)
@@ -93,6 +105,36 @@ async def get_paper_pdf(request: Request, paper_id: str):
         media_type="application/pdf",
         filename=f"{paper_id}.pdf",
     )
+
+
+@router.get("/papers/{paper_id}/images/{filename}")
+@limiter.limit("120/minute")
+async def get_paper_image(request: Request, paper_id: str, filename: str):
+    """Serve a MinerU-extracted figure image so reports can embed it inline.
+
+    The file is located under the paper's own MinerU output (``.../images/``);
+    the filename is restricted to a safe pattern and the resolved path is
+    confirmed to stay inside ``data_dir`` to prevent path traversal.
+    """
+    if not _SAFE_IMAGE_NAME_RE.match(filename):
+        raise HTTPException(status_code=404, detail="Image not found")
+
+    settings = get_settings()
+    data_root = settings.data_dir.resolve()
+    mineru_dir = (settings.data_dir / "papers" / paper_id / "mineru").resolve()
+    if not mineru_dir.is_relative_to(data_root) or not mineru_dir.exists():
+        raise HTTPException(status_code=404, detail="Image not found")
+
+    match: Path | None = None
+    for cand in mineru_dir.rglob(filename):
+        if cand.is_file() and cand.parent.name == "images":
+            match = cand.resolve()
+            break
+    if match is None or not match.is_relative_to(data_root):
+        raise HTTPException(status_code=404, detail="Image not found")
+
+    media_type = _IMAGE_MEDIA_TYPES.get(match.suffix.lower(), "application/octet-stream")
+    return FileResponse(path=str(match), media_type=media_type)
 
 
 @router.get("/papers", response_model=list[PaperResponse])

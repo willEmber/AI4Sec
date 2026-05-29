@@ -19,6 +19,13 @@ const sanitizeSchema = {
     div: [...(defaultSchema.attributes?.div || []), "className"],
     span: [...(defaultSchema.attributes?.span || []), "className", "dataPage", "data-page"],
     code: [...(defaultSchema.attributes?.code || []), "className"],
+    // Allow embedded figure images (e.g. the architecture diagram in Logic Lens).
+    img: [...(defaultSchema.attributes?.img || []), "src", "alt", "title", "loading"],
+  },
+  // Only same-origin /api image URLs are emitted by the backend; permit relative paths.
+  protocols: {
+    ...defaultSchema.protocols,
+    src: [...(defaultSchema.protocols?.src || []), "http", "https"],
   },
 };
 
@@ -98,6 +105,28 @@ export default function MarkdownRenderer({ content, onCitationClick }: MarkdownR
             }
 
             return <span {...props}>{children}</span>;
+          },
+          img: ({ node, ...props }) => {
+            const src = typeof props.src === "string" ? props.src : "";
+            const alt = typeof props.alt === "string" ? props.alt : "";
+            if (!src) return null;
+            // Rendered inside a <p>, so use inline-level wrappers (no <figure>/<div>).
+            return (
+              <span className="my-4 flex flex-col items-center">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={src}
+                  alt={alt}
+                  loading="lazy"
+                  className="max-h-[28rem] max-w-full rounded-lg border border-border bg-white object-contain shadow-sm"
+                />
+                {alt ? (
+                  <span className="mt-1.5 px-4 text-center text-xs text-muted-foreground">
+                    {alt}
+                  </span>
+                ) : null}
+              </span>
+            );
           },
         }}
       >

@@ -91,3 +91,23 @@
 涉及文件：
   - backend/app/workflows/lens_subgraph.py：重写 LENS_SYSTEM_PROMPT 与 LENS_SLOTS；新增 _section_match_keys/_extract_framing_section/_extract_figures；改 _extract_method_section/_extract_experiment_section 为祖先链匹配；上下文加入框架/图表/出版元数据并调高配额
   - backend/app/services/paper_ir.py：新增 _coerce_caption；图片读取 image_caption/image_footnote、表格读取 table_caption 并入正文
+
+[2026-05-29]
+用户输入：这次优化之后效果提升明显，是否有方法在lens模式中的“方法深入解析”部分，加入文章的框架图解析，插入图并附上解析，有利于用户更好理解方案
+完成：Lens 方法深读支持内嵌论文框架图 + 图解 (CC)
+  - PaperIR 贯通图片路径：Block 新增 img_path 字段，解析器从 content_list 的 img_path 写入（图片块），供前端拼接图片 URL
+  - 新增受保护的图片服务路由 GET /api/papers/{paper_id}/images/{filename}：文件名白名单正则、仅在该论文 MinerU 输出的 images/ 目录内查找、解析后路径必须落在 data_dir 内防目录穿越；按扩展名返回 image/* media type
+  - 复用既有 Next.js /api rewrite 代理（与 PDF 同机制），故内嵌用相对 URL /api/papers/.../images/... 即可被前端解析，无需 CORS/绝对地址
+  - Lens 选图与内嵌：新增 _select_framework_figures 按标题关键词（architecture/framework/overview/pipeline…）+“Figure 1”加权挑出框架图，无命中则回退最早可嵌入图；上下文产出“## Key Architecture Figures（含 embed: ![..](url) 现成 markdown）”与“## Other Figures”两块
+  - 提示词：方法深读新增“架构/框架图”要点——在讲解 pipeline 处逐字复制 embed 行内嵌框架图并逐组件讲解数据流；新增规则禁止编造/篡改图片 URL、仅嵌入提供了 URL 的图、结果图不嵌入
+  - 翻译节点新增规则：原样保留 ![alt](url) 图片嵌入与 URL（alt 可译）
+  - 前端 MarkdownRenderer：sanitize schema 显式放行 img（src/alt/title/loading）与相对/http(s) 协议；新增 img 自定义渲染（响应式居中、限高、边框、alt 作图注），用 inline 级 span 包裹避免嵌在 <p> 内的非法嵌套
+  - 校验：后端 import OK、24 项 unittest 全绿；TestClient 验证图片路由 200/404（缺失、坏扩展名、穿越尝试均 404）；桩 LLM 干跑 ROBIN 重解析，上下文正确产出 Figure 1 框架图 embed URL；前端 tsc 干净 + next build 成功（lint/类型校验通过）
+
+涉及文件：
+  - backend/app/models/paper_ir.py：Block 新增 img_path
+  - backend/app/services/paper_ir.py：图片块写入 img_path
+  - backend/app/api/papers.py：新增 get_paper_image 图片服务路由与安全校验
+  - backend/app/workflows/lens_subgraph.py：_extract_figures 带 img_path；新增 _figure_embed_url/_select_framework_figures；上下文产出框架图 embed 块；提示词加入内嵌框架图与图片 URL 规则
+  - backend/app/workflows/translate.py：新增保留图片嵌入规则
+  - frontend/src/components/MarkdownRenderer.tsx：放行并美化 img 渲染

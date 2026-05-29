@@ -167,6 +167,7 @@ def parse_content_list(output_dir: Path, paper_id: str) -> PaperIR:
             text=text,
             section_path="",
             order_idx=idx,
+            img_path=item.get("img_path", "") or "",
         )
         blocks.append(block)
 

@@ -11,6 +11,7 @@ class Block(BaseModel):
     text: str = ""
     section_path: str = ""
     order_idx: int = 0
+    img_path: str = ""              # for image blocks: MinerU-relative path, e.g. images/<hash>.jpg
 
 
 class Section(BaseModel):

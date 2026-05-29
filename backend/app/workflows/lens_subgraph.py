@@ -202,8 +202,54 @@ def _extract_figures(paper_ir: PaperIR) -> list[dict[str, Any]]:
             "page": block.page_idx + 1,
             "section": block.section_path,
             "bbox": block.bbox,
+            "img_path": block.img_path,
         })
     return figures
+
+
+# Caption cues that a figure depicts the overall method rather than a result plot.
+_FRAMEWORK_FIG_KEYWORDS = (
+    "architecture", "framework", "overview", "pipeline", "structure",
+    "our method", "our approach", "our model", "proposed method",
+    "proposed framework", "proposed model", "overall", "workflow",
+    "schematic", "illustration of", "system",
+)
+
+
+def _figure_embed_url(paper_id: str, img_path: str) -> str:
+    """Relative URL the frontend resolves (via the Next.js /api rewrite) to the
+    backend image route. Empty when the figure has no extracted image file."""
+    name = img_path.rsplit("/", 1)[-1] if img_path else ""
+    return f"/api/papers/{paper_id}/images/{name}" if name else ""
+
+
+def _select_framework_figures(
+    figures: list[dict[str, Any]], max_n: int = 3
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Split figures into (architecture/framework candidates, the rest).
+
+    Candidates are ranked by caption cues and a bonus for "Figure 1" (commonly
+    the overview). Only figures that actually have an image file can be
+    embedded; if none score, the earliest embeddable figure is used as a
+    fallback so the report still shows the paper's lead diagram.
+    """
+    scored: list[tuple[int, int, dict[str, Any]]] = []
+    for i, fig in enumerate(figures):
+        cl = fig["text"].lower()
+        score = sum(2 for kw in _FRAMEWORK_FIG_KEYWORDS if kw in cl)
+        if re.search(r"\b(?:figure|fig\.?)\s*1\b", cl):
+            score += 3
+        scored.append((score, i, fig))
+
+    embeddable = [s for s in scored if s[2].get("img_path")]
+    candidates = sorted((s for s in embeddable if s[0] > 0), key=lambda s: (-s[0], s[1]))
+    key = [s[2] for s in candidates[:max_n]]
+    if not key and embeddable:
+        key = [min(embeddable, key=lambda s: s[1])[2]]
+
+    key_ids = {id(f) for f in key}
+    others = [f for f in figures if id(f) not in key_ids]
+    return key, others
 
 
 LENS_SYSTEM_PROMPT = """You are an expert research-paper analyst. Produce a "Logic Lens": a deep, single-paper read-through that makes a researcher truly understand HOW the work operates and WHY it works — not a surface summary. Explain mechanisms, interpret results, and think critically.
@@ -221,7 +267,8 @@ This is the heart of the analysis — be thorough and concrete here.
 - **Pipeline & modules**: the end-to-end data flow and what each major component is responsible for.
 - **Key formulas**: for the important equations only, give the formula in LaTeX, the meaning of its variables (add a short symbol table if notation is heavy), the derivation logic / intuition, and how it differs from prior approaches. Skip trivial or boilerplate equations.
 - **Key algorithm / procedure**: a step-by-step walkthrough with per-step annotation; discuss complexity when it is relevant.
-- **Key figures**: the first time you refer to a figure, briefly explain in prose what it depicts (based on its caption and surrounding text) so the reader grasps it without seeing the image.
+- **Architecture / framework diagram**: embed the paper's main architecture or framework figure inline, right where you explain the pipeline, by copying its ready-made Markdown image (the `embed:` line) from the `## Key Architecture Figures` context block verbatim. Immediately after the image, walk the reader through the diagram — name each component and trace how data flows through it. This lets the reader see the approach, not just read about it.
+- **Other figures**: when you first refer to any other figure, briefly explain in prose what it depicts (from its caption) so the reader grasps it without seeing it.
 
 ## 3. Experiments & Results
 - **Datasets & metrics**: which datasets and evaluation metrics are used, what each metric actually measures, and why they are appropriate for the task.
@@ -239,7 +286,8 @@ RULES:
 2. Use LaTeX for ALL mathematical content: `$...$` inline and `$$...$$` for display formulas. A display `$$` must start at the left margin (no indentation), with the LaTeX directly inside the delimiters and no extra blank lines.
 3. Prioritize substance and depth on the core method and key results — capture the main points fully; auxiliary details may be condensed. Do not omit valuable content merely to keep the report short.
 4. Do NOT fabricate; state only what the provided context supports. When an important detail is genuinely absent, note it briefly in prose — but do NOT pad the report with "not reported" bullets for every missing field. Information density matters more than checklist completeness.
-5. Prefer the dedicated `## Paper Framing`, `## Method Section`, `## Experiment Section`, and `## Figures` excerpts over `## Full Paper Text`; the targeted excerpts are the most relevant.
+5. Prefer the dedicated `## Paper Framing`, `## Method Section`, `## Experiment Section`, and figure excerpts over `## Full Paper Text`; the targeted excerpts are the most relevant.
+6. To display a figure, embed it with the exact Markdown image given in the `## Key Architecture Figures` block — copy the `embed:` line verbatim (both alt text and URL). NEVER invent, guess, or alter an image URL, and do not embed a figure that has no provided URL. Embedding the framework diagram is expected in Part 2; do not embed result/plot figures.
 """
 
 
@@ -321,16 +369,34 @@ async def run_logic_lens(state: MainGraphState) -> dict[str, Any]:
         context_parts.append(f"## Experiment Section\n{et}")
 
     if figures:
-        fig_lines: list[str] = []
-        for f in figures:
-            cap = f["text"]
-            if len(cap) > 400:
-                cap = cap[:400] + "…"
-            fig_lines.append(f"- [p.{f['page']}] {cap}")
-        fig_text = "\n".join(fig_lines)
-        if len(fig_text) > figures_cap:
-            fig_text = fig_text[:figures_cap] + "\n[...truncated...]"
-        context_parts.append(f"## Figures (captions)\n{fig_text}")
+        key_figs, other_figs = _select_framework_figures(figures)
+        if key_figs:
+            key_lines: list[str] = []
+            for f in key_figs:
+                cap = f["text"]
+                if len(cap) > 300:
+                    cap = cap[:300] + "…"
+                url = _figure_embed_url(paper_id, f.get("img_path", ""))
+                alt = cap[:80]
+                if url:
+                    key_lines.append(f"- [p.{f['page']}] {cap}\n  embed: ![{alt}]({url})")
+                else:
+                    key_lines.append(f"- [p.{f['page']}] {cap}  (no image file to embed)")
+            context_parts.append(
+                "## Key Architecture Figures (embed these in the Method section)\n"
+                + "\n".join(key_lines)
+            )
+        if other_figs:
+            o_lines = []
+            for f in other_figs:
+                cap = f["text"]
+                if len(cap) > 300:
+                    cap = cap[:300] + "…"
+                o_lines.append(f"- [p.{f['page']}] {cap}")
+            o_text = "\n".join(o_lines)
+            if len(o_text) > figures_cap:
+                o_text = o_text[:figures_cap] + "\n[...truncated...]"
+            context_parts.append(f"## Other Figures (captions, for reference)\n{o_text}")
 
     if equations:
         eq_text = "\n".join(f"- {e['text']} [p.{e['page']}]" for e in equations)

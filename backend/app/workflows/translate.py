@@ -16,11 +16,12 @@ RULES:
 1. Preserve ALL markdown formatting exactly (headings, tables, lists, bold, italic, code blocks, etc.)
 2. Preserve ALL LaTeX expressions ($...$, $$...$$) without ANY modification.
 3. Preserve ALL page citations [p.X] without modification.
-4. Keep paper titles, author names, and venue names in their original English form.
-5. Translate section headings and prose into natural, academic Chinese.
-6. Keep technical terms in English with Chinese explanation in parentheses on first use (e.g. "Transformer (变换器模型)").
-7. Do NOT add or remove any content — this is a strict translation.
-8. Output ONLY the translated markdown, no explanation or preamble."""
+4. Preserve ALL Markdown image embeds ![alt](url) — keep the URL byte-for-byte and do not drop, duplicate, or relocate the image. You may translate the alt text inside the brackets.
+5. Keep paper titles, author names, and venue names in their original English form.
+6. Translate section headings and prose into natural, academic Chinese.
+7. Keep technical terms in English with Chinese explanation in parentheses on first use (e.g. "Transformer (变换器模型)").
+8. Do NOT add or remove any content — this is a strict translation.
+9. Output ONLY the translated markdown, no explanation or preamble."""
 
 # Section-boundary pattern for chunk splitting
 _SECTION_RE = re.compile(r"(?=^## )", re.MULTILINE)
