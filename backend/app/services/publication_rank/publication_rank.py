@@ -22,10 +22,29 @@ def _get_env_value(name: str, default: str = "") -> str:
 
 
 def _get_default_api_url() -> str:
+    """Resolve EasyScholar API URL: prefer AppSettings (.env), fall back to OS env, then default."""
+    try:
+        from app.config import get_settings
+
+        url = (get_settings().easyscholar_api_url or "").strip()
+        if url:
+            return url
+    except Exception:
+        # AppSettings unavailable (e.g. used as a standalone module) — fall through to env.
+        pass
     return _get_env_value("EASYSCHOLAR_API_URL", DEFAULT_EASYSCHOLAR_API_URL) or DEFAULT_EASYSCHOLAR_API_URL
 
 
 def _get_default_secret_key() -> str:
+    """Resolve EasyScholar secret key: prefer AppSettings (.env), fall back to OS env."""
+    try:
+        from app.config import get_settings
+
+        key = (get_settings().easyscholar_secret_key or "").strip()
+        if key:
+            return key
+    except Exception:
+        pass
     return _get_env_value("EASYSCHOLAR_SECRET_KEY")
 
 

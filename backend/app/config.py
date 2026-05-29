@@ -17,6 +17,18 @@ class AppSettings(BaseSettings):
     thinking_model: str = Field(default="", alias="THINKING_MODELNAME")
     embed_model: str = Field(default="", alias="EMBED_MODELNAME")
     rerank_model: str = Field(default="", alias="RERANK_MODELNAME")
+    # API style for LLM-rank web_search fallback: "responses" (Qwen Responses API,
+    # endpoint /responses + tools=[web_search]) or "chat_completions" (OpenAI-compatible
+    # endpoint /chat/completions + enable_search). Default aligns with llm_service.py
+    # which uses /responses; override only if your base URL exposes /chat/completions.
+    llm_rank_api_style: str = Field(default="responses", alias="LLM_RANK_API_STYLE")
+
+    # --- Publication rank (EasyScholar) ---
+    easyscholar_secret_key: str = Field(default="", alias="EASYSCHOLAR_SECRET_KEY")
+    easyscholar_api_url: str = Field(
+        default="https://www.easyscholar.cc/open/getPublicationRank",
+        alias="EASYSCHOLAR_API_URL",
+    )
 
     # --- MinerU ---
     mineru_token: str = Field(default="", alias="MINERU_TOKEN")

@@ -121,12 +121,18 @@ def _parse_llm_response(text: str, publication_name: str) -> PublicationRankResu
 # LLMRankClient
 # ---------------------------------------------------------------------------
 
+_VALID_API_STYLES = {"responses", "chat_completions"}
+
+
 class LLMRankClient:
     """通过 LLM + web search 查询出版物等级。
 
-    自动检测 API 风格：
-    - Dashscope compatible-mode → /chat/completions + enable_search
-    - Qwen Responses API → /responses + tools=[web_search]
+    API 风格由 LLM_RANK_API_STYLE 显式选择（默认与 llm_service.py 对齐，使用 /responses）：
+
+    - ``responses`` → POST ``{base_url}/responses`` + ``tools=[{type: web_search}]``
+      （Qwen Responses API / DashScope Bailian apps 协议）
+    - ``chat_completions`` → POST ``{base_url}/chat/completions`` + ``enable_search``
+      （OpenAI 兼容接口，例如 ``https://dashscope.aliyuncs.com/compatible-mode/v1``）
     """
 
     def __init__(
@@ -136,6 +142,7 @@ class LLMRankClient:
         model: str | None = None,
         max_retries: int = 3,
         timeout: float = 60.0,
+        api_style: str | None = None,
     ):
         settings = get_settings()
         self.base_url = (
@@ -149,7 +156,16 @@ class LLMRankClient:
         ).strip()
         self.max_retries = max_retries
         self.timeout = timeout
-        self._use_chat_completions = "dashscope" in self.base_url.lower()
+
+        style = (api_style if api_style is not None else getattr(settings, "llm_rank_api_style", "responses")).strip().lower()
+        if style not in _VALID_API_STYLES:
+            logger.warning(
+                "Unknown LLM_RANK_API_STYLE=%r, falling back to 'responses'. Valid: %s",
+                style, sorted(_VALID_API_STYLES),
+            )
+            style = "responses"
+        self.api_style = style
+        self._use_chat_completions = (style == "chat_completions")
 
     def _headers(self) -> dict[str, str]:
         return {

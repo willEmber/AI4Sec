@@ -132,6 +132,47 @@ class RankCache:
             results[name] = await self.get(name)
         return results
 
+    async def delete(self, name: str) -> int:
+        """删除指定名称（归一化后）的缓存。返回被删除的行数（0 或 1）。"""
+        assert self._db is not None, "call init() first"
+        key = _normalize_publication_name(name)
+        cursor = await self._db.execute(
+            "DELETE FROM publication_rank_cache WHERE name_normalized = ?",
+            (key,),
+        )
+        await self._db.commit()
+        return cursor.rowcount or 0
+
+    async def clear(self, *, only_failures: bool = False) -> int:
+        """清空缓存。only_failures=True 时只删除 success=0 的负缓存。返回被删除的行数。"""
+        assert self._db is not None, "call init() first"
+        if only_failures:
+            cursor = await self._db.execute(
+                "DELETE FROM publication_rank_cache WHERE success = 0",
+            )
+        else:
+            cursor = await self._db.execute("DELETE FROM publication_rank_cache")
+        await self._db.commit()
+        deleted = cursor.rowcount or 0
+        if deleted:
+            logger.info(
+                "rank_cache cleared: %d row(s) deleted (only_failures=%s)",
+                deleted, only_failures,
+            )
+        return deleted
+
+    async def count(self, *, only_failures: bool = False) -> int:
+        """统计当前缓存条目数，可选只数失败项。"""
+        assert self._db is not None, "call init() first"
+        if only_failures:
+            cursor = await self._db.execute(
+                "SELECT COUNT(*) FROM publication_rank_cache WHERE success = 0",
+            )
+        else:
+            cursor = await self._db.execute("SELECT COUNT(*) FROM publication_rank_cache")
+        row = await cursor.fetchone()
+        return int(row[0]) if row else 0
+
     async def close(self) -> None:
         if self._db is not None:
             await self._db.close()
