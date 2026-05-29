@@ -15,13 +15,15 @@ uniformly; 429 responses trigger a longer cool-down.
 """
 
 import asyncio
+import ipaddress
 import logging
 import os
 import re
+import socket
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Mapping
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
 
 import httpx
 
@@ -91,6 +93,62 @@ class DownloadResult:
 
 
 # ─────────────────────────────────────────────────────────────────────
+# SSRF guard — externally-supplied URLs must resolve to a public host
+# ─────────────────────────────────────────────────────────────────────
+
+class _RateLimited(Exception):
+    """Internal signal that a hop returned HTTP 429 (retry with backoff)."""
+
+
+def _ip_is_blocked(ip_text: str) -> bool:
+    try:
+        addr = ipaddress.ip_address(ip_text)
+    except ValueError:
+        return True  # unparseable → treat as unsafe
+    if addr.version == 6 and addr.ipv4_mapped is not None:
+        addr = addr.ipv4_mapped
+    return (
+        addr.is_private
+        or addr.is_loopback
+        or addr.is_link_local
+        or addr.is_reserved
+        or addr.is_multicast
+        or addr.is_unspecified
+    )
+
+
+def _url_is_public(url: str) -> bool:
+    """True only for http(s) URLs whose host resolves entirely to public IPs.
+
+    Downloaded PDF URLs come from third-party OA databases (Unpaywall / CORE /
+    publisher TDM APIs), so a poisoned record could otherwise point the backend
+    at an internal address (cloud metadata endpoints, localhost services).
+    Resolve the host and reject if *any* resolved address is
+    private/loopback/link-local/reserved/multicast/unspecified.
+    """
+    try:
+        parts = urlsplit(url)
+    except ValueError:
+        return False
+    if parts.scheme not in ("http", "https"):
+        return False
+    host = parts.hostname
+    if not host:
+        return False
+    try:
+        port = parts.port or (443 if parts.scheme == "https" else 80)
+    except ValueError:
+        return False
+    try:
+        infos = socket.getaddrinfo(host, port, proto=socket.IPPROTO_TCP)
+    except socket.gaierror:
+        return False
+    if not infos:
+        return False
+    return not any(_ip_is_blocked(info[4][0]) for info in infos)
+
+
+# ─────────────────────────────────────────────────────────────────────
 # Streaming write — shared by all strategies
 # ─────────────────────────────────────────────────────────────────────
 
@@ -103,8 +161,14 @@ async def _stream_pdf_to_path(
     timeout: float = 60.0,
     retries: int = 3,
     backoff_seconds: float = 1.5,
+    max_redirects: int = 5,
 ) -> tuple[bool, str | None]:
-    """Stream a URL into ``dest_path``. Returns (ok, error_detail)."""
+    """Stream a URL into ``dest_path``. Returns (ok, error_detail).
+
+    Redirects are followed manually so the SSRF guard (:func:`_url_is_public`)
+    re-checks every hop — httpx's automatic redirects would otherwise let a
+    public URL bounce to an internal one unchecked.
+    """
     dest_path = Path(dest_path)
     dest_path.parent.mkdir(parents=True, exist_ok=True)
     tmp_path = dest_path.with_suffix(dest_path.suffix + ".part")
@@ -115,38 +179,62 @@ async def _stream_pdf_to_path(
 
     for attempt in range(1, retries + 1):
         try:
-            async with client.stream(
-                "GET",
-                url,
-                headers=req_headers,
-                timeout=timeout,
-                follow_redirects=True,
-            ) as resp:
-                if resp.status_code == 429:
-                    await asyncio.sleep(min(60.0, backoff_seconds * attempt * 2))
-                    continue
-                resp.raise_for_status()
+            current_url = url
+            redirects = 0
+            while True:
+                if not await asyncio.to_thread(_url_is_public, current_url):
+                    raise ValueError(f"Refusing to fetch non-public URL: {current_url!r}")
+                async with client.stream(
+                    "GET",
+                    current_url,
+                    headers=req_headers,
+                    timeout=timeout,
+                    follow_redirects=False,
+                ) as resp:
+                    if resp.status_code in (301, 302, 303, 307, 308):
+                        location = resp.headers.get("Location")
+                        if not location:
+                            raise ValueError("Redirect without Location header")
+                        redirects += 1
+                        if redirects > max_redirects:
+                            raise ValueError("Too many redirects")
+                        current_url = str(resp.url.join(location))
+                        continue
+                    if resp.status_code == 429:
+                        raise _RateLimited()
+                    resp.raise_for_status()
 
-                aiter = resp.aiter_bytes(chunk_size=1024 * 1024)
-                first = b""
-                async for chunk in aiter:
-                    first = chunk
-                    break
-                if not first:
-                    raise ValueError("Empty response body")
-
-                content_type = (resp.headers.get("Content-Type") or "").lower()
-                if "application/pdf" not in content_type and not _looks_like_pdf_bytes(first[:2048]):
-                    raise ValueError(f"Not a PDF (Content-Type={content_type!r})")
-
-                with open(tmp_path, "wb") as f:
-                    f.write(first)
+                    aiter = resp.aiter_bytes(chunk_size=1024 * 1024)
+                    first = b""
                     async for chunk in aiter:
-                        if chunk:
-                            f.write(chunk)
+                        first = chunk
+                        break
+                    if not first:
+                        raise ValueError("Empty response body")
+
+                    content_type = (resp.headers.get("Content-Type") or "").lower()
+                    if "application/pdf" not in content_type and not _looks_like_pdf_bytes(first[:2048]):
+                        raise ValueError(f"Not a PDF (Content-Type={content_type!r})")
+
+                    with open(tmp_path, "wb") as f:
+                        f.write(first)
+                        async for chunk in aiter:
+                            if chunk:
+                                f.write(chunk)
+                    break  # body read — leave the redirect loop
 
             os.replace(tmp_path, dest_path)
             return True, None
+
+        except _RateLimited:
+            try:
+                if tmp_path.exists():
+                    tmp_path.unlink()
+            except OSError:
+                pass
+            last_err = "HTTP 429 (rate limited)"
+            if attempt < retries:
+                await asyncio.sleep(min(60.0, backoff_seconds * attempt * 2))
         except Exception as e:
             last_err = str(e)
             try:
