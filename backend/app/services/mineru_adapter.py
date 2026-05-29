@@ -19,6 +19,7 @@ logger = logging.getLogger("scholar.mineru")
 API_BASE = "https://mineru.net/api/v4"
 
 _MAX_ZIP_EXTRACTED_SIZE = 2 * 1024 * 1024 * 1024  # 2 GB
+_MAX_ZIP_MEMBERS = 100_000  # guard against archives with an absurd file count
 
 
 class MinerUPollTimeoutError(TimeoutError):
@@ -44,23 +45,42 @@ class MinerUPollTimeoutError(TimeoutError):
 
 
 def _safe_zip_extract(zf: zipfile.ZipFile, dest: Path) -> None:
-    """Extract zip with path traversal and zip bomb protection."""
+    """Extract a zip with path-traversal and zip-bomb protection.
+
+    Path traversal is rejected up front. The uncompressed-size limit is then
+    enforced against the *actual* bytes written during extraction — the declared
+    ``file_size`` in the central directory can be forged, so a pre-check on it
+    alone is bypassable; streaming each member and counting real bytes is not.
+    """
     dest_resolved = dest.resolve()
-    total_size = 0
-    for info in zf.infolist():
-        # Reject absolute paths and path traversal
+    members = zf.infolist()
+    if len(members) > _MAX_ZIP_MEMBERS:
+        raise ValueError(f"Zip has too many members ({len(members)} > {_MAX_ZIP_MEMBERS})")
+
+    # Pass 1: reject absolute paths / traversal before writing anything.
+    for info in members:
         member_path = (dest / info.filename).resolve()
         if not member_path.is_relative_to(dest_resolved):
             raise ValueError(f"Zip path traversal detected: {info.filename}")
-        # Accumulate uncompressed size for zip bomb check
-        total_size += info.file_size
-        if total_size > _MAX_ZIP_EXTRACTED_SIZE:
-            raise ValueError(
-                f"Zip extracted size exceeds limit "
-                f"({_MAX_ZIP_EXTRACTED_SIZE // (1024 * 1024)} MB)"
-            )
-    # All checks passed, extract
-    zf.extractall(dest)
+
+    # Pass 2: stream each member, capping total bytes actually written.
+    size_limit_mb = _MAX_ZIP_EXTRACTED_SIZE // (1024 * 1024)
+    written_total = 0
+    for info in members:
+        target = dest / info.filename
+        if info.is_dir():
+            target.mkdir(parents=True, exist_ok=True)
+            continue
+        target.parent.mkdir(parents=True, exist_ok=True)
+        with zf.open(info, "r") as src, open(target, "wb") as out:
+            while True:
+                chunk = src.read(1024 * 1024)
+                if not chunk:
+                    break
+                written_total += len(chunk)
+                if written_total > _MAX_ZIP_EXTRACTED_SIZE:
+                    raise ValueError(f"Zip extracted size exceeds limit ({size_limit_mb} MB)")
+                out.write(chunk)
 
 
 class MinerUClient:
