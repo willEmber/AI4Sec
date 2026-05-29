@@ -55,18 +55,37 @@ async def lifespan(app: FastAPI):
 
 
 def create_app() -> FastAPI:
-    app = FastAPI(title="Scholar Platform", version="0.1.0", lifespan=lifespan)
+    settings = get_settings()
+
+    # Interactive docs / openapi schema leak the full API surface; allow turning
+    # them off in production via ENABLE_DOCS=false (kept on by default for dev).
+    if settings.enable_docs:
+        app = FastAPI(title="Scholar Platform", version="0.1.0", lifespan=lifespan)
+    else:
+        app = FastAPI(
+            title="Scholar Platform",
+            version="0.1.0",
+            lifespan=lifespan,
+            docs_url=None,
+            redoc_url=None,
+            openapi_url=None,
+        )
 
     # Rate limiter
     app.state.limiter = limiter
     app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
-    settings = get_settings()
+    # CORS: the app authenticates with an owner_token carried in the query/body,
+    # never via cookies, so credentials are not needed. Keeping
+    # allow_credentials=False also neutralises the unsafe "*" + credentials
+    # combination should cors_origins ever be set to ["*"]. In practice only the
+    # cross-origin SSE stream (a plain GET straight to the backend) relies on
+    # CORS — every other /api call is same-origin through the Next.js proxy.
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origins,
-        allow_credentials=True,
-        allow_methods=["*"],
+        allow_credentials=False,
+        allow_methods=["GET", "POST", "OPTIONS"],
         allow_headers=["*"],
     )
 
