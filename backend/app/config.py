@@ -56,6 +56,15 @@ class AppSettings(BaseSettings):
     port: int = 8000
     cors_origins: list[str] = ["http://localhost:3000"]
 
+    # --- security / ops ---
+    # When set, /api/admin/* requires a matching `X-Admin-Token` header.
+    # Empty (default) keeps admin routes open for backward compatibility on
+    # trusted/local deployments — set it before exposing the API publicly.
+    admin_api_token: str = Field(default="", alias="ADMIN_API_TOKEN")
+    # Swagger UI / ReDoc / openapi.json. Safe to leave on for local dev; set
+    # ENABLE_DOCS=false to stop leaking the full API surface in production.
+    enable_docs: bool = Field(default=True, alias="ENABLE_DOCS")
+
     model_config = {
         "env_file": str(Path(__file__).resolve().parents[2] / ".env"),
         "env_file_encoding": "utf-8",

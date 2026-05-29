@@ -1,22 +1,35 @@
 """Administrative endpoints (rank cache cleanup, etc.).
 
-These routes are *not* protected — they assume the API is only exposed to
-trusted operators (e.g. localhost / internal network). Add auth before
-exposing to the public internet.
+These routes perform destructive cache operations. They are gated behind an
+optional ``ADMIN_API_TOKEN``: when that env var is set, every request must carry
+a matching ``X-Admin-Token`` header. When it is unset (the default) the routes
+stay open so existing trusted/local deployments keep working — set the token
+before exposing the API to the public internet.
 """
 from __future__ import annotations
 
 import logging
 
-from fastapi import APIRouter, Query, Request
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
 from pydantic import BaseModel
 
+from app.config import get_settings
 from app.rate_limit import limiter
 from app.services.publication_rank import RankCache
 
 logger = logging.getLogger("scholar.admin")
 
-router = APIRouter(tags=["admin"], prefix="/admin")
+
+async def require_admin_token(x_admin_token: str | None = Header(default=None)) -> None:
+    """Require a matching ``X-Admin-Token`` header when ADMIN_API_TOKEN is set."""
+    expected = get_settings().admin_api_token
+    if expected and x_admin_token != expected:
+        raise HTTPException(status_code=401, detail="Admin token required")
+
+
+router = APIRouter(
+    tags=["admin"], prefix="/admin", dependencies=[Depends(require_admin_token)]
+)
 
 
 class RankCacheClearResponse(BaseModel):
