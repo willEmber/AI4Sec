@@ -72,3 +72,8 @@ paper_converter/
 
 # === Internal dev docs ===
 DEV_DOC/
+
+# === AI agent instructions & local scripts (internal) ===
+CLAUDE.md
+AGENTS.md
+test_ai_connection.py
