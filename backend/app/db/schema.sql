@@ -77,10 +77,12 @@ CREATE TABLE IF NOT EXISTS runs (
     user_question   TEXT DEFAULT '',
     detected_intent TEXT DEFAULT '',
     current_step    TEXT DEFAULT '',              -- last step name pushed via progress (for resume UI)
-    progress_json   TEXT DEFAULT '[]'             -- JSON array of {step,status,...} events emitted so far
+    progress_json   TEXT DEFAULT '[]',            -- JSON array of {step,status,...} events emitted so far
+    owner_token     TEXT DEFAULT ''               -- per-browser owner token, scopes recent-runs listing
 );
 CREATE INDEX IF NOT EXISTS idx_runs_status_started ON runs(status, started_at DESC);
 CREATE INDEX IF NOT EXISTS idx_runs_started ON runs(started_at DESC);
+CREATE INDEX IF NOT EXISTS idx_runs_owner_started ON runs(owner_token, started_at DESC);
 CREATE INDEX IF NOT EXISTS idx_runs_paper ON runs(paper_id);
 
 CREATE TABLE IF NOT EXISTS run_outputs (

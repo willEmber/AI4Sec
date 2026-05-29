@@ -6,6 +6,7 @@ import type {
   RunResponse,
   RunOutputResponse,
 } from "./types";
+import { getOwnerToken } from "./owner";
 
 const API_BASE = "/api";
 
@@ -41,7 +42,7 @@ export async function createRun(body: RunCreate): Promise<RunResponse> {
   return request("/runs", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
+    body: JSON.stringify({ ...body, owner_token: getOwnerToken() }),
   });
 }
 
@@ -64,12 +65,14 @@ export async function listRecentRuns(
   const qs = new URLSearchParams({
     limit: String(limit),
     active_only: activeOnly ? "true" : "false",
+    owner_token: getOwnerToken(),
   });
   return request(`/runs/recent?${qs.toString()}`);
 }
 
 export async function dismissRun(runId: string): Promise<RunResponse> {
-  return request(`/runs/${runId}/dismiss`, { method: "POST" });
+  const qs = new URLSearchParams({ owner_token: getOwnerToken() });
+  return request(`/runs/${runId}/dismiss?${qs.toString()}`, { method: "POST" });
 }
 
 export function getPaperPdfUrl(paperId: string): string {

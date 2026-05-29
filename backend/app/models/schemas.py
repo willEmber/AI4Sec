@@ -13,6 +13,7 @@ class RunCreate(BaseModel):
     llm_model: str = ""
     language: str = "en"        # en | zh
     question: str = ""          # required (non-empty) when mode == "auto"
+    owner_token: str = ""       # per-browser token; scopes which runs the client sees
 
 
 # --- Response models ---

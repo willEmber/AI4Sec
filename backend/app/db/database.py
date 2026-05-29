@@ -59,6 +59,7 @@ async def init_db() -> None:
             ("detected_intent", "TEXT DEFAULT ''"),
             ("current_step", "TEXT DEFAULT ''"),
             ("progress_json", "TEXT DEFAULT '[]'"),
+            ("owner_token", "TEXT DEFAULT ''"),
         ]:
             try:
                 await db.execute(f"ALTER TABLE runs ADD COLUMN {col} {col_def}")
@@ -68,6 +69,7 @@ async def init_db() -> None:
         for index_sql in (
             "CREATE INDEX IF NOT EXISTS idx_runs_status_started ON runs(status, started_at DESC)",
             "CREATE INDEX IF NOT EXISTS idx_runs_started ON runs(started_at DESC)",
+            "CREATE INDEX IF NOT EXISTS idx_runs_owner_started ON runs(owner_token, started_at DESC)",
         ):
             try:
                 await db.execute(index_sql)

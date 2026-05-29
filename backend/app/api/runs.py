@@ -42,6 +42,7 @@ def _get_graph() -> CompiledStateGraph:
 
 _VALID_INPUT_MODES = {"snap", "lens", "sphere", "auto"}
 _MAX_QUESTION_LEN = 2000
+_MAX_OWNER_TOKEN_LEN = 100
 
 # A run still pending/running past this many seconds has lost its owning
 # background task (the process restarted, or it hung well past the 30-min SSE
@@ -78,14 +79,16 @@ async def create_run(request: Request, req: RunCreate):
     mode = req.mode if req.mode in _VALID_INPUT_MODES else "snap"
     language = req.language if req.language in ("en", "zh") else "en"
     question = (req.question or "").strip()[:_MAX_QUESTION_LEN]
+    owner_token = (req.owner_token or "").strip()[:_MAX_OWNER_TOKEN_LEN]
 
     if mode == "auto" and not question:
         raise HTTPException(status_code=400, detail="Smart Q&A mode requires a non-empty question")
 
     run_id = uuid.uuid4().hex[:16]
     await db.execute(
-        "INSERT INTO runs (run_id, paper_id, mode, llm_model, language, status, user_question) VALUES (?, ?, ?, ?, ?, 'pending', ?)",
-        (run_id, req.paper_id, mode, req.llm_model, language, question),
+        "INSERT INTO runs (run_id, paper_id, mode, llm_model, language, status, user_question, owner_token) "
+        "VALUES (?, ?, ?, ?, ?, 'pending', ?, ?)",
+        (run_id, req.paper_id, mode, req.llm_model, language, question, owner_token),
     )
 
     # Create queue for SSE
@@ -201,24 +204,28 @@ async def _execute_run(
 @limiter.limit("30/minute")
 async def list_recent_runs(
     request: Request,
+    owner_token: str = "",
     limit: int = 20,
     active_only: bool = False,
 ):
-    """Recent runs across all papers, with paper title joined for display.
+    """Recent runs for one browser (scoped by `owner_token`), with paper title.
 
-    When `active_only=true`, only pending/running runs are returned —
-    used by the upload page banner to surface tasks the user navigated
-    away from. Declared before `/runs/{run_id}` so the literal path wins.
+    Runs are scoped to the caller's `owner_token` so one browser never sees
+    another's tasks. When `active_only=true`, only pending/running runs are
+    returned — used by the upload page banner to surface tasks the user
+    navigated away from. Declared before `/runs/{run_id}` so the literal path
+    wins.
 
     Abandoned runs are reconciled to 'failed' first, and only runs from the
     last ``_RECENT_RUN_DAYS`` days are returned, so stale tasks never linger
     as perpetual "running" entries.
     """
     limit = max(1, min(limit, 100))
+    owner_token = (owner_token or "").strip()[:_MAX_OWNER_TOKEN_LEN]
     await _reconcile_stale_runs()
 
-    conds = ["r.started_at >= datetime('now', ?)"]
-    params: list[Any] = [f"-{_RECENT_RUN_DAYS} days"]
+    conds = ["r.owner_token = ?", "r.started_at >= datetime('now', ?)"]
+    params: list[Any] = [owner_token, f"-{_RECENT_RUN_DAYS} days"]
     if active_only:
         conds.append("r.status IN ('pending', 'running')")
     where = "WHERE " + " AND ".join(conds)
@@ -259,14 +266,20 @@ async def get_run_output(request: Request, run_id: str):
 
 @router.post("/runs/{run_id}/dismiss", response_model=RunResponse)
 @limiter.limit("30/minute")
-async def dismiss_run(request: Request, run_id: str):
+async def dismiss_run(request: Request, run_id: str, owner_token: str = ""):
     """Manually clear a pending/running run the user abandoned.
 
-    Marks the run failed so it leaves the active banner, and tears down any
-    live SSE queue. Already-finished runs are returned unchanged.
+    Only the owning browser (matching `owner_token`) may dismiss a run; legacy
+    runs with no owner are dismissible by anyone. Marks the run failed so it
+    leaves the active banner, and tears down any live SSE queue. Already-finished
+    runs are returned unchanged.
     """
-    row = await db.fetch_one("SELECT status FROM runs WHERE run_id = ?", (run_id,))
+    owner_token = (owner_token or "").strip()[:_MAX_OWNER_TOKEN_LEN]
+    row = await db.fetch_one("SELECT status, owner_token FROM runs WHERE run_id = ?", (run_id,))
     if not row:
+        raise HTTPException(status_code=404, detail="Run not found")
+    # Don't reveal existence of runs the caller doesn't own.
+    if row["owner_token"] and row["owner_token"] != owner_token:
         raise HTTPException(status_code=404, detail="Run not found")
 
     if row["status"] in ("pending", "running"):

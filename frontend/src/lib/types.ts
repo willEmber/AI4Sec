@@ -66,4 +66,5 @@ export interface RunCreate {
   llm_model: string;
   language?: string;  // "en" | "zh"
   question?: string;  // non-empty only when mode === "auto"
+  owner_token?: string;  // injected by the API client; scopes recent-runs visibility
 }
