@@ -82,8 +82,11 @@ CREATE TABLE IF NOT EXISTS runs (
 );
 CREATE INDEX IF NOT EXISTS idx_runs_status_started ON runs(status, started_at DESC);
 CREATE INDEX IF NOT EXISTS idx_runs_started ON runs(started_at DESC);
-CREATE INDEX IF NOT EXISTS idx_runs_owner_started ON runs(owner_token, started_at DESC);
 CREATE INDEX IF NOT EXISTS idx_runs_paper ON runs(paper_id);
+-- NOTE: idx_runs_owner_started is created in database.py AFTER the owner_token
+-- column migration. It must not live here: on legacy DBs the runs table already
+-- exists without owner_token, so this script runs before the column is added and
+-- an inline index on owner_token would raise "no such column" and abort init.
 
 CREATE TABLE IF NOT EXISTS run_outputs (
     run_id   TEXT PRIMARY KEY REFERENCES runs(run_id),

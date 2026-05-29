@@ -67,3 +67,13 @@
   - frontend/src/lib/owner.ts：新建，浏览器 owner token helper
   - frontend/src/lib/api.ts：createRun/listRecentRuns/dismissRun 携带 owner_token
   - frontend/src/lib/types.ts：RunCreate 新增可选 owner_token
+
+[2026-05-29]
+用户输入：分析报错并进行修复：uvicorn 启动时 init_db() 抛 sqlite3.OperationalError: no such column: owner_token，应用启动失败退出。
+完成：修复 init_db 迁移顺序导致的启动崩溃 (sanli)
+  - 定位根因：schema.sql 内联了 idx_runs_owner_started 索引（引用 owner_token），而 owner_token 列由 database.py 的 ALTER TABLE 迁移在 executescript 之后才添加；旧库 runs 表已存在且无该列，executescript 跑到该索引即报错中止，迁移代码再无机会执行。
+  - 修复：从 schema.sql 移除 idx_runs_owner_started（保留状态/时间/paper 三个基础索引），该索引仍由 database.py 在列迁移之后的索引循环中创建；新库由 CREATE TABLE 自带 owner_token，旧库由迁移补列后建索引。
+  - 验证：复现旧库形态（runs 无 owner_token）跑 init_db 通过，owner_token 补列成功、owner 索引建成、僵尸 running 任务被 reconcile 为 failed；只读确认真实 data/app.db 正是该旧库形态；后端 24 项 unittest 全绿。
+
+涉及文件：
+  - backend/app/db/schema.sql：删除内联 idx_runs_owner_started 索引并加注释说明其须在 database.py 列迁移后创建。
