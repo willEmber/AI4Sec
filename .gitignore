@@ -68,3 +68,7 @@ rank_cache.sqlite3
 paper_search/
 papersdownload/
 PublicationRank/
+paper_converter/
+
+# === Internal dev docs ===
+DEV_DOC/
