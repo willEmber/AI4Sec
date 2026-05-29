@@ -44,7 +44,11 @@ async def lifespan(app: FastAPI):
     set_db_path(data_dir / "app.db")
     await init_db()
     logger.info(f"Database initialized at {data_dir / 'app.db'}")
-    logger.info(f"LLM base_url={settings.llm_base_url} model={settings.thinking_model}")
+    logger.info(
+        f"LLM base_url={settings.llm_base_url} "
+        f"default_model={settings.default_thinking_model or '(none)'} "
+        f"models={settings.thinking_models}"
+    )
 
     yield
     logger.info("Scholar Platform shutting down.")
@@ -69,10 +73,12 @@ def create_app() -> FastAPI:
     from app.api.admin import router as admin_router
     from app.api.papers import router as papers_router
     from app.api.runs import router as runs_router
+    from app.api.system import router as system_router
 
     app.include_router(papers_router, prefix="/api")
     app.include_router(runs_router, prefix="/api")
     app.include_router(admin_router, prefix="/api")
+    app.include_router(system_router, prefix="/api")
 
     return app
 

@@ -139,3 +139,27 @@
   - app/workflows/lens_subgraph.py：LENS_SYSTEM_PROMPT_EN/_ZH，同上
   - app/workflows/qa_subgraph.py：_SYSTEM_PROMPT_EN/_ZH，同上
   - app/workflows/sphere_subgraph.py：三角色中文指令 + step_6/step_10 本地化 + 标记 analysis_language
+
+[2026-05-29]
+用户输入：对大模型请求方面进行以下改造：1.将 paperrank 搜索改为基于 tavily 进行搜索（原来利用大模型API的搜索功能）；2.模型部分前端不要留空让用户填，可以设置一个下拉框让用户选择，.env 中可配置多个模型 THINKING_MODELNAME=qwen3.6-plus,qwen3.7-max
+完成：大模型请求改造（PublicationRank 搜索 + 模型下拉选择）(sl)
+  - PublicationRank 等级查询的 LLM 内置 web_search 兜底改为 Tavily 网络搜索 + LLM 结构化抽取
+  - 新增 TavilySearchClient（/search 接口封装，含重试与上下文整理）
+  - THINKING_MODELNAME 支持逗号分隔多模型，新增 thinking_models/default_thinking_model
+  - 新增 GET /api/models 接口；前端模型输入框改为下拉选择（默认取首个模型）
+  - 重写 publication_rank LLM 配置测试以覆盖 Tavily+LLM 流程，25 项后端测试全部通过
+
+涉及文件：
+  - backend/app/config.py：移除 llm_rank_api_style，新增 tavily_api_key 及模型列表属性
+  - backend/app/services/publication_rank/tavily_search.py：新增 Tavily 异步客户端
+  - backend/app/services/publication_rank/llm_rank.py：LLMRankClient 改为 Tavily+LLM 抽取
+  - backend/app/services/publication_rank/__init__.py：导出 TavilySearchClient、更新说明
+  - backend/app/services/llm_service.py：默认模型取逗号列表首项
+  - backend/app/api/system.py：新增 /models 端点
+  - backend/app/main.py：注册 system 路由，启动日志展示模型列表
+  - backend/app/models/schemas.py：新增 ModelListResponse
+  - backend/tests/test_publication_rank_llm_config.py：重写为 Tavily+LLM 测试
+  - frontend/src/app/upload/page.tsx：模型输入框改为下拉框，挂载时拉取模型列表
+  - frontend/src/lib/api.ts、types.ts：新增 listModels 与 ModelListResponse
+  - frontend/src/lib/i18n.tsx：更新模型相关文案
+  - .env.example：新增 TAVILY_KEY，说明 THINKING_MODELNAME 多模型用法

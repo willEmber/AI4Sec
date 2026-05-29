@@ -1,20 +1,19 @@
 """
-LLM web_search 查询出版物等级 + 统一客户端（Cache → EasyScholar → LLM fallback）。
+Tavily 网络搜索 + LLM 抽取 查询出版物等级 + 统一客户端（Cache → EasyScholar → Tavily+LLM）。
 
-使用 Qwen Responses API 内置 web_search 工具来确定会议/期刊的 SCI 分区和 CCF 等级。
+先用 Tavily Search 拉取期刊/会议的等级相关网页，再交给 LLM 抽取为
+SCI 分区 / CCF 等级。取代旧版直接依赖大模型 API 内置 web_search 工具的实现。
 """
 from __future__ import annotations
 
 import asyncio
 import json
 import logging
-import random
 import re
 from typing import Any
 
-import httpx
-
 from app.config import get_settings
+from app.services.llm_service import LLMService
 
 from .publication_rank import (
     EasyScholarClient,
@@ -22,11 +21,12 @@ from .publication_rank import (
     _validate_publication_name,
 )
 from .rank_cache import RankCache
+from .tavily_search import TavilySearchClient
 
 logger = logging.getLogger("scholar.llm_rank")
 
 _SYSTEM_PROMPT = """\
-你是一个学术出版物等级查询助手。请通过网络搜索确定学术期刊或会议的等级信息。
+你是一个学术出版物等级查询助手。下面会提供该出版物的网络搜索结果，请仅依据搜索结果确定其等级信息。
 
 查询内容：
 1. SCI 分区（中科院最新大类分区，Q1/Q2/Q3/Q4 之一）
@@ -35,7 +35,8 @@ _SYSTEM_PROMPT = """\
 规则：
 - 会议（如 CVPR、NeurIPS）通常有 CCF 等级但没有 SCI 分区
 - 期刊通常有 SCI 分区，部分也有 CCF 等级
-- 未被收录或无法确定的字段返回 null
+- 未被收录、搜索结果中无法确定的字段返回 null
+- 不要编造，只依据搜索结果作答
 
 请严格按以下 JSON 格式返回，不要包含其他文字：
 {"sci": "Q1", "ccf": "A"}
@@ -46,6 +47,7 @@ _VALID_CCF = {"A", "B", "C"}
 _TRANSIENT_FAILURE_MARKERS = (
     "LLM 查询失败",
     "LLM_BASEURL",
+    "Tavily 搜索失败",
     "UnsupportedProtocol",
     "ReadTimeout",
     "ConnectError",
@@ -121,18 +123,14 @@ def _parse_llm_response(text: str, publication_name: str) -> PublicationRankResu
 # LLMRankClient
 # ---------------------------------------------------------------------------
 
-_VALID_API_STYLES = {"responses", "chat_completions"}
-
-
 class LLMRankClient:
-    """通过 LLM + web search 查询出版物等级。
+    """通过 Tavily 网络搜索 + LLM 结构化抽取查询出版物等级。
 
-    API 风格由 LLM_RANK_API_STYLE 显式选择（默认与 llm_service.py 对齐，使用 /responses）：
+    流程：
 
-    - ``responses`` → POST ``{base_url}/responses`` + ``tools=[{type: web_search}]``
-      （Qwen Responses API / DashScope Bailian apps 协议）
-    - ``chat_completions`` → POST ``{base_url}/chat/completions`` + ``enable_search``
-      （OpenAI 兼容接口，例如 ``https://dashscope.aliyuncs.com/compatible-mode/v1``）
+    1. 用 :class:`TavilySearchClient` 搜索该期刊/会议的 SCI 分区与 CCF 等级相关网页；
+    2. 把搜索结果摘要交给 LLM（标准 Responses API，无内置搜索）抽取为
+       ``{"sci": ..., "ccf": ...}`` JSON。
     """
 
     def __init__(
@@ -140,9 +138,11 @@ class LLMRankClient:
         base_url: str | None = None,
         api_key: str | None = None,
         model: str | None = None,
-        max_retries: int = 3,
+        *,
         timeout: float = 60.0,
-        api_style: str | None = None,
+        tavily_api_key: str | None = None,
+        tavily_client: TavilySearchClient | None = None,
+        llm_service: LLMService | None = None,
     ):
         settings = get_settings()
         self.base_url = (
@@ -151,84 +151,23 @@ class LLMRankClient:
         self.api_key = (
             api_key if api_key is not None else settings.llm_api_key
         ).strip()
-        self.model = (
-            model if model is not None else settings.thinking_model
-        ).strip()
-        self.max_retries = max_retries
+        raw_model = model if model is not None else getattr(settings, "thinking_model", "")
+        # THINKING_MODELNAME may be a comma-separated list; use the first entry.
+        self.model = next(
+            (m.strip() for m in (raw_model or "").split(",") if m.strip()), ""
+        )
         self.timeout = timeout
-
-        style = (api_style if api_style is not None else getattr(settings, "llm_rank_api_style", "responses")).strip().lower()
-        if style not in _VALID_API_STYLES:
-            logger.warning(
-                "Unknown LLM_RANK_API_STYLE=%r, falling back to 'responses'. Valid: %s",
-                style, sorted(_VALID_API_STYLES),
-            )
-            style = "responses"
-        self.api_style = style
-        self._use_chat_completions = (style == "chat_completions")
-
-    def _headers(self) -> dict[str, str]:
-        return {
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {self.api_key}",
-        }
-
-    def _build_payload(self, publication_name: str) -> tuple[str, dict[str, Any]]:
-        """构建请求 URL 和 payload，根据 API 风格自动选择格式。"""
-        user_prompt = f"请查询学术出版物「{publication_name}」的 SCI 分区和 CCF 等级。"
-
-        if self._use_chat_completions:
-            url = f"{self.base_url}/chat/completions"
-            payload: dict[str, Any] = {
-                "model": self.model,
-                "messages": [
-                    {"role": "system", "content": _SYSTEM_PROMPT},
-                    {"role": "user", "content": user_prompt},
-                ],
-                "enable_search": True,
-                "temperature": 0.1,
-            }
-        else:
-            url = f"{self.base_url}/responses"
-            payload = {
-                "model": self.model,
-                "input": [
-                    {"role": "system", "content": _SYSTEM_PROMPT},
-                    {"role": "user", "content": user_prompt},
-                ],
-                "tools": [{"type": "web_search"}],
-                "temperature": 0.1,
-            }
-        return url, payload
+        self._tavily = tavily_client or TavilySearchClient(api_key=tavily_api_key)
+        self._llm = llm_service or LLMService(base_url=self.base_url, api_key=self.api_key)
 
     @staticmethod
-    def _extract_content(data: dict, use_chat_completions: bool) -> str:
-        """从 API 响应中提取文本内容。"""
-        if use_chat_completions:
-            choices = data.get("choices", [])
-            if choices:
-                return choices[0].get("message", {}).get("content", "")
-            return ""
-        else:
-            content = ""
-            for item in data.get("output", []):
-                if item.get("type") == "message":
-                    for part in item.get("content", []):
-                        if part.get("type") == "output_text":
-                            content += part.get("text", "")
-                    break
-            return content
-
-    @staticmethod
-    def _is_retryable(status_code: int) -> bool:
-        return status_code in {408, 429, 500, 502, 503, 504}
-
-    def _compute_delay(self, attempt: int) -> float:
-        delay = min(1.0 * (2 ** attempt), 30.0)
-        return delay * random.uniform(0.8, 1.2)
+    def _build_query(publication_name: str) -> str:
+        return f"{publication_name} 期刊 会议 中科院 SCI 分区 CCF 推荐等级"
 
     async def query(self, publication_name: str) -> PublicationRankResult:
         """查询单个出版物的 SCI/CCF 等级。"""
+        # Cheap config guards first (no network). Keep the transient markers so a
+        # misconfiguration is not cached as a permanent negative result.
         if not self.base_url.startswith(("http://", "https://")):
             return PublicationRankResult(
                 name=publication_name,
@@ -238,79 +177,63 @@ class LLMRankClient:
                     "https:// 协议的完整地址"
                 ),
             )
+        if not self._tavily.configured:
+            return PublicationRankResult(
+                name=publication_name,
+                success=False,
+                error="TAVILY_KEY 配置缺失，无法进行 Tavily 网络搜索",
+            )
 
-        url, payload = self._build_payload(publication_name)
+        # 1) Tavily web search
+        try:
+            context = await self._tavily.search_context(
+                self._build_query(publication_name),
+                max_results=5,
+                search_depth="basic",
+            )
+        except Exception as e:
+            return PublicationRankResult(
+                name=publication_name,
+                success=False,
+                error=f"Tavily 搜索失败: {type(e).__name__}: {e}",
+            )
 
-        attempt = 0
-        last_error: str | None = None
-        retry_exhausted = False
-        while True:
-            attempt += 1
-            try:
-                timeout = httpx.Timeout(
-                    connect=15.0, read=self.timeout, write=15.0, pool=15.0
-                )
-                async with httpx.AsyncClient(timeout=timeout) as client:
-                    resp = await client.post(
-                        url,
-                        headers=self._headers(),
-                        json=payload,
-                    )
+        if not context.strip():
+            return PublicationRankResult(
+                name=publication_name, success=False,
+                error="Tavily 未返回搜索结果",
+            )
 
-                if resp.status_code == 429 and attempt <= self.max_retries:
-                    retry_after = resp.headers.get("Retry-After")
-                    delay = float(retry_after) if retry_after else self._compute_delay(attempt) * 2
-                    delay = min(delay, 120.0)
-                    logger.warning("LLM rank: 429 rate-limited, retry in %.1fs", delay)
-                    await asyncio.sleep(delay)
-                    continue
-
-                if self._is_retryable(resp.status_code) and attempt <= self.max_retries:
-                    delay = self._compute_delay(attempt)
-                    logger.warning(
-                        "LLM rank: HTTP %d (attempt %d/%d), retry in %.1fs",
-                        resp.status_code, attempt, self.max_retries, delay,
-                    )
-                    await asyncio.sleep(delay)
-                    continue
-
-                resp.raise_for_status()
-                data = resp.json()
-                content = self._extract_content(data, self._use_chat_completions)
-
-                if not content:
-                    return PublicationRankResult(
-                        name=publication_name, success=False,
-                        error="LLM 未返回文本内容",
-                    )
-
-                return _parse_llm_response(content, publication_name)
-
-            except httpx.HTTPStatusError as e:
-                last_error = f"HTTP {e.response.status_code}"
-                if attempt > self.max_retries:
-                    retry_exhausted = True
-                    break
-                await asyncio.sleep(self._compute_delay(attempt))
-
-            except (httpx.ReadTimeout, httpx.ConnectError) as e:
-                last_error = f"{type(e).__name__}: {e}"
-                if attempt > self.max_retries:
-                    retry_exhausted = True
-                    break
-                await asyncio.sleep(self._compute_delay(attempt))
-
-            except Exception as e:
-                last_error = f"{type(e).__name__}: {e}"
-                break
-
-        if retry_exhausted:
-            error = f"LLM 查询失败 ({self.max_retries} 次重试后): {last_error}"
-        else:
-            error = f"LLM 查询失败: {last_error}"
-        return PublicationRankResult(
-            name=publication_name, success=False, error=error,
+        # 2) LLM structured extraction (standard chat, no built-in web search)
+        user_prompt = (
+            f"出版物名称：{publication_name}\n\n"
+            f"以下是该出版物的网络搜索结果：\n{context}\n\n"
+            "请依据上述搜索结果，提取其 SCI 分区与 CCF 等级，并按要求的 JSON 格式返回。"
         )
+        try:
+            content = await self._llm.chat(
+                [
+                    {"role": "system", "content": _SYSTEM_PROMPT},
+                    {"role": "user", "content": user_prompt},
+                ],
+                model=self.model,
+                temperature=0.1,
+                max_tokens=256,
+            )
+        except Exception as e:
+            return PublicationRankResult(
+                name=publication_name,
+                success=False,
+                error=f"LLM 查询失败: {type(e).__name__}: {e}",
+            )
+
+        if not content:
+            return PublicationRankResult(
+                name=publication_name, success=False,
+                error="LLM 未返回文本内容",
+            )
+
+        return _parse_llm_response(content, publication_name)
 
     async def query_batch(
         self, names: list[str], concurrency: int = 3
@@ -330,7 +253,7 @@ class LLMRankClient:
 # ---------------------------------------------------------------------------
 
 class UnifiedRankClient:
-    """统一查询：Cache → EasyScholar → LLM web_search。"""
+    """统一查询：Cache → EasyScholar → Tavily+LLM。"""
 
     def __init__(
         self,
@@ -351,7 +274,7 @@ class UnifiedRankClient:
         await self._cache.init()
 
     async def query(self, publication_name: str) -> PublicationRankResult:
-        """Cache → EasyScholar → LLM fallback。"""
+        """Cache → EasyScholar → Tavily+LLM fallback。"""
         try:
             publication_name = _validate_publication_name(publication_name)
         except ValueError as e:
@@ -389,15 +312,15 @@ class UnifiedRankClient:
             except Exception as e:
                 logger.warning("easyscholar error for %s: %s", publication_name, e)
 
-        # 3) LLM web_search fallback
+        # 3) Tavily + LLM fallback
         if self._use_llm:
             llm_result = await self._llm.query(publication_name)
-            source = "llm_websearch"
+            source = "tavily_llm"
             if llm_result.success:
                 await self._cache.put(llm_result, source=source)
-                logger.info("llm hit for %s", publication_name)
+                logger.info("tavily+llm hit for %s", publication_name)
             else:
-                logger.warning("llm failed for %s: %s", publication_name, llm_result.error)
+                logger.warning("tavily+llm failed for %s: %s", publication_name, llm_result.error)
             return llm_result
 
         fail = PublicationRankResult(
@@ -410,7 +333,7 @@ class UnifiedRankClient:
     async def query_batch(
         self, names: list[str], concurrency: int = 3
     ) -> list[PublicationRankResult]:
-        """批量查询，缓存命中的直接返回，其余走 EasyScholar/LLM。"""
+        """批量查询，缓存命中的直接返回，其余走 EasyScholar/Tavily+LLM。"""
         results: list[PublicationRankResult | None] = [None] * len(names)
 
         cache_map = await self._cache.get_batch(names)

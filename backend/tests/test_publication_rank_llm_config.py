@@ -6,8 +6,46 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from app.services.publication_rank.llm_rank import LLMRankClient, UnifiedRankClient
+from app.services.publication_rank.llm_rank import (
+    LLMRankClient,
+    UnifiedRankClient,
+    _is_transient_failure,
+)
 from app.services.publication_rank.publication_rank import PublicationRankResult
+
+
+# ---------------------------------------------------------------------------
+# Test doubles for the Tavily search + LLM extraction pipeline
+# ---------------------------------------------------------------------------
+
+class _FakeTavily:
+    def __init__(self, context: str = "result", configured: bool = True, raise_exc: Exception | None = None) -> None:
+        self._context = context
+        self._configured = configured
+        self._raise = raise_exc
+        self.called = False
+
+    @property
+    def configured(self) -> bool:
+        return self._configured
+
+    async def search_context(self, query: str, **kwargs: object) -> str:
+        self.called = True
+        if self._raise is not None:
+            raise self._raise
+        return self._context
+
+
+class _FakeLLM:
+    def __init__(self, response: str = "{}") -> None:
+        self._response = response
+        self.called = False
+        self.last_messages: list[dict[str, str]] | None = None
+
+    async def chat(self, messages, model="", temperature=0.3, max_tokens=4096):
+        self.called = True
+        self.last_messages = messages
+        return self._response
 
 
 class _CacheWithStaleFailure:
@@ -39,13 +77,17 @@ class _SuccessfulLLMRank:
         return PublicationRankResult(name=name, sci=None, ccf="A", success=True)
 
 
+# ---------------------------------------------------------------------------
+# LLMRankClient (Tavily + LLM) tests
+# ---------------------------------------------------------------------------
+
 class LLMRankClientConfigTests(unittest.TestCase):
     def test_uses_app_settings_when_process_env_does_not_export_llm_config(self) -> None:
         settings = SimpleNamespace(
             llm_base_url="https://example.test/compatible-mode/v1",
             llm_api_key="settings-key",
             thinking_model="settings-model",
-            llm_rank_api_style="responses",
+            tavily_api_key="tavily-key",
         )
 
         with patch.dict(os.environ, {}, clear=True), patch(
@@ -53,70 +95,100 @@ class LLMRankClientConfigTests(unittest.TestCase):
             return_value=settings,
             create=True,
         ):
-            client = LLMRankClient()
+            client = LLMRankClient(
+                tavily_client=_FakeTavily(), llm_service=_FakeLLM(),
+            )
 
         self.assertEqual(client.base_url, "https://example.test/compatible-mode/v1")
         self.assertEqual(client.api_key, "settings-key")
         self.assertEqual(client.model, "settings-model")
-        self.assertEqual(client.api_style, "responses")
-        self.assertFalse(client._use_chat_completions)
 
-    def test_invalid_base_url_returns_configuration_error_without_http_request(self) -> None:
+    def test_model_uses_first_of_comma_separated_list(self) -> None:
+        client = LLMRankClient(
+            base_url="https://example.test/v1",
+            api_key="k",
+            model="qwen3.6-plus, qwen3.7-max",
+            tavily_client=_FakeTavily(),
+            llm_service=_FakeLLM(),
+        )
+        self.assertEqual(client.model, "qwen3.6-plus")
+
+    def test_invalid_base_url_returns_configuration_error_without_network(self) -> None:
+        tavily = _FakeTavily()
+        llm = _FakeLLM()
         client = LLMRankClient(
             base_url="",
             api_key="settings-key",
             model="settings-model",
-            api_style="responses",
+            tavily_client=tavily,
+            llm_service=llm,
         )
 
-        with patch("app.services.publication_rank.llm_rank.httpx.AsyncClient") as client_cls:
-            result = asyncio.run(client.query("Neural Information Processing Systems"))
+        result = asyncio.run(client.query("Neural Information Processing Systems"))
 
         self.assertFalse(result.success)
         self.assertIn("LLM_BASEURL", result.error or "")
         self.assertIn("http://", result.error or "")
-        client_cls.assert_not_called()
+        self.assertFalse(tavily.called)
+        self.assertFalse(llm.called)
 
-    def test_api_style_explicit_chat_completions_targets_chat_endpoint(self) -> None:
-        client = LLMRankClient(
-            base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
-            api_key="k",
-            model="m",
-            api_style="chat_completions",
-        )
-        url, payload = client._build_payload("CVPR")
-        self.assertEqual(
-            url, "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions"
-        )
-        self.assertIn("messages", payload)
-        self.assertTrue(payload.get("enable_search"))
-
-    def test_api_style_default_responses_targets_responses_endpoint(self) -> None:
-        # Even when URL contains "dashscope", default api_style=responses must NOT
-        # silently switch to /chat/completions (regression guard for the Bailian
-        # apps protocol URL that only exposes /responses).
-        client = LLMRankClient(
-            base_url="https://dashscope.aliyuncs.com/api/v2/apps/protocols/compatible-mode/v1",
-            api_key="k",
-            model="m",
-            api_style="responses",
-        )
-        url, payload = client._build_payload("CVPR")
-        self.assertEqual(
-            url,
-            "https://dashscope.aliyuncs.com/api/v2/apps/protocols/compatible-mode/v1/responses",
-        )
-        self.assertIn("input", payload)
-        self.assertEqual(payload.get("tools"), [{"type": "web_search"}])
-
-    def test_unknown_api_style_falls_back_to_responses(self) -> None:
+    def test_missing_tavily_key_returns_error_without_llm(self) -> None:
+        tavily = _FakeTavily(configured=False)
+        llm = _FakeLLM()
         client = LLMRankClient(
             base_url="https://example.test/v1",
             api_key="k",
             model="m",
-            api_style="gibberish",
+            tavily_client=tavily,
+            llm_service=llm,
         )
-        self.assertEqual(client.api_style, "responses")
+
+        result = asyncio.run(client.query("Nature"))
+
+        self.assertFalse(result.success)
+        self.assertIn("TAVILY_KEY", result.error or "")
+        self.assertFalse(tavily.called)
+        self.assertFalse(llm.called)
+
+    def test_tavily_plus_llm_extracts_rank(self) -> None:
+        tavily = _FakeTavily(context="CVPR 是 CCF A 类会议，无 SCI 分区")
+        llm = _FakeLLM(response='{"sci": null, "ccf": "A"}')
+        client = LLMRankClient(
+            base_url="https://example.test/v1",
+            api_key="k",
+            model="m",
+            tavily_client=tavily,
+            llm_service=llm,
+        )
+
+        result = asyncio.run(client.query("CVPR"))
+
+        self.assertTrue(result.success)
+        self.assertIsNone(result.sci)
+        self.assertEqual(result.ccf, "A")
+        self.assertTrue(tavily.called)
+        self.assertTrue(llm.called)
+        # The Tavily search context must be passed into the LLM prompt.
+        joined = "".join(m["content"] for m in (llm.last_messages or []))
+        self.assertIn("CCF A 类会议", joined)
+
+    def test_tavily_failure_is_transient_and_skips_llm(self) -> None:
+        tavily = _FakeTavily(raise_exc=RuntimeError("boom"))
+        llm = _FakeLLM()
+        client = LLMRankClient(
+            base_url="https://example.test/v1",
+            api_key="k",
+            model="m",
+            tavily_client=tavily,
+            llm_service=llm,
+        )
+
+        result = asyncio.run(client.query("Some Venue"))
+
+        self.assertFalse(result.success)
+        self.assertIn("Tavily 搜索失败", result.error or "")
+        self.assertTrue(_is_transient_failure(result))
+        self.assertFalse(llm.called)
 
 
 class EasyScholarSettingsTests(unittest.TestCase):

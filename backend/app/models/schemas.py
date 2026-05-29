@@ -34,6 +34,12 @@ class PaperUploadResponse(BaseModel):
     message: str
 
 
+class ModelListResponse(BaseModel):
+    """Selectable LLM models offered to the frontend dropdown."""
+    models: list[str]
+    default: str
+
+
 class RunResponse(BaseModel):
     run_id: str
     paper_id: str

@@ -14,6 +14,11 @@ export interface PaperUploadResponse {
   message: string;
 }
 
+export interface ModelListResponse {
+  models: string[];
+  default: string;
+}
+
 export interface RunResponse {
   run_id: string;
   paper_id: string;

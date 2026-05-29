@@ -67,7 +67,9 @@ class LLMService:
     ) -> str:
         """Send a chat completion request, return assistant content."""
         settings = get_settings()
-        model = model or settings.thinking_model
+        # THINKING_MODELNAME may be a comma-separated list; the first entry is
+        # the default when the caller does not pick a specific model.
+        model = model or settings.default_thinking_model
 
         payload: dict[str, Any] = {
             "model": model,
@@ -223,7 +225,9 @@ class LLMService:
     ) -> AsyncIterator[str]:
         """Stream chat completion tokens."""
         settings = get_settings()
-        model = model or settings.thinking_model
+        # THINKING_MODELNAME may be a comma-separated list; the first entry is
+        # the default when the caller does not pick a specific model.
+        model = model or settings.default_thinking_model
 
         payload: dict[str, Any] = {
             "model": model,

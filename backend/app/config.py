@@ -14,14 +14,15 @@ class AppSettings(BaseSettings):
     # --- LLM (Qwen Responses API) ---
     llm_base_url: str = Field(default="", alias="LLM_BASEURL")
     llm_api_key: str = Field(default="", alias="LLM_APIKEY")
+    # May hold a comma-separated list of selectable models, e.g.
+    # "qwen3.6-plus,qwen3.7-max". The first entry is the default; the full list
+    # is offered to the frontend as a dropdown (see `thinking_models`).
     thinking_model: str = Field(default="", alias="THINKING_MODELNAME")
     embed_model: str = Field(default="", alias="EMBED_MODELNAME")
     rerank_model: str = Field(default="", alias="RERANK_MODELNAME")
-    # API style for LLM-rank web_search fallback: "responses" (Qwen Responses API,
-    # endpoint /responses + tools=[web_search]) or "chat_completions" (OpenAI-compatible
-    # endpoint /chat/completions + enable_search). Default aligns with llm_service.py
-    # which uses /responses; override only if your base URL exposes /chat/completions.
-    llm_rank_api_style: str = Field(default="responses", alias="LLM_RANK_API_STYLE")
+
+    # --- Tavily web search (used by publication-rank fallback) ---
+    tavily_api_key: str = Field(default="", alias="TAVILY_KEY")
 
     # --- Publication rank (EasyScholar) ---
     easyscholar_secret_key: str = Field(default="", alias="EASYSCHOLAR_SECRET_KEY")
@@ -61,6 +62,17 @@ class AppSettings(BaseSettings):
         "extra": "ignore",
         "populate_by_name": True,
     }
+
+    @property
+    def thinking_models(self) -> list[str]:
+        """Selectable thinking models, parsed from the comma-separated env var."""
+        return [m.strip() for m in self.thinking_model.split(",") if m.strip()]
+
+    @property
+    def default_thinking_model(self) -> str:
+        """First configured model — used when the caller does not pick one."""
+        models = self.thinking_models
+        return models[0] if models else ""
 
 
 @lru_cache(maxsize=1)

@@ -1,8 +1,8 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { uploadPaper, createRun } from "@/lib/api";
+import { uploadPaper, createRun, listModels } from "@/lib/api";
 import { useTranslation } from "@/lib/i18n";
 import type { ReadingMode } from "@/lib/types";
 import {
@@ -37,10 +37,33 @@ export default function UploadPage() {
   const [mode, setMode] = useState<ReadingMode>("snap");
   const [question, setQuestion] = useState("");
   const [llmModel, setLlmModel] = useState("");
+  const [models, setModels] = useState<string[]>([]);
+  const [modelsLoaded, setModelsLoaded] = useState(false);
   const [outputLanguage, setOutputLanguage] = useState<OutputLanguage>(locale);
   const [dragOver, setDragOver] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Load the selectable models from the backend (THINKING_MODELNAME list) and
+  // default the dropdown to the server-provided default.
+  useEffect(() => {
+    let cancelled = false;
+    listModels()
+      .then((res) => {
+        if (cancelled) return;
+        setModels(res.models);
+        setLlmModel(res.default || res.models[0] || "");
+      })
+      .catch(() => {
+        if (!cancelled) setModels([]);
+      })
+      .finally(() => {
+        if (!cancelled) setModelsLoaded(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -218,13 +241,28 @@ export default function UploadPage() {
       {/* Model selection */}
       <div className="mb-8">
         <label className="mb-2 block text-sm font-semibold">{t("upload.model_label")}</label>
-        <input
-          type="text"
-          value={llmModel}
-          onChange={(e) => setLlmModel(e.target.value)}
-          placeholder={t("upload.model_placeholder")}
-          className="w-full rounded-xl border border-border bg-card px-4 py-3 text-sm transition-colors placeholder:text-muted-foreground/70 focus:border-primary focus:outline-none"
-        />
+        {modelsLoaded && models.length === 0 ? (
+          <p className="rounded-xl border border-border bg-card px-4 py-3 text-sm text-muted-foreground">
+            {t("upload.model_empty")}
+          </p>
+        ) : (
+          <select
+            value={llmModel}
+            onChange={(e) => setLlmModel(e.target.value)}
+            disabled={!modelsLoaded || models.length === 0}
+            className="w-full rounded-xl border border-border bg-card px-4 py-3 text-sm transition-colors focus:border-primary focus:outline-none disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {!modelsLoaded ? (
+              <option value="">{t("upload.model_loading")}</option>
+            ) : (
+              models.map((m) => (
+                <option key={m} value={m}>
+                  {m}
+                </option>
+              ))
+            )}
+          </select>
+        )}
       </div>
 
       {/* Error */}

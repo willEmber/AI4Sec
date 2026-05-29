@@ -1,4 +1,5 @@
 import type {
+  ModelListResponse,
   PaperResponse,
   PaperUploadResponse,
   RecentRunResponse,
@@ -22,6 +23,10 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     throw new Error(`API ${res.status}: ${body}`);
   }
   return res.json();
+}
+
+export async function listModels(): Promise<ModelListResponse> {
+  return request("/models");
 }
 
 export async function uploadPaper(file: File): Promise<PaperUploadResponse> {
