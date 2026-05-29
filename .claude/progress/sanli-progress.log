@@ -8,3 +8,62 @@
 涉及文件：
   - backend/app/services/publication_rank/llm_rank.py：修复配置读取、错误提示、缓存重试逻辑
   - backend/tests/test_publication_rank_llm_config.py：新增配置读取、无效 URL、旧失败缓存回归测试
+
+[2026-05-28]
+用户输入：分析为什么查询期刊等级失败...修复1,2；并清理所有陈旧的缓存，或者给一个可以删除缓存的功能
+完成：publication_rank 配置/缓存修复 (sanli)
+  - AppSettings 新增 easyscholar_secret_key / easyscholar_api_url / llm_rank_api_style
+  - EasyScholarClient 默认从 get_settings() 读取密钥与 URL，回退到 os.getenv
+  - LLMRankClient 显式 api_style ("responses"|"chat_completions")，默认 responses，与 llm_service.py 对齐
+  - RankCache 新增 delete(name)/clear(only_failures)/count()
+  - 新增 admin API：GET /api/admin/rank-cache/stats、DELETE /api/admin/rank-cache、DELETE /api/admin/rank-cache/{name}
+  - 新增 scripts/clear_rank_cache.py CLI，并就地清理了陈旧的 NeurIPS 失败缓存（total 1→0）
+  - 增加单元测试（11/11 通过，整体 19/19 通过）
+
+涉及文件：
+  - backend/app/config.py：新增 3 个字段（easyscholar_secret_key/api_url、llm_rank_api_style）
+  - backend/app/services/publication_rank/publication_rank.py：_get_default_secret_key/_get_default_api_url 优先读 AppSettings
+  - backend/app/services/publication_rank/llm_rank.py：LLMRankClient 用显式 api_style 替代 "dashscope" 关键字猜测
+  - backend/app/services/publication_rank/rank_cache.py：新增 delete/clear/count 方法
+  - backend/app/api/admin.py：新建，提供 rank-cache 统计/清理/删除路由
+  - backend/app/main.py：注册 admin_router
+  - backend/scripts/clear_rank_cache.py 与 scripts/__init__.py：新建 CLI 工具
+  - backend/tests/test_publication_rank_llm_config.py：补充 api_style + EasyScholar settings 测试
+  - backend/tests/test_rank_cache_cleanup.py：新建，覆盖 delete/clear/count
+
+[2026-05-29]
+用户输入：现在我在前端一直看得到下面这两个老任务，实际我不需要恢复这么久以前的任务，并且一直显示在前端我也没有清除的方法，也不清楚这会不会在不同用户间泄露；为我优化这个问题
+完成：清理僵尸运行任务 + 手动清除入口 (sanli)
+  - 后端启动时把残留的 pending/running 运行标记为 failed（进程重启后台任务已死，无法完成）
+  - /runs/recent 读取时惰性回收：started_at 超过 1 小时仍 pending/running 的任务判定为僵尸并置为 failed
+  - /runs/recent 增加 7 天时间窗，过旧的运行（如 97 天前）不再出现在最近列表
+  - 新增 POST /runs/{run_id}/dismiss 手动清除接口；前端最近任务面板每条活跃任务增加 ✕ 清除按钮
+  - 新增 idx_runs_started 索引支撑按 started_at 的时间窗查询
+
+涉及文件：
+  - backend/app/db/database.py：新增启动回收僵尸运行、idx_runs_started 索引迁移、scholar.db logger
+  - backend/app/db/schema.sql：新增 idx_runs_started 索引
+  - backend/app/api/runs.py：新增 _STALE_RUN_SECONDS/_RECENT_RUN_DAYS 常量、_reconcile_stale_runs、时间窗查询、dismiss_run 接口
+  - frontend/src/lib/api.ts：新增 dismissRun 调用
+  - frontend/src/components/RecentRuns.tsx：活跃任务行增加 ✕ 清除按钮与乐观删除
+  - frontend/src/lib/i18n.tsx：新增 recent.dismiss（en/zh）
+
+[2026-05-29]
+用户输入：加上浏览器owner_token进行隔离，修改完成后测试通过即提交代码
+完成：按浏览器 owner_token 隔离最近运行任务 (sanli)
+  - runs 表新增 owner_token 列与 idx_runs_owner_started 索引（schema + 迁移）
+  - 创建运行时落库 owner_token（限长 100）；RunCreate 新增 owner_token 字段
+  - /runs/recent 按 owner_token 过滤，浏览器之间互不可见；空 token 仅匹配历史无主记录
+  - /runs/{id}/dismiss 校验归属：非属主返回 404（不泄露存在性），无主旧任务任何人可清除
+  - 前端 lib/owner.ts 生成并持久化 localStorage 浏览器 token；api 调用自动携带
+  - 新增集成测试覆盖隔离/惰性回收/清除归属（5 项，全套 24 项通过）
+
+涉及文件：
+  - backend/app/db/schema.sql：runs 新增 owner_token 列与 idx_runs_owner_started 索引
+  - backend/app/db/database.py：owner_token 列迁移、owner 索引迁移
+  - backend/app/api/runs.py：_MAX_OWNER_TOKEN_LEN、create_run 落库、list_recent_runs 过滤、dismiss_run 归属校验
+  - backend/app/models/schemas.py：RunCreate 新增 owner_token
+  - backend/tests/test_run_owner_isolation.py：新建，TestClient 集成测试
+  - frontend/src/lib/owner.ts：新建，浏览器 owner token helper
+  - frontend/src/lib/api.ts：createRun/listRecentRuns/dismissRun 携带 owner_token
+  - frontend/src/lib/types.ts：RunCreate 新增可选 owner_token
