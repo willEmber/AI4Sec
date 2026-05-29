@@ -2,10 +2,25 @@
   <img src="scholar.png" alt="Scholar logo" width="160" />
 </p>
 
-<h1 align="center">Scholar Platform</h1>
+<h1 align="center">Scholar Platform · AI Paper Reader</h1>
 
 <p align="center">
-  Full-stack academic paper reading platform. Upload a PDF, choose a reading mode, get structured AI analysis with evidence citations linking back to PDF pages.
+  Upload a PDF, pick a reading mode, and get a structured AI breakdown <strong>backed by evidence</strong>—<br/>
+  every claim carries a page citation you can click to jump straight back to the source PDF.
+</p>
+
+<p align="center">
+    <a href="https://linux.do/t/topic/2108966/20" alt="LINUX DO">
+        <img src="https://img.shields.io/badge/LINUX-DO-FFB003.svg?logo=data:image/svg%2bxml;base64,DQo8c3ZnIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAiIHdpZHRoPSIxMDAiIGhlaWdodD0iMTAwIj48cGF0aCBkPSJNNjguMi0uMDU1aDYuMjVxMjMuOTY5IDIuMDYyIDM4IDIxLjQyNmM1LjI1OCA3LjY3NiA4LjIxNSAxNi4xNTYgOC44NzUgMjUuNDV2Ni4yNXEtMi4wNjQtMjMuOTY4LTIxLjQzIDM4LTExLjUxMiA3Ljg4NS0yNS40NDUgOC44NzRoLTYuMjVxLTIzLjk3LTIuMDY0LTM4LjAwNC0yMS40M1EuOTcxIDY3LjA1Ni0uMDU0IDUzLjE4di02LjQ3M0MxLjM2MiAzMC43ODEgOC41MDMgMTguMTQ4IDIxLjM3IDguODE3IDI5LjA0NyAzLjU2MiAzNy41MjcuNjA0IDQ2LjgyMS0uMDU2IiBzdHlsZT0ic3Ryb2tlOm5vbmU7ZmlsbC1ydWxlOmV2ZW5vZGQ7ZmlsbDojZWNlY2VjO2ZpbGwtb3BhY2l0eToxIi8+PHBhdGggZD0iTTQ3LjI2NiAyLjk1N3EyMi41My0uNjUgMzcuNzc3IDE1LjczOGE0OS43IDQ5LjcgMCAwIDEgNi44NjcgMTAuMTU3cS00MS45NjQuMjIyLTgzLjkzIDAgOS43NS0xOC42MTYgMzAuMDI0LTI0LjM4N2E2MSA2MSAwIDAgMSA5LjI2Mi0xLjUwOCIgc3R5bGU9InN0cm9rZTpub25lO2ZpbGwtcnVsZTpldmVub2RkO2ZpbGw6IzE5MTkxOTtmaWxsLW9wYWNpdHk6MSIvPjxwYXRoIGQ9Ik03Ljk4IDcwLjkyNmMyNy45NzctLjAzNSA1NS45NTQgMCA4My45My4xMTNRODMuNDI2IDg3LjQ3MyA2Ni4xMyA5NC4wODZxLTE4LjgxIDYuNTQ0LTM2LjgzMi0xLjg5OC0xNC4yMDMtNy4wOS0yMS4zMTctMjEuMjYyIiBzdHlsZT0ic3Ryb2tlOm5vbmU7ZmlsbC1ydWxlOmV2ZW5vZGQ7ZmlsbDojZjlhZjAwO2ZpbGwtb3BhY2l0eToxIi8+PC9zdmc+" alt="LINUX DO" /></a>
+    <img src="https://img.shields.io/badge/Python-3.10+-3776AB?logo=python&logoColor=white" alt="Python" />
+    <img src="https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white" alt="FastAPI" />
+    <img src="https://img.shields.io/badge/Next.js-15-000000?logo=nextdotjs&logoColor=white" alt="Next.js" />
+    <img src="https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black" alt="React" />
+    <img src="https://img.shields.io/badge/Docker-ready-2496ED?logo=docker&logoColor=white" alt="Docker" />
+</p>
+
+<p align="center">
+  <a href="./README.md">中文 README</a>
 </p>
 
 ## Preview
@@ -13,6 +28,15 @@
 <p align="center">
   <img src="example.png" alt="Scholar landing page preview" width="760" />
 </p>
+
+## Highlights
+
+- 📄 **High-fidelity parsing** — MinerU-based PDF parsing that preserves equations, tables, figures, and layout hierarchy.
+- 🔍 **Traceable evidence** — every AI claim ships with a page citation; click to jump back to the source PDF and kill hallucinations.
+- 🎯 **Three reading modes** — Insight Snap for a quick overview, Logic Lens for equations/algorithms, Research Sphere for the reference network.
+- ⚡ **Streaming output** — progress and results stream live over SSE, so long papers don't leave you waiting.
+- 🌐 **Multi-platform search** — aggregates arXiv, OpenAlex, Semantic Scholar, Crossref, and IEEE Xplore.
+- 📊 **Journal ranking** — EasyScholar integration surfaces SCI / CCF / CSCD tiers to gauge source quality.
 
 ## Quick Start (Docker)
 

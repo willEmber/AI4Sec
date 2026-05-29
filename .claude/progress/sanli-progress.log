@@ -163,3 +163,16 @@
   - frontend/src/lib/api.ts、types.ts：新增 listModels 与 ModelListResponse
   - frontend/src/lib/i18n.tsx：更新模型相关文案
   - .env.example：新增 TAVILY_KEY，说明 THINKING_MODELNAME 多模型用法
+
+[2026-05-29]
+用户输入：将下面这个Linuxdo链接加入readme并优化现在的readme介绍（附 LINUX-DO 徽章代码块）
+完成：README 介绍优化 + Linux.do 徽章 (sanli)
+  - 在 README.md / README.en.md 顶部加入 Linux.do 徽章，并补充 Python/FastAPI/Next.js/React/Docker 技术栈徽章
+  - 重写首屏标题与简介，突出"带证据引用、可跳回原文"的核心卖点
+  - 新增"核心特性 / Highlights"小节，提炼解析、证据追溯、三种模式、流式输出、多平台检索、期刊分级六大亮点
+  - 英文 README 补充回中文 README 的互链
+  - 未加入随附的 DEV.to 徽章（指向无关的 AEGIS 文章）
+
+涉及文件：
+  - README.md：徽章行、简介重写、新增核心特性小节
+  - README.en.md：徽章行、简介重写、新增 Highlights 小节、互链
