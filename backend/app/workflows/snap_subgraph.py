@@ -6,10 +6,26 @@ import time
 from typing import Any
 
 from app.models.paper_ir import PaperIR
+from app.services.citation_validator import (
+    format_coverage_summary,
+    validate_citation_coverage,
+)
+from app.services.evidence_extractor import extract_evidence_pool
 from app.services.llm_service import get_llm_service
 from app.workflows.state import MainGraphState
 
 logger = logging.getLogger("scholar.graph")
+
+# Slot names exposed to the evidence extractor. Kept aligned with the section
+# headings the Snap prompt produces so the second LLM call can map quotes back.
+SNAP_SLOTS: list[str] = [
+    "problem",
+    "method",
+    "result",
+    "evidence_strength",
+    "limitation",
+    "verdict",
+]
 
 
 def _extract_key_sections(paper_ir: PaperIR) -> str:
@@ -68,6 +84,7 @@ IMPORTANT RULES:
 2. Be concise but precise. This is a triage tool.
 3. Use LaTeX for any mathematical notation: $inline$ or $$display$$.
 4. Do not fabricate information. Only cite what is in the paper.
+5. If a slot has no supporting evidence in the extracted text (e.g. the paper omits limitations or experimental setup), write `_Not reported in extracted text._` for that bullet instead of guessing or paraphrasing from general knowledge.
 """
 
 
@@ -125,6 +142,26 @@ async def run_insight_snap(state: MainGraphState) -> dict[str, Any]:
     markdown = await llm.chat(messages, model=model, temperature=0.3, max_tokens=4096)
     logger.info(f"[{paper_id}] snap: LLM returned in {time.perf_counter()-t_llm:.1f}s — {len(markdown)} chars response")
 
+    audit = validate_citation_coverage(markdown)
+    logger.info(f"[{paper_id}] snap: {format_coverage_summary(audit)}")
+    if audit["claims_uncited"] > 0 and audit["uncited_samples"]:
+        logger.warning(
+            f"[{paper_id}] snap: {audit['claims_uncited']} uncited claims — samples: {audit['uncited_samples'][:3]}"
+        )
+
+    t_evidence = time.perf_counter()
+    evidence_pool = await extract_evidence_pool(
+        llm,
+        context=key_content,
+        slots=SNAP_SLOTS,
+        model=model,
+        log_label=f"[{paper_id}] snap",
+    )
+    logger.info(
+        f"[{paper_id}] snap: evidence extraction in {time.perf_counter()-t_evidence:.1f}s "
+        f"— {len(evidence_pool)} cards"
+    )
+
     logger.info(f"[{paper_id}] snap: TOTAL {time.perf_counter()-t0:.1f}s")
     return {
         "final_markdown": markdown,
@@ -133,6 +170,8 @@ async def run_insight_snap(state: MainGraphState) -> dict[str, Any]:
             "paper_id": state["paper_id"],
             "title": paper_ir.title,
             "sections_used": [s.title for s in paper_ir.sections if s.title],
+            "citation_audit": audit,
+            "evidence_pool": evidence_pool,
         }),
         "progress": state.get("progress", []) + [{"step": "run_snap", "status": "done"}],
     }
