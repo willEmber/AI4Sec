@@ -111,3 +111,15 @@
   - backend/app/workflows/lens_subgraph.py：_extract_figures 带 img_path；新增 _figure_embed_url/_select_framework_figures；上下文产出框架图 embed 块；提示词加入内嵌框架图与图片 URL 规则
   - backend/app/workflows/translate.py：新增保留图片嵌入规则
   - frontend/src/components/MarkdownRenderer.tsx：放行并美化 img 渲染
+
+[2026-05-29]
+用户输入：当前还有一个小问题，生成的lens报告在前端显示中所有公式都和正文连在一起了，导致部分关键的核心复杂公式看起效果不佳，虽然实际导出后发现有换行（可能是因为没有单独空一行），但前端显示有问题，尝试进行优化
+完成：修复前端公式与正文挤在一起（块级公式被当作行内渲染）(CC)
+  - 根因定位：lens 报告里 $$...$$ 公式各自独占一行，但与上下文之间没有空行；CommonMark 中无空行即同段，remark-math 遂将其解析为行内 math，rehype-katex 以 displayMode:false 渲染，导致公式被挤进正文、复杂公式尤其难看。导出的原始 md「有换行」只是单个 \n，并非段落分隔，故前端折叠
+  - 前端修复（表现层归一化，最稳妥且无需重跑/无 token 成本，同时修好所有历史报告）：MarkdownRenderer 新增 normalizeDisplayMath，将每个 $$...$$ 重写为前后各空一行的独立块，使其被解析为块级（display）公式；先护住围栏代码块（``` 三反引号 ```）内的 $$ 不动，再做公式归一化，最后还原
+  - 既有 .katex-display 样式（居中、上下 1.25rem 间距、overflow-x:auto 处理超宽公式）本就完善，公式进入 display 模式后即正确居中显示，宽公式可横向滚动，无需改 CSS
+  - 行内单 $ 公式（如 $Q$、$d_k$、$N=6$）保持不变；多行 aligned 公式保留且幂等
+  - 校验：对真实报告 Attention_Is_All_You_Need_lens.md 跑归一化——8 个 $$ 全部保留、每个 $$ 独占一行、公式前后补空行、行内公式未动；边界用例全过（多行公式幂等、围栏代码内 $$ 不动而代码外真公式提升、纯文本不变）；前端 tsc 干净 + next build 成功（exit 0，lint/类型通过）
+
+涉及文件：
+  - frontend/src/components/MarkdownRenderer.tsx：新增 normalizeDisplayMath（围栏代码保护 + $$ 块级化），并在 processed 中先归一化公式再处理引用

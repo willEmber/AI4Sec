@@ -34,6 +34,31 @@ const LEGACY_CITATION_SPAN_RE =
 const PLAIN_CITATION_RE = /\[p\.(\d+)\]/gi;
 const CITATION_HREF_RE = /^#cite-page-(\d+)$/;
 
+// remark-math only treats `$$...$$` as a display (block) equation when it is
+// separated from the surrounding text by blank lines. LLM output routinely puts
+// each equation on its own line but with no blank line around it, so the whole
+// run becomes one paragraph and every `$$...$$` is parsed as *inline* math,
+// rendered squished against the prose. Re-wrap each block (outside fenced code)
+// with blank lines so it renders as a centered display equation instead.
+const CODE_FENCE_RE = /```[\s\S]*?```/g;
+const DISPLAY_MATH_RE = /\$\$([\s\S]+?)\$\$/g;
+
+export function normalizeDisplayMath(content: string): string {
+  const codeBlocks: string[] = [];
+
+  // Park fenced code blocks so any `$$` inside them is left untouched.
+  const guarded = content.replace(CODE_FENCE_RE, (block) => {
+    codeBlocks.push(block);
+    return `@@mathcode${codeBlocks.length - 1}@@`;
+  });
+
+  const wrapped = guarded
+    .replace(DISPLAY_MATH_RE, (_match, inner: string) => `\n\n$$\n${inner.trim()}\n$$\n\n`)
+    .replace(/\n{3,}/g, "\n\n");
+
+  return wrapped.replace(/@@mathcode(\d+)@@/g, (_match, i: string) => codeBlocks[Number(i)]);
+}
+
 export function prepareCitationMarkdown(content: string): string {
   return content
     .replace(LEGACY_CITATION_SPAN_RE, "[p.$1]")
@@ -48,8 +73,9 @@ interface MarkdownRendererProps {
 export default function MarkdownRenderer({ content, onCitationClick }: MarkdownRendererProps) {
   const { t } = useTranslation();
 
-  // Keep citations as Markdown links so raw HTML never leaks into rendered answers.
-  const processed = prepareCitationMarkdown(content);
+  // Normalize display equations to block form first, then keep citations as
+  // Markdown links so raw HTML never leaks into rendered answers.
+  const processed = prepareCitationMarkdown(normalizeDisplayMath(content));
 
   return (
     <div className="markdown-body">
