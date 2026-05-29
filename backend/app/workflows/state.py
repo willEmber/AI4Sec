@@ -23,6 +23,8 @@ class MainGraphState(TypedDict, total=False):
     # Output
     final_markdown: str
     final_json: str
+    analysis_language: str   # language the subgraph natively produced final_markdown in;
+                             # when it equals `language`, translate_output is skipped
     error: str
 
     # Sphere internal state (debugging)

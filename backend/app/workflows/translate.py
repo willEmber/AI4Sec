@@ -59,12 +59,30 @@ async def _translate_chunk(text: str, model: str) -> str:
 
 
 async def translate_output(state: MainGraphState) -> dict[str, Any]:
-    """Translate final_markdown to the requested language. Passes through if language is 'en'."""
+    """Translate final_markdown to the requested language.
+
+    Skipped when no translation is needed:
+    - ``language == 'en'`` (reports are authored in English by default), or
+    - the subgraph already produced ``final_markdown`` natively in the requested
+      language (``analysis_language == language``) — the bilingual mode prompts
+      do this, which avoids a full second LLM pass over the whole report.
+
+    Otherwise it falls back to chunked LLM translation (the safety net for any
+    mode that does not yet localize its own output).
+    """
     language = state.get("language", "en")
+    analysis_language = state.get("analysis_language", "")
     markdown = state.get("final_markdown", "")
 
     if language == "en" or not markdown:
         logger.info("[%s] translate_output: SKIPPED (lang=%s, md=%d chars)",
+                     state.get("paper_id", "?"), language, len(markdown))
+        return {
+            "progress": state.get("progress", []) + [{"step": "translate_output", "status": "skipped"}],
+        }
+
+    if analysis_language == language:
+        logger.info("[%s] translate_output: SKIPPED — output already in %s (native, md=%d chars)",
                      state.get("paper_id", "?"), language, len(markdown))
         return {
             "progress": state.get("progress", []) + [{"step": "translate_output", "status": "skipped"}],

@@ -782,6 +782,15 @@ async def step_6_layer0_summarize_metadata(
     """Generate metadata-only reason strings for all nodes (no LLM)."""
     await _emit_progress(run_id, "layer0_summarize_metadata", "running")
 
+    zh = state.get("language", "en") == "zh"
+    lbl = (
+        {"source": "来源", "cited": "被引", "year": "年份", "venue": "刊物",
+         "score": "评分", "fallback": "PDF 参考文献"}
+        if zh
+        else {"source": "Source", "cited": "Cited by", "year": "Year", "venue": "Venue",
+              "score": "Score", "fallback": "PDF reference"}
+    )
+
     for nid, node in sphere.nodes.items():
         if node == sphere.center_node:
             continue
@@ -791,16 +800,16 @@ async def step_6_layer0_summarize_metadata(
         non_seed = [s for s in all_sources if s != CandidateSource.SEED_REF]
         if non_seed:
             labels = [s.value.replace("_", " ") for s in non_seed]
-            parts.append(f"Source: {', '.join(labels)}")
+            parts.append(f"{lbl['source']}: {', '.join(labels)}")
         if node.cited_by_count > 0:
-            parts.append(f"Cited by {node.cited_by_count}")
+            parts.append(f"{lbl['cited']} {node.cited_by_count}")
         if node.year:
-            parts.append(f"Year: {node.year}")
+            parts.append(f"{lbl['year']}: {node.year}")
         if node.venue:
-            parts.append(f"Venue: {node.venue}")
+            parts.append(f"{lbl['venue']}: {node.venue}")
         if node.score_total > 0:
-            parts.append(f"Score: {node.score_total:.3f}")
-        node.reason = " | ".join(parts) if parts else "PDF reference"
+            parts.append(f"{lbl['score']}: {node.score_total:.3f}")
+        node.reason = " | ".join(parts) if parts else lbl["fallback"]
 
     await _emit_progress(run_id, "layer0_summarize_metadata", "done")
     return sphere
@@ -1101,6 +1110,15 @@ Return a JSON object:
 Return ONLY valid JSON, no markdown fences."""
 
 
+# Appended to the three synthesis role prompts when the user requested Chinese.
+# The JSON *keys* must stay English (the code parses them), so we only ask the
+# model to write the natural-language *values* in Chinese — this avoids a full
+# post-hoc translation pass over the assembled report.
+_SPHERE_ZH_DIRECTIVE = """
+
+输出语言要求:JSON 的所有键名(key)保持英文不变;但所有自然语言文本字段的值(如 name、definition、problem、assumption、method、dataset、metric、strength、weakness、title、description、overview 等)一律用简体中文撰写。论文标题、作者姓名、期刊/会议名称、以及专有技术术语可保留英文(术语首次出现可在括号内附中文解释)。仍然只返回合法 JSON,不要 markdown 代码围栏或任何解释。"""
+
+
 async def step_9_synthesize_landscape(
     sphere: SphereState,
     state: MainGraphState,
@@ -1111,10 +1129,15 @@ async def step_9_synthesize_landscape(
 
     paper_id = state["paper_id"]
     model = state.get("llm_model", "")
+    language = state.get("language", "en")
     center = sphere.center_node
     if not center:
         await _emit_progress(run_id, "synthesize_landscape", "done")
         return sphere
+
+    def _localize(base: str) -> str:
+        """Append the Chinese output directive to a role prompt when lang=zh."""
+        return base + _SPHERE_ZH_DIRECTIVE if language == "zh" else base
 
     llm = get_llm_service()
 
@@ -1169,7 +1192,7 @@ async def step_9_synthesize_landscape(
     async def _run_classifier() -> dict[str, Any] | None:
         try:
             classifier_messages = [
-                {"role": "system", "content": _CLASSIFIER_SYSTEM},
+                {"role": "system", "content": _localize(_CLASSIFIER_SYSTEM)},
                 {"role": "user", "content": f"Classify these {len(paper_list)} papers into themes:\n\n{papers_context}"},
             ]
             classifier_resp = await llm.chat(classifier_messages, model=model, temperature=0.2, max_tokens=4096)
@@ -1183,7 +1206,7 @@ async def step_9_synthesize_landscape(
     async def _run_comparator() -> dict[str, Any] | None:
         try:
             comparator_messages = [
-                {"role": "system", "content": _COMPARATOR_SYSTEM},
+                {"role": "system", "content": _localize(_COMPARATOR_SYSTEM)},
                 {"role": "user", "content": f"Compare these papers:\n\n{comp_context}"},
             ]
             comparator_resp = await llm.chat(comparator_messages, model=model, temperature=0.2, max_tokens=8192)
@@ -1299,7 +1322,7 @@ async def step_9_synthesize_landscape(
         )
 
         advisor_messages = [
-            {"role": "system", "content": _ADVISOR_SYSTEM},
+            {"role": "system", "content": _localize(_ADVISOR_SYSTEM)},
             {"role": "user", "content": f"Analyze research landscape:\n\n{advisor_context}"},
         ]
         advisor_resp = await llm.chat(advisor_messages, model=model, temperature=0.3, max_tokens=4096)
@@ -1362,49 +1385,72 @@ async def step_10_render_output(
     center = sphere.center_node
     output = sphere.output
     paper_id = state["paper_id"]
+    zh = state.get("language", "en") == "zh"
+
+    # Localized scaffolding for the rendered report (the LLM fills the prose
+    # fields; these are the fixed headings/labels the code emits).
+    t = (
+        {
+            "overview_h": "## 研究全景概览\n", "themes_h": "\n### 主题聚类\n",
+            "timeline_h": "## 脉络与时间线\n", "comparison_h": "## 对比矩阵\n\n",
+            "comparison_cols": "| 论文 | 问题 | 方法 | 数据集 | 指标 | 优势 | 不足 |\n",
+            "hubs_h": "## 关键枢纽论文\n", "gaps_h": "## 研究空白与想法\n",
+            "paths_h": "## 推荐阅读路径\n", "cited_by": "被引", "more": "篇",
+            "evidence_from": "证据来源", "path_suffix": "路径", "unknown": "[未知论文]",
+        }
+        if zh
+        else {
+            "overview_h": "## Research Landscape Overview\n", "themes_h": "\n### Thematic Clusters\n",
+            "timeline_h": "## Lineage & Timeline\n", "comparison_h": "## Comparison Matrix\n\n",
+            "comparison_cols": "| Paper | Problem | Method | Dataset | Metric | Strength | Weakness |\n",
+            "hubs_h": "## Key Hub Papers\n", "gaps_h": "## Research Gaps & Ideas\n",
+            "paths_h": "## Suggested Reading Paths\n", "cited_by": "cited by", "more": "more",
+            "evidence_from": "Evidence from", "path_suffix": "Path", "unknown": "[unknown paper]",
+        }
+    )
 
     # Node lookup helper
     def _node_ref(node_id: str) -> str:
         node = sphere.nodes.get(node_id)
         if not node:
-            return f"[unknown paper]"
+            return t["unknown"]
         year_str = f" ({node.year})" if node.year else ""
         return f"**{node.title}**{year_str}"
 
     md_parts: list[str] = []
 
     # ── Section 1: Landscape Map ──
-    md_parts.append("## Research Landscape Overview\n")
+    md_parts.append(t["overview_h"])
     if output.sphere_overview:
         md_parts.append(output.sphere_overview + "\n")
 
     if output.themes:
-        md_parts.append("\n### Thematic Clusters\n")
+        md_parts.append(t["themes_h"])
         for i, theme in enumerate(output.themes, 1):
             md_parts.append(f"**{i}. {theme.name}**: {theme.definition}\n")
             for nid in theme.representative_node_ids[:8]:
                 node = sphere.nodes.get(nid)
                 if node:
                     year_str = f" ({node.year})" if node.year else ""
-                    cite_str = f" — cited by {node.cited_by_count}" if node.cited_by_count else ""
+                    cite_str = f" — {t['cited_by']} {node.cited_by_count}" if node.cited_by_count else ""
                     md_parts.append(f"- {node.title}{year_str}{cite_str}\n")
             md_parts.append("\n")
 
     # ── Section 2: Timeline ──
     if output.timeline:
-        md_parts.append("## Lineage & Timeline\n")
+        md_parts.append(t["timeline_h"])
         for entry in output.timeline:
             nodes_in_year = [sphere.nodes.get(nid) for nid in entry.node_ids if sphere.nodes.get(nid)]
             if nodes_in_year:
                 titles = ", ".join(n.title[:60] for n in nodes_in_year[:5])
-                extra = f" (+{len(nodes_in_year) - 5} more)" if len(nodes_in_year) > 5 else ""
+                extra = f" (+{len(nodes_in_year) - 5} {t['more']})" if len(nodes_in_year) > 5 else ""
                 md_parts.append(f"- **{entry.year}**: {titles}{extra}\n")
         md_parts.append("\n")
 
     # ── Section 3: Comparison Matrix ──
     if output.comparison_table:
-        md_parts.append("## Comparison Matrix\n\n")
-        md_parts.append("| Paper | Problem | Method | Dataset | Metric | Strength | Weakness |\n")
+        md_parts.append(t["comparison_h"])
+        md_parts.append(t["comparison_cols"])
         md_parts.append("|-------|---------|--------|---------|--------|----------|----------|\n")
         for row in output.comparison_table:
             short_title = row.title[:40] + ("..." if len(row.title) > 40 else "")
@@ -1416,7 +1462,7 @@ async def step_10_render_output(
 
     # ── Section 4: Key Hubs ──
     if output.key_hubs:
-        md_parts.append("## Key Hub Papers\n")
+        md_parts.append(t["hubs_h"])
         for hub in output.key_hubs:
             md_parts.append(
                 f"- **{hub.title}** — PageRank: {hub.pagerank:.3f}, "
@@ -1429,19 +1475,19 @@ async def step_10_render_output(
 
     # ── Section 5: Gaps & Ideas ──
     if output.gaps_and_ideas:
-        md_parts.append("## Research Gaps & Ideas\n")
+        md_parts.append(t["gaps_h"])
         for i, gap in enumerate(output.gaps_and_ideas, 1):
             md_parts.append(f"### {i}. {gap.title}\n\n")
             md_parts.append(f"{gap.description}\n\n")
             if gap.evidence_node_ids:
                 evidence = [_node_ref(nid) for nid in gap.evidence_node_ids[:5]]
-                md_parts.append(f"*Evidence from*: {', '.join(evidence)}\n\n")
+                md_parts.append(f"*{t['evidence_from']}*: {', '.join(evidence)}\n\n")
 
     # ── Section 6: Reading Paths ──
     if output.reading_paths:
-        md_parts.append("## Suggested Reading Paths\n")
+        md_parts.append(t["paths_h"])
         for path in output.reading_paths:
-            md_parts.append(f"### {path.name.title()} Path\n\n")
+            md_parts.append(f"### {path.name.title()} {t['path_suffix']}\n\n")
             md_parts.append(f"{path.description}\n\n")
             for j, nid in enumerate(path.node_ids, 1):
                 node = sphere.nodes.get(nid)
@@ -1514,6 +1560,7 @@ async def run_research_sphere(state: MainGraphState) -> dict[str, Any]:
 
     return {
         "final_markdown": markdown,
+        "analysis_language": state.get("language", "en"),
         "final_json": json_data,
         "sphere_state_json": sphere.model_dump_json(),
         "progress": state.get("progress", []) + [{"step": "run_sphere", "status": "done"}],

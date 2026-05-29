@@ -59,7 +59,7 @@ def _extract_key_sections(paper_ir: PaperIR) -> str:
     return "\n\n".join(parts)
 
 
-SNAP_SYSTEM_PROMPT = """You are a research paper analysis assistant. Your task is to provide a quick "Insight Snap" - a 30-second triage summary to help a researcher decide if a paper is worth reading in depth.
+SNAP_SYSTEM_PROMPT_EN = """You are a research paper analysis assistant. Your task is to provide a quick "Insight Snap" - a 30-second triage summary to help a researcher decide if a paper is worth reading in depth.
 
 You MUST format your output as structured Markdown with the following sections exactly:
 
@@ -85,6 +85,36 @@ IMPORTANT RULES:
 3. Use LaTeX for any mathematical notation: $inline$ or $$display$$.
 4. Do not fabricate information. Only cite what is in the paper.
 5. If a slot has no supporting evidence in the extracted text (e.g. the paper omits limitations or experimental setup), write `_Not reported in extracted text._` for that bullet instead of guessing or paraphrasing from general knowledge.
+"""
+
+
+SNAP_SYSTEM_PROMPT_ZH = """你是一名科研论文分析助手。你的任务是给出一份快速的"洞察速览"(Insight Snap)——一个 30 秒分诊式摘要,帮助研究者判断这篇论文是否值得深入精读。
+
+你必须输出结构化 Markdown,且严格使用以下小节标题:
+
+## 一句话总结
+(用一句话概括:问题 + 方法 + 关键结果)
+
+## 核心贡献
+- (3-5 个要点,每条都要带形如 [p.X] 的页码引用)
+
+## 关键实验发现
+- (主要指标、提升幅度、对比结果,并附页码引用)
+
+## 适用性与局限
+- 适用于:……
+- 局限:……(附页码引用)
+
+## 是否值得精读?
+(给出 是/否 并简要说明理由。如有期刊/会议声誉信息,可纳入考量。)
+
+重要规则:
+1. 每一条事实性陈述都必须带形如 [p.X] 的页码引用(X 为页码),引用标记本身保持英文原样,不要翻译或改写。
+2. 简洁而精确——这是一个分诊工具。
+3. 所有数学记号一律使用 LaTeX:行内用 $inline$,独立公式用 $$display$$。
+4. 不得编造信息,只能引用论文中确有的内容。
+5. 若某一小节在提取文本中没有支撑证据(例如论文未给出局限或实验设置),该条写 `_提取文本中未提及。_`,不要凭常识猜测或臆造。
+6. 输出语言:整篇内容必须用简体中文撰写。但请保留以下内容的英文原样、不得翻译:LaTeX 公式、页码引用 [p.X]、论文标题、作者姓名、期刊/会议名称;专有技术术语首次出现时保留英文并在括号内给出中文解释(如 "Transformer(变换器)")。
 """
 
 
@@ -130,10 +160,14 @@ async def run_insight_snap(state: MainGraphState) -> dict[str, Any]:
         key_content = key_content[:max_chars] + "\n\n[... truncated for length ...]"
         logger.info(f"[{paper_id}] snap: Content truncated to {max_chars} chars")
 
+    language = state.get("language", "en")
+    system_prompt = SNAP_SYSTEM_PROMPT_ZH if language == "zh" else SNAP_SYSTEM_PROMPT_EN
+    user_prefix = "请分析这篇论文:" if language == "zh" else "Analyze this paper:"
+
     llm = get_llm_service()
     messages = [
-        {"role": "system", "content": SNAP_SYSTEM_PROMPT},
-        {"role": "user", "content": f"Analyze this paper:\n\n{key_content}"},
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": f"{user_prefix}\n\n{key_content}"},
     ]
 
     model = state.get("llm_model", "")
@@ -165,6 +199,7 @@ async def run_insight_snap(state: MainGraphState) -> dict[str, Any]:
     logger.info(f"[{paper_id}] snap: TOTAL {time.perf_counter()-t0:.1f}s")
     return {
         "final_markdown": markdown,
+        "analysis_language": language,
         "final_json": json.dumps({
             "mode": "snap",
             "paper_id": state["paper_id"],

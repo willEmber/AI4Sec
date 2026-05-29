@@ -252,7 +252,7 @@ def _select_framework_figures(
     return key, others
 
 
-LENS_SYSTEM_PROMPT = """You are an expert research-paper analyst. Produce a "Logic Lens": a deep, single-paper read-through that makes a researcher truly understand HOW the work operates and WHY it works — not a surface summary. Explain mechanisms, interpret results, and think critically.
+LENS_SYSTEM_PROMPT_EN = """You are an expert research-paper analyst. Produce a "Logic Lens": a deep, single-paper read-through that makes a researcher truly understand HOW the work operates and WHY it works — not a surface summary. Explain mechanisms, interpret results, and think critically.
 
 Organize the analysis into the four parts below. Keep the four top-level headings, but ADAPT the sub-points to THIS paper: expand what is central, condense what is auxiliary, and drop sub-points that do not apply rather than forcing them. A theory paper, an empirical study, and a systems paper should not read identically.
 
@@ -288,6 +288,46 @@ RULES:
 4. Do NOT fabricate; state only what the provided context supports. When an important detail is genuinely absent, note it briefly in prose — but do NOT pad the report with "not reported" bullets for every missing field. Information density matters more than checklist completeness.
 5. Prefer the dedicated `## Paper Framing`, `## Method Section`, `## Experiment Section`, and figure excerpts over `## Full Paper Text`; the targeted excerpts are the most relevant.
 6. To display a figure, embed it with the exact Markdown image given in the `## Key Architecture Figures` block — copy the `embed:` line verbatim (both alt text and URL). NEVER invent, guess, or alter an image URL, and do not embed a figure that has no provided URL. Embedding the framework diagram is expected in Part 2; do not embed result/plot figures.
+"""
+
+
+LENS_SYSTEM_PROMPT_ZH = """你是一名资深的科研论文分析专家。请生成一份"逻辑透镜"(Logic Lens):对单篇论文的深度通读式解析,让研究者真正理解这项工作"如何运作"以及"为什么有效"——而不是停留在表面摘要。要讲清机制、解读结果、并进行批判性思考。
+
+请将分析组织为下面四个部分。保留这四个顶层标题,但要根据本篇论文调整各级要点:核心之处展开、辅助之处精简、不适用的要点直接删去而非硬凑。理论型论文、实证研究、系统型论文不应读起来千篇一律。
+
+## 1. 概览与动机
+- **问题及其重要性**:具体要解决的问题、它为何重要,以及本文针对的先前工作中的具体空白或局限。
+- **核心贡献**:主要贡献 / 关键发现,以及每一项分别解决了什么具体问题。
+- 若上下文提供了期刊/会议、年份或分级等元数据,在此简要说明。
+
+## 2. 方法深读
+这是分析的核心——此处要详尽而具体。
+- **核心思想与直觉**:先用通俗语言说明中心洞见——*为什么*这个方法应当奏效——再进入形式化表述。
+- **流程与模块**:端到端的数据流,以及每个主要组件各自负责什么。
+- **关键公式**:仅针对重要公式,给出 LaTeX 形式、变量含义(若记号繁多,补一个简短的符号表)、推导逻辑 / 直觉,以及它与先前方法的不同之处。跳过平凡或样板化的公式。
+- **关键算法 / 流程**:逐步讲解并对每一步加以注释;在相关时讨论复杂度。
+- **架构 / 框架图**:在你讲解流程的位置就地嵌入论文的主架构或框架图——直接从 `## Key Architecture Figures` 上下文块中逐字复制其现成的 Markdown 图片(那行 `embed:`)。在图片紧随其后,带读者走读该图:点出每个组件,并追踪数据如何在其中流动。这样读者能"看见"方法,而不仅是读到它。
+- **其他图**:当你首次提到任何其他图时,基于其图注用文字简要说明它描绘了什么,使读者无需看到原图也能理解。
+
+## 3. 实验与结果
+- **数据集与指标**:使用了哪些数据集与评测指标、每个指标实际衡量什么、以及它们为何适合该任务。
+- **实验设置**:论文中确有报告的训练 / 实验细节(优化器、调度、关键超参数、硬件)。报告确有的内容即可——不要逐一罗列缺失字段。
+- **结果解读**:不要只复述数字。结合数据集特性来解读它们、说明它们证明了什么、并提炼出结论与其蕴含的意义。
+
+## 4. 批判性评估
+- **为何有效**:该方法有效性的可能来源。
+- **局限与风险**:假设、潜在混杂因素,以及泛化方面的隐忧。
+- **可复现性**:论文是否给出了足以复现核心结果的信息;仅标注真正重要的缺失细节。
+- **要点与开放问题**:这项工作使什么成为可能,以及它指向的有前景的方向。
+
+规则:
+1. 每一条事实性陈述都必须带形如 [p.X] 的页码引用。
+2. 所有数学内容一律使用 LaTeX:行内用 `$...$`,独立公式用 `$$...$$`。独立的 `$$` 必须从左边距开始(不缩进),LaTeX 直接写在分隔符内,且不要有多余空行。
+3. 在核心方法与关键结果上优先保证实质与深度——把要点讲全面;辅助细节可压缩。不要仅为缩短篇幅而省略有价值的内容。
+4. 不得编造;只陈述所给上下文支持的内容。当某个重要细节确实缺失时,用文字简短指出即可——但不要为每个缺失字段都堆砌"未报告"的条目。信息密度比清单式的完整更重要。
+5. 优先使用专门的 `## Paper Framing`、`## Method Section`、`## Experiment Section` 与图片摘录,而非 `## Full Paper Text`;有针对性的摘录才是最相关的。
+6. 要展示某张图,用 `## Key Architecture Figures` 块中给出的确切 Markdown 图片来嵌入——逐字复制那行 `embed:`(alt 文本与 URL 都要)。绝不要臆造、猜测或改动图片 URL,也不要嵌入没有提供 URL 的图。第 2 部分中预期会嵌入框架图;不要嵌入结果/曲线类的图。
+7. 输出语言:整篇分析必须用简体中文撰写(包括上面四个部分的标题,请使用中文标题)。但请保留以下内容的英文原样、不得翻译:LaTeX 公式、页码引用 [p.X]、图片嵌入 ![alt](url) 中的 URL、论文标题、作者姓名、期刊/会议名称;专有技术术语首次出现时保留英文并在括号内给出中文解释(如 "self-attention(自注意力)")。
 """
 
 
@@ -426,10 +466,18 @@ async def run_logic_lens(state: MainGraphState) -> dict[str, Any]:
         f"figures={len(figures)}, full_text_cap={full_text_cap})"
     )
 
+    language = state.get("language", "en")
+    system_prompt = LENS_SYSTEM_PROMPT_ZH if language == "zh" else LENS_SYSTEM_PROMPT_EN
+    user_prefix = (
+        "请对这篇论文进行深度的逻辑透镜分析:"
+        if language == "zh"
+        else "Perform a deep Logic Lens analysis:"
+    )
+
     llm = get_llm_service()
     messages = [
-        {"role": "system", "content": LENS_SYSTEM_PROMPT},
-        {"role": "user", "content": f"Perform a deep Logic Lens analysis:\n\n{context}"},
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": f"{user_prefix}\n\n{context}"},
     ]
 
     model = state.get("llm_model", "")
@@ -461,6 +509,7 @@ async def run_logic_lens(state: MainGraphState) -> dict[str, Any]:
     logger.info(f"[{paper_id}] lens: TOTAL {time.perf_counter()-t0:.1f}s")
     return {
         "final_markdown": markdown,
+        "analysis_language": language,
         "final_json": json.dumps({
             "mode": "lens",
             "paper_id": state["paper_id"],

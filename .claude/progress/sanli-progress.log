@@ -123,3 +123,19 @@
 
 涉及文件：
   - frontend/src/components/MarkdownRenderer.tsx：新增 normalizeDisplayMath（围栏代码保护 + $$ 块级化），并在 processed 中先归一化公式再处理引用
+
+[2026-05-29]
+用户输入：分析为什么分析这么慢，似乎是翻译转化的问题 / 现在的流程设计是内部分析提示词全用英文，可以改为准备中文英文两套提示词，根据用户选择对应的；这样也可以避免翻译，只不过注意中文提示词中要加入输出中文的要求限制
+完成：双语分析提示词，绕过 translate_output 二次全文翻译 (sanli)
+  - 诊断：lens 总耗时 610s 中 translate_output 占 368s（60%），且推理模型在机械翻译上过度思考（输出 ~2 万 token 仅产出 ~6400 中文字）
+  - 各模式准备中英双套 system prompt，按 state.language 选用；中文提示词显式强制简体中文输出，并保留 LaTeX / [p.X] / 图片嵌入 URL / 专有名词原样
+  - 新增 state.analysis_language 标记子图原生产出语言；translate_output 在 analysis_language == language 时跳过翻译（保留 chunk 翻译作为兜底）
+  - sphere 三个合成角色（Classifier/Comparator/Advisor）追加中文输出指令（JSON 键名保持英文，值用中文），并本地化 step_6 reason 标签与 step_10 渲染层标题/表头/标签
+
+涉及文件：
+  - app/workflows/state.py：新增 analysis_language 字段
+  - app/workflows/translate.py：analysis_language == language 时跳过翻译
+  - app/workflows/snap_subgraph.py：SNAP_SYSTEM_PROMPT_EN/_ZH，按语言选用并标记 analysis_language
+  - app/workflows/lens_subgraph.py：LENS_SYSTEM_PROMPT_EN/_ZH，同上
+  - app/workflows/qa_subgraph.py：_SYSTEM_PROMPT_EN/_ZH，同上
+  - app/workflows/sphere_subgraph.py：三角色中文指令 + step_6/step_10 本地化 + 标记 analysis_language
