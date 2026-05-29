@@ -68,6 +68,10 @@ export async function listRecentRuns(
   return request(`/runs/recent?${qs.toString()}`);
 }
 
+export async function dismissRun(runId: string): Promise<RunResponse> {
+  return request(`/runs/${runId}/dismiss`, { method: "POST" });
+}
+
 export function getPaperPdfUrl(paperId: string): string {
   return `${API_BASE}/papers/${paperId}/pdf`;
 }

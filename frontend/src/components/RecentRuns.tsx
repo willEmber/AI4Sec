@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
-import { listRecentRuns } from "@/lib/api";
+import { useCallback, useEffect, useState } from "react";
+import { dismissRun, listRecentRuns } from "@/lib/api";
 import { useTranslation } from "@/lib/i18n";
 import { IconArrowRight, IconCheck } from "@/components/icons";
 import type { RecentRunResponse } from "@/lib/types";
@@ -60,6 +60,12 @@ export default function RecentRuns({ refreshMs = 5000, historyLimit = 8 }: Props
     };
   }, [refreshMs]);
 
+  const handleDismiss = useCallback((runId: string) => {
+    // Optimistically drop the row, then clear it on the backend.
+    setRuns((prev) => (prev ? prev.filter((r) => r.run_id !== runId) : prev));
+    dismissRun(runId).catch(() => {});
+  }, []);
+
   if (runs === null || runs.length === 0) return null;
 
   const active = runs.filter((r) => r.status === "running" || r.status === "pending");
@@ -75,7 +81,7 @@ export default function RecentRuns({ refreshMs = 5000, historyLimit = 8 }: Props
           </div>
           <ul className="space-y-1.5">
             {active.map((r) => (
-              <ActiveRow key={r.run_id} run={r} t={t} locale={locale} />
+              <ActiveRow key={r.run_id} run={r} t={t} locale={locale} onDismiss={handleDismiss} />
             ))}
           </ul>
         </div>
@@ -101,18 +107,20 @@ function ActiveRow({
   run,
   t,
   locale,
+  onDismiss,
 }: {
   run: RecentRunResponse;
   t: (k: string, vars?: Record<string, string | number>) => string;
   locale: string;
+  onDismiss: (runId: string) => void;
 }) {
   const stepLabel = run.current_step ? t(`step.${run.current_step}`) || run.current_step : t("recent.starting");
   const modeLabel = t(`upload.mode.${run.mode}.label`) || run.mode;
   return (
-    <li>
+    <li className="group flex items-center rounded-xl transition-colors hover:bg-primary/10">
       <Link
         href={`/paper/${run.paper_id}/run/${run.run_id}`}
-        className="group flex items-center gap-3 rounded-xl px-3 py-2 transition-colors hover:bg-primary/10"
+        className="flex min-w-0 flex-1 items-center gap-3 px-3 py-2"
       >
         <span className="h-3 w-3 shrink-0 animate-spin rounded-full border-2 border-primary border-t-transparent" />
         <span className="min-w-0 flex-1">
@@ -125,6 +133,15 @@ function ActiveRow({
         </span>
         <IconArrowRight className="shrink-0 text-base text-muted-foreground transition-colors group-hover:text-primary" />
       </Link>
+      <button
+        type="button"
+        onClick={() => onDismiss(run.run_id)}
+        title={t("recent.dismiss")}
+        aria-label={t("recent.dismiss")}
+        className="mr-2 ml-1 flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-sm text-muted-foreground transition-colors hover:bg-destructive/15 hover:text-destructive"
+      >
+        ✕
+      </button>
     </li>
   );
 }

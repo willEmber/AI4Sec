@@ -60,6 +60,7 @@ const translations: Record<Locale, Record<string, string>> = {
     "recent.history_header": "Recent runs ({count})",
     "recent.starting": "Starting...",
     "recent.resumed_toast": "Reconnected — showing latest progress",
+    "recent.dismiss": "Dismiss",
 
     // Run page
     "run.mode": "Mode",
@@ -162,6 +163,7 @@ const translations: Record<Locale, Record<string, string>> = {
     "recent.history_header": "最近运行（{count}）",
     "recent.starting": "启动中...",
     "recent.resumed_toast": "已重新连接 — 已显示最新进度",
+    "recent.dismiss": "清除",
 
     // Run page
     "run.mode": "模式",

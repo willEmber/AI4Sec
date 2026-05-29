@@ -43,6 +43,29 @@ def _get_graph() -> CompiledStateGraph:
 _VALID_INPUT_MODES = {"snap", "lens", "sphere", "auto"}
 _MAX_QUESTION_LEN = 2000
 
+# A run still pending/running past this many seconds has lost its owning
+# background task (the process restarted, or it hung well past the 30-min SSE
+# window), so it can never finish on its own. It is reconciled to 'failed' on
+# read so the recent-runs banner stops showing zombies. Comfortably beyond any
+# legitimate run, which the SSE stream caps at 1800s.
+_STALE_RUN_SECONDS = 3600
+
+# Never surface runs older than this in the recent list — older history is not
+# useful for recovery and only clutters the UI.
+_RECENT_RUN_DAYS = 7
+
+
+async def _reconcile_stale_runs() -> None:
+    """Mark abandoned pending/running runs as failed (self-healing on read)."""
+    await db.execute(
+        "UPDATE runs SET status = 'failed', "
+        "error_msg = 'Interrupted (task no longer running)', "
+        "finished_at = datetime('now') "
+        "WHERE status IN ('pending', 'running') "
+        "AND started_at < datetime('now', ?)",
+        (f"-{_STALE_RUN_SECONDS} seconds",),
+    )
+
 
 @router.post("/runs", response_model=RunResponse)
 @limiter.limit("3/minute")
@@ -186,9 +209,19 @@ async def list_recent_runs(
     When `active_only=true`, only pending/running runs are returned —
     used by the upload page banner to surface tasks the user navigated
     away from. Declared before `/runs/{run_id}` so the literal path wins.
+
+    Abandoned runs are reconciled to 'failed' first, and only runs from the
+    last ``_RECENT_RUN_DAYS`` days are returned, so stale tasks never linger
+    as perpetual "running" entries.
     """
     limit = max(1, min(limit, 100))
-    where = "WHERE r.status IN ('pending', 'running')" if active_only else ""
+    await _reconcile_stale_runs()
+
+    conds = ["r.started_at >= datetime('now', ?)"]
+    params: list[Any] = [f"-{_RECENT_RUN_DAYS} days"]
+    if active_only:
+        conds.append("r.status IN ('pending', 'running')")
+    where = "WHERE " + " AND ".join(conds)
     rows = await db.fetch_all(
         f"""
         SELECT r.run_id, r.paper_id, COALESCE(p.title, '') AS paper_title,
@@ -201,7 +234,7 @@ async def list_recent_runs(
          ORDER BY r.started_at DESC
          LIMIT ?
         """,
-        (limit,),
+        (*params, limit),
     )
     return [RecentRunResponse(**r) for r in rows]
 
@@ -222,6 +255,34 @@ async def get_run_output(request: Request, run_id: str):
     if not row:
         raise HTTPException(status_code=404, detail="Run output not found")
     return RunOutputResponse(**row)
+
+
+@router.post("/runs/{run_id}/dismiss", response_model=RunResponse)
+@limiter.limit("30/minute")
+async def dismiss_run(request: Request, run_id: str):
+    """Manually clear a pending/running run the user abandoned.
+
+    Marks the run failed so it leaves the active banner, and tears down any
+    live SSE queue. Already-finished runs are returned unchanged.
+    """
+    row = await db.fetch_one("SELECT status FROM runs WHERE run_id = ?", (run_id,))
+    if not row:
+        raise HTTPException(status_code=404, detail="Run not found")
+
+    if row["status"] in ("pending", "running"):
+        await db.execute(
+            "UPDATE runs SET status = 'failed', error_msg = 'Dismissed by user', "
+            "finished_at = datetime('now') WHERE run_id = ?",
+            (run_id,),
+        )
+        queue = _run_queues.pop(run_id, None)
+        if queue is not None:
+            await queue.put({"event": "error", "data": {"error": "Dismissed by user"}})
+            await queue.put(None)
+        logger.info(f"[run:{run_id}] Dismissed by user")
+
+    updated = await db.fetch_one("SELECT * FROM runs WHERE run_id = ?", (run_id,))
+    return RunResponse(**updated)
 
 
 @router.get("/runs/{run_id}/stream")

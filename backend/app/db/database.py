@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import Any
 
 import aiosqlite
+
+logger = logging.getLogger("scholar.db")
 
 _SCHEMA_PATH = Path(__file__).parent / "schema.sql"
 _db_path: Path | None = None
@@ -62,13 +65,31 @@ async def init_db() -> None:
                 await db.commit()
             except Exception:
                 pass  # column already exists
+        for index_sql in (
+            "CREATE INDEX IF NOT EXISTS idx_runs_status_started ON runs(status, started_at DESC)",
+            "CREATE INDEX IF NOT EXISTS idx_runs_started ON runs(started_at DESC)",
+        ):
+            try:
+                await db.execute(index_sql)
+                await db.commit()
+            except Exception:
+                logger.exception("Failed to create runs index")
+        # Reconcile abandoned runs: any run still pending/running at startup lost
+        # its owning background task when the previous process exited, so it can
+        # never finish. Mark them failed to avoid zombie "running" entries that
+        # would otherwise linger in the recent-runs banner forever.
         try:
-            await db.execute(
-                "CREATE INDEX IF NOT EXISTS idx_runs_status_started ON runs(status, started_at DESC)"
+            cursor = await db.execute(
+                "UPDATE runs SET status = 'failed', "
+                "error_msg = 'Interrupted (server restarted)', "
+                "finished_at = datetime('now') "
+                "WHERE status IN ('pending', 'running')"
             )
             await db.commit()
+            if cursor.rowcount:
+                logger.info("Reconciled %d interrupted run(s) on startup", cursor.rowcount)
         except Exception:
-            pass
+            logger.exception("Failed to reconcile interrupted runs on startup")
         # Migrate mineru_parses table: add remote poll diagnostics.
         for col, col_def in [
             ("remote_batch_id", "TEXT DEFAULT ''"),
