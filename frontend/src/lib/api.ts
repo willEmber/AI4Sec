@@ -39,10 +39,6 @@ export async function getPaper(paperId: string): Promise<PaperResponse> {
   return request(`/papers/${paperId}`);
 }
 
-export async function listPapers(): Promise<PaperResponse[]> {
-  return request("/papers");
-}
-
 export async function createRun(body: RunCreate): Promise<RunResponse> {
   return request("/runs", {
     method: "POST",
