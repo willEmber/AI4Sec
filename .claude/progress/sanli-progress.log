@@ -77,3 +77,17 @@
 
 涉及文件：
   - backend/app/db/schema.sql：删除内联 idx_runs_owner_started 索引并加注释说明其须在 database.py 列迁移后创建。
+
+[2026-05-29]
+用户输入：现有的lens依旧存在设计生硬，且没有实际信息量（./Attention_Is_All_You_Need_lens.md）；根据./paperread_prompt.md中的提示词对lens模式进行改良，也可以搜索相关项目的设计参考
+完成：Logic Lens 模式改良（按 paperread_prompt.md 阅读框架重构 + 修复信息量根因） (CC)
+  - 提示词由生硬的 6 段工程清单（问题设定/方法/公式/算法/复现清单/可靠性）重构为面向读者的 4 部分：概览与动机 → 方法深读 → 实验与结果 → 批判性评估；强调主次取舍、深度优先、结果须解读而非罗列、反对“未报告”填充
+  - 新增图表说明能力：抽取图片 caption（首次引用时用文字解释图）；并向 lens 注入 venue/年份/SCI/CCF 出版元数据（此前仅 snap 有）
+  - 修复信息量根因：实验抽取此前仅按叶子标题匹配，导致 Attention 论文“5 Training”下的 Adam/warmup/batch/P100/label-smoothing 全部漏抽而显示“未报告”。改为按章节编号重建祖先链（5.3 Optimizer → 继承“5 Training”），并补充 training/dataset 关键词；新增 abstract/intro/related/conclusion 框架抽取；上调上下文配额
+  - 修复解析器 bug：MinerU v2 的图/表标题存于 image_caption/table_caption（list 形式），原解析器读的是 img_caption 故全部丢弃。改为读取正确键并扁平化 list，37/62 图片标题与表标题现可进入上下文（影响全模式）
+  - 校验：全量 import OK、py_compile OK、24 项后端测试全部通过；对 5 篇缓存论文做 run_logic_lens 干跑（桩 LLM）无报错，重解析验证图/表标题已贯通
+  - 同步更新 evidence-card 槽位（LENS_SLOTS）与 final_json 的 num_figures
+
+涉及文件：
+  - backend/app/workflows/lens_subgraph.py：重写 LENS_SYSTEM_PROMPT 与 LENS_SLOTS；新增 _section_match_keys/_extract_framing_section/_extract_figures；改 _extract_method_section/_extract_experiment_section 为祖先链匹配；上下文加入框架/图表/出版元数据并调高配额
+  - backend/app/services/paper_ir.py：新增 _coerce_caption；图片读取 image_caption/image_footnote、表格读取 table_caption 并入正文

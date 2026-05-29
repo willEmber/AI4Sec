@@ -9,6 +9,20 @@ from app.models.paper_ir import Block, PaperIR, Section
 from app.services.qa_retrieval import store_paper_nodes
 
 
+def _coerce_caption(value: object) -> str:
+    """Normalize a MinerU caption field to a single trimmed string.
+
+    MinerU stores ``image_caption`` / ``table_caption`` / ``*_footnote`` as a
+    list of strings (v2 format) or occasionally a plain string. Either shape is
+    flattened to one space-joined string; empty/missing yields ``""``.
+    """
+    if not value:
+        return ""
+    if isinstance(value, (list, tuple)):
+        return " ".join(str(v).strip() for v in value if str(v).strip()).strip()
+    return str(value).strip()
+
+
 def _find_content_list(output_dir: Path) -> Path:
     """Find content_list.json in MinerU output directory.
 
@@ -113,11 +127,17 @@ def parse_content_list(output_dir: Path, paper_id: str) -> PaperIR:
         if block_type in ("header", "footer", "page_number"):
             continue
 
-        # Handle different content types
+        # Handle different content types.
+        # MinerU v2 uses ``image_caption`` / ``table_caption`` (lists); older
+        # output used ``img_caption``. Read both so captions are not dropped.
         if block_type == "image":
-            text = item.get("img_caption", "") or item.get("text", "") or "[image]"
+            caption = _coerce_caption(item.get("image_caption") or item.get("img_caption"))
+            footnote = _coerce_caption(item.get("image_footnote") or item.get("img_footnote"))
+            text = " ".join(p for p in (caption, footnote) if p) or item.get("text", "") or "[image]"
         elif block_type == "table":
-            text = item.get("table_body", "") or item.get("text", "") or item.get("html", "")
+            caption = _coerce_caption(item.get("table_caption"))
+            body = item.get("table_body", "") or item.get("text", "") or item.get("html", "")
+            text = f"{caption}\n{body}".strip() if caption else body
 
         if isinstance(bbox, (list, tuple)):
             bbox = [float(x) for x in bbox]

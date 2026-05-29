@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import time
 from typing import Any
 
@@ -16,18 +17,52 @@ from app.workflows.state import MainGraphState
 
 logger = logging.getLogger("scholar.graph")
 
-# Slot names exposed to the evidence extractor. Aligned with the 6 sections in
-# the Lens system prompt plus the structural ``results_table`` slot so tables
-# can be matched independently of pure prose claims.
+# Slot names exposed to the evidence extractor. Aligned with the four parts of
+# the reader-oriented Lens prompt (overview/motivation → method → experiments →
+# critical assessment) so the second LLM call can map quotes back to a section.
 LENS_SLOTS: list[str] = [
-    "problem_setup",
-    "architecture",
+    "motivation",
+    "contribution",
+    "method",
     "equation",
     "algorithm",
-    "reproduction",
-    "results_table",
-    "reliability",
+    "figure",
+    "dataset_metric",
+    "results",
+    "limitation",
 ]
+
+_SECTION_NUM_RE = re.compile(r"^\s*(\d+(?:\.\d+)*)")
+
+
+def _section_match_keys(paper_ir: PaperIR) -> dict[str, str]:
+    """Map each ``section.title`` to a lowercased match string that also includes
+    the titles of its numeric ancestors.
+
+    MinerU sometimes flattens heading levels, collapsing ``section_path`` to the
+    leaf (e.g. ``5.3 Optimizer`` loses its ``5 Training`` parent). We rebuild the
+    ancestor chain from section numbering so a sub-section inherits its parent's
+    keyword matches — e.g. ``5.3 Optimizer`` then matches the ``training`` keyword
+    and its optimizer/batch/hardware details are no longer dropped.
+    """
+    num_to_title: dict[str, str] = {}
+    for section in paper_ir.sections:
+        m = _SECTION_NUM_RE.match(section.title)
+        if m:
+            num_to_title[m.group(1)] = section.title
+
+    keys: dict[str, str] = {}
+    for section in paper_ir.sections:
+        titles = [section.title]
+        m = _SECTION_NUM_RE.match(section.title)
+        if m:
+            parts = m.group(1).split(".")
+            for i in range(1, len(parts)):
+                anc_title = num_to_title.get(".".join(parts[:i]))
+                if anc_title:
+                    titles.append(anc_title)
+        keys[section.title] = " ".join(titles).lower()
+    return keys
 
 
 def _extract_equations(paper_ir: PaperIR) -> list[dict[str, Any]]:
@@ -73,74 +108,138 @@ def _extract_tables(paper_ir: PaperIR) -> list[dict[str, Any]]:
 
 
 def _extract_method_section(paper_ir: PaperIR) -> str:
-    """Extract text from method-related sections."""
-    method_keywords = {"method", "approach", "model", "framework", "architecture", "proposed"}
-    parts = []
+    """Extract method-related text.
+
+    Matches each section against an ancestor-aware key so nested sub-sections
+    (e.g. ``3.2.1 Scaled Dot-Product Attention``) inherit the match from their
+    parent (``3 Model Architecture``).
+    """
+    method_keywords = {
+        "method", "approach", "model", "framework", "architecture",
+        "proposed", "algorithm", "implementation", "design",
+    }
+    match_keys = _section_match_keys(paper_ir)
+    parts: list[str] = []
     for section in paper_ir.sections:
-        if any(kw in section.title.lower() for kw in method_keywords):
-            for block in section.blocks:
-                if block.type in ("text", "title", "list", "equation"):
-                    parts.append(f"{block.text.strip()} [p.{block.page_idx + 1}]")
+        key = match_keys.get(section.title, section.title.lower())
+        if not any(kw in key for kw in method_keywords):
+            continue
+        for block in section.blocks:
+            if block.type in ("text", "title", "list", "equation"):
+                text = block.text.strip()
+                if text:
+                    parts.append(f"{text} [p.{block.page_idx + 1}]")
     return "\n".join(parts)
 
 
 def _extract_experiment_section(paper_ir: PaperIR) -> str:
-    """Extract text from experiment-related sections."""
-    exp_keywords = {"experiment", "evaluation", "result", "empirical", "ablation", "setup"}
-    parts = []
+    """Extract experiment / training / results text.
+
+    Includes ``training`` and ``dataset`` keywords and matches against an
+    ancestor-aware section key, so reproduction details (optimizer, batch size,
+    hardware, schedule) that papers nest under a "Training" section are captured
+    instead of surfacing as "not reported".
+    """
+    exp_keywords = {
+        "experiment", "evaluation", "result", "empirical", "ablation",
+        "setup", "training", "implementation", "dataset", "benchmark",
+    }
+    match_keys = _section_match_keys(paper_ir)
+    parts: list[str] = []
     for section in paper_ir.sections:
-        if any(kw in section.title.lower() for kw in exp_keywords):
-            for block in section.blocks:
-                if block.type in ("text", "title", "list", "table"):
-                    parts.append(f"{block.text.strip()} [p.{block.page_idx + 1}]")
+        key = match_keys.get(section.title, section.title.lower())
+        if not any(kw in key for kw in exp_keywords):
+            continue
+        for block in section.blocks:
+            if block.type in ("text", "title", "list", "table"):
+                text = block.text.strip()
+                if text:
+                    parts.append(f"{text} [p.{block.page_idx + 1}]")
     return "\n".join(parts)
 
 
-LENS_SYSTEM_PROMPT = """You are a deep technical paper analysis assistant. Produce a "Logic Lens" analysis with exactly these 6 sections:
+def _extract_framing_section(paper_ir: PaperIR) -> str:
+    """Extract abstract / introduction / related-work / conclusion text.
 
-## 1. Problem Setup
-- Input/output specification
-- Core assumptions
-- Symbol table (if applicable, in LaTeX)
+    Feeds the *Overview & Motivation* part of the report (background, the gap in
+    prior work, and the paper's contributions) — material the method/experiment
+    extractors do not cover.
+    """
+    framing_keywords = {
+        "abstract", "introduction", "related work", "related", "background",
+        "motivation", "conclusion", "conclusions", "summary", "discussion",
+    }
+    match_keys = _section_match_keys(paper_ir)
+    parts: list[str] = []
+    for section in paper_ir.sections:
+        key = match_keys.get(section.title, section.title.lower())
+        if not any(kw in key for kw in framing_keywords):
+            continue
+        for block in section.blocks:
+            if block.type in ("text", "title", "list"):
+                text = block.text.strip()
+                if text:
+                    parts.append(f"{text} [p.{block.page_idx + 1}]")
+    return "\n".join(parts)
 
-## 2. Method Overview
-- High-level pipeline description
-- Key module responsibilities
-- Flow description
 
-## 3. Formula Analysis
-For each key formula:
-- The formula in LaTeX ($$...$$)
-- Variable meanings
-- Derivation logic
-- Difference from baselines
+def _extract_figures(paper_ir: PaperIR) -> list[dict[str, Any]]:
+    """Extract figure/image captions with page + section context.
 
-## 4. Algorithm Analysis
-- Step-by-step pseudocode/procedure explanation
-- Per-line or per-step annotation
-- Complexity discussion if relevant
+    MinerU stores each figure's caption as the image block's ``text``; empty or
+    placeholder captions are skipped so the LLM only sees figures it can actually
+    describe to the reader.
+    """
+    figures: list[dict[str, Any]] = []
+    for block in paper_ir.blocks:
+        if block.type != "image":
+            continue
+        caption = block.text.strip()
+        if not caption or caption == "[image]":
+            continue
+        figures.append({
+            "text": caption,
+            "page": block.page_idx + 1,
+            "section": block.section_path,
+            "bbox": block.bbox,
+        })
+    return figures
 
-## 5. Experiment Reproduction Checklist
-- Datasets used
-- Preprocessing steps
-- Training details (optimizer, LR, schedule, batch size)
-- Key hyperparameters
-- Evaluation metrics
-- Hardware requirements
 
-## 6. Reliability Assessment
-- Are ablations sufficient?
-- Statistical significance?
-- Potential confounds?
-- Missing comparisons?
+LENS_SYSTEM_PROMPT = """You are an expert research-paper analyst. Produce a "Logic Lens": a deep, single-paper read-through that makes a researcher truly understand HOW the work operates and WHY it works — not a surface summary. Explain mechanisms, interpret results, and think critically.
+
+Organize the analysis into the four parts below. Keep the four top-level headings, but ADAPT the sub-points to THIS paper: expand what is central, condense what is auxiliary, and drop sub-points that do not apply rather than forcing them. A theory paper, an empirical study, and a systems paper should not read identically.
+
+## 1. Overview & Motivation
+- **Problem & why it matters**: the concrete problem, why it is important, and the specific gap or limitation in prior work that this paper targets.
+- **Core contributions**: the main contributions / key findings, and the specific problem each one addresses.
+- If the context provides venue, year, or ranking metadata, state it briefly here.
+
+## 2. Method Deep-Dive
+This is the heart of the analysis — be thorough and concrete here.
+- **Core idea & intuition**: state the central insight in plain language first — *why* the approach should work — before the formalism.
+- **Pipeline & modules**: the end-to-end data flow and what each major component is responsible for.
+- **Key formulas**: for the important equations only, give the formula in LaTeX, the meaning of its variables (add a short symbol table if notation is heavy), the derivation logic / intuition, and how it differs from prior approaches. Skip trivial or boilerplate equations.
+- **Key algorithm / procedure**: a step-by-step walkthrough with per-step annotation; discuss complexity when it is relevant.
+- **Key figures**: the first time you refer to a figure, briefly explain in prose what it depicts (based on its caption and surrounding text) so the reader grasps it without seeing the image.
+
+## 3. Experiments & Results
+- **Datasets & metrics**: which datasets and evaluation metrics are used, what each metric actually measures, and why they are appropriate for the task.
+- **Setup**: the training / experimental details that ARE reported (optimizer, schedule, key hyperparameters, hardware). Report what is present — do not enumerate every missing field.
+- **Results interpretation**: do NOT merely restate numbers. Interpret them in light of the datasets' characteristics, explain what they demonstrate, and draw out the takeaways and what they imply.
+
+## 4. Critical Assessment
+- **Why it works**: the likely sources of the method's effectiveness.
+- **Limitations & risks**: assumptions, potential confounds, and generalization concerns.
+- **Reproducibility**: whether the paper gives enough to reproduce the core results; flag only the genuinely important missing details.
+- **Takeaways & open questions**: what this work enables and the promising directions it suggests.
 
 RULES:
-1. Every claim MUST have a page citation [p.X].
-2. Use LaTeX for ALL mathematical content.
-3. Be thorough but structured.
-4. Don't fabricate - only cite what's in the paper.
-5. If a section, hyperparameter, or experimental detail is not present in the provided context, write `_Not reported in extracted text._` for that bullet instead of inventing values.
-6. Prefer the dedicated `## Method Section` and `## Experiment Section` excerpts over `## Full Paper Text` when both are available — they are more relevant.
+1. Every factual claim MUST carry a page citation in the form [p.X].
+2. Use LaTeX for ALL mathematical content: `$...$` inline and `$$...$$` for display formulas. A display `$$` must start at the left margin (no indentation), with the LaTeX directly inside the delimiters and no extra blank lines.
+3. Prioritize substance and depth on the core method and key results — capture the main points fully; auxiliary details may be condensed. Do not omit valuable content merely to keep the report short.
+4. Do NOT fabricate; state only what the provided context supports. When an important detail is genuinely absent, note it briefly in prose — but do NOT pad the report with "not reported" bullets for every missing field. Information density matters more than checklist completeness.
+5. Prefer the dedicated `## Paper Framing`, `## Method Section`, `## Experiment Section`, and `## Figures` excerpts over `## Full Paper Text`; the targeted excerpts are the most relevant.
 """
 
 
@@ -152,39 +251,62 @@ async def run_logic_lens(state: MainGraphState) -> dict[str, Any]:
     paper_ir = PaperIR.model_validate_json(state["paper_ir_json"])
     logger.info(f"[{paper_id}] lens: Parsed PaperIR — {len(paper_ir.sections)} sections, {len(paper_ir.blocks)} blocks")
 
+    framing_text = _extract_framing_section(paper_ir)
     equations = _extract_equations(paper_ir)
     algorithms = _extract_algorithms(paper_ir)
     tables = _extract_tables(paper_ir)
+    figures = _extract_figures(paper_ir)
     method_text = _extract_method_section(paper_ir)
     experiment_text = _extract_experiment_section(paper_ir)
     logger.info(
-        f"[{paper_id}] lens: Extracted — equations={len(equations)} algorithms={len(algorithms)} "
-        f"tables={len(tables)} method={len(method_text)} chars experiment={len(experiment_text)} chars"
+        f"[{paper_id}] lens: Extracted — framing={len(framing_text)} chars "
+        f"equations={len(equations)} algorithms={len(algorithms)} tables={len(tables)} "
+        f"figures={len(figures)} method={len(method_text)} chars experiment={len(experiment_text)} chars"
     )
 
     # Build context for LLM.
-    # When method/experiment sections are recognized we route them through
-    # dedicated context sections; the generic ``Full Paper Text`` shrinks to
-    # a small background buffer so the prompt budget covers the targeted
-    # excerpts that actually drive Sections 2/5/6 of the report.
+    # Targeted excerpts (framing / method / experiment / figures) lead the
+    # context because they drive the four report parts; the generic
+    # ``Full Paper Text`` is a smaller catch-all at the end for any section the
+    # keyword-based extractors missed.
     context_parts: list[str] = []
 
     if paper_ir.title:
         context_parts.append(f"# Paper: {paper_ir.title}")
 
-    method_cap = 8000
-    experiment_cap = 8000
-    has_targeted = bool(method_text.strip() or experiment_text.strip())
-    full_text_cap = 4000 if has_targeted else 12000
+    # Publication metadata (venue / year / SCI / CCF) for the Overview part.
+    pub_rank_json = state.get("pub_rank_json", "")
+    if pub_rank_json:
+        try:
+            pr = json.loads(pub_rank_json)
+            meta_parts: list[str] = []
+            if pr.get("venue"):
+                meta_parts.append(f"Published in: {pr['venue']}")
+            if pr.get("year"):
+                meta_parts.append(f"Year: {pr['year']}")
+            if pr.get("sci"):
+                meta_parts.append(f"SCI Tier: {pr['sci']}")
+            if pr.get("ccf"):
+                meta_parts.append(f"CCF Rating: {pr['ccf']}")
+            if meta_parts:
+                context_parts.append("[Publication Info: " + " | ".join(meta_parts) + "]")
+        except (json.JSONDecodeError, TypeError):
+            pass
 
-    all_text = []
-    for block in paper_ir.blocks:
-        if block.type in ("text", "title", "list"):
-            all_text.append(f"{block.text.strip()} [p.{block.page_idx + 1}]")
-    full_text = "\n".join(all_text)
-    if len(full_text) > full_text_cap:
-        full_text = full_text[:full_text_cap] + "\n[...truncated...]"
-    context_parts.append(f"## Full Paper Text\n{full_text}")
+    framing_cap = 7000
+    method_cap = 10000
+    experiment_cap = 10000
+    figures_cap = 3000
+    has_targeted = bool(framing_text.strip() or method_text.strip() or experiment_text.strip())
+    full_text_cap = 5000 if has_targeted else 14000
+
+    if framing_text.strip():
+        ft = framing_text
+        if len(ft) > framing_cap:
+            ft = ft[:framing_cap] + "\n[...truncated...]"
+        context_parts.append(
+            f"## Paper Framing (abstract / intro / related work / conclusion)\n{ft}"
+        )
 
     if method_text.strip():
         mt = method_text
@@ -198,6 +320,18 @@ async def run_logic_lens(state: MainGraphState) -> dict[str, Any]:
             et = et[:experiment_cap] + "\n[...truncated...]"
         context_parts.append(f"## Experiment Section\n{et}")
 
+    if figures:
+        fig_lines: list[str] = []
+        for f in figures:
+            cap = f["text"]
+            if len(cap) > 400:
+                cap = cap[:400] + "…"
+            fig_lines.append(f"- [p.{f['page']}] {cap}")
+        fig_text = "\n".join(fig_lines)
+        if len(fig_text) > figures_cap:
+            fig_text = fig_text[:figures_cap] + "\n[...truncated...]"
+        context_parts.append(f"## Figures (captions)\n{fig_text}")
+
     if equations:
         eq_text = "\n".join(f"- {e['text']} [p.{e['page']}]" for e in equations)
         context_parts.append(f"## Extracted Equations\n{eq_text}")
@@ -210,11 +344,20 @@ async def run_logic_lens(state: MainGraphState) -> dict[str, Any]:
         tbl_text = "\n".join(f"- [p.{t['page']}] {t['text'][:500]}" for t in tables)
         context_parts.append(f"## Extracted Tables\n{tbl_text}")
 
+    all_text = []
+    for block in paper_ir.blocks:
+        if block.type in ("text", "title", "list"):
+            all_text.append(f"{block.text.strip()} [p.{block.page_idx + 1}]")
+    full_text = "\n".join(all_text)
+    if len(full_text) > full_text_cap:
+        full_text = full_text[:full_text_cap] + "\n[...truncated...]"
+    context_parts.append(f"## Full Paper Text\n{full_text}")
+
     context = "\n\n".join(context_parts)
     logger.info(
         f"[{paper_id}] lens: Built LLM context — {len(context)} chars total "
-        f"(method={len(method_text)} chars, experiment={len(experiment_text)} chars, "
-        f"full_text_cap={full_text_cap})"
+        f"(framing={len(framing_text)} method={len(method_text)} experiment={len(experiment_text)} "
+        f"figures={len(figures)}, full_text_cap={full_text_cap})"
     )
 
     llm = get_llm_service()
@@ -259,6 +402,7 @@ async def run_logic_lens(state: MainGraphState) -> dict[str, Any]:
             "num_equations": len(equations),
             "num_algorithms": len(algorithms),
             "num_tables": len(tables),
+            "num_figures": len(figures),
             "citation_audit": audit,
             "evidence_pool": evidence_pool,
         }),
