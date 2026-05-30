@@ -19,6 +19,7 @@ from app.models.sphere_models import (
     EdgeType,
     GapIdea,
     KeyHub,
+    LibraryMatch,
     ReadingPath,
     SphereConfig,
     SphereEdge,
@@ -654,6 +655,62 @@ async def step_4_expand_graph_candidates(
         )
     except Exception as e:
         logger.warning(f"[{paper_id}] sphere step 4: paper_search failed: {e}")
+
+    # Library channel — semantically related papers from the user's own Dify
+    # knowledge base. Captured into sphere.library_matches (rendered as its own
+    # section) and, when a hit coincides with a graph node, that node is tagged
+    # LIBRARY. Fault-tolerant and bounded so a slow/unavailable KB never breaks
+    # the run (mirrors the paper_search guard above). Default search method is
+    # fast (full_text) per the project's "fast-first" retrieval choice.
+    _settings = get_settings()
+    if _settings.dify_enabled and _settings.dify_sphere_top_k > 0 and center.title:
+        try:
+            from app.services import dify_client
+
+            def _lib_title(name: str) -> str:
+                base = name.rsplit("/", 1)[-1]
+                base = re.sub(r"\.(md|markdown|pdf)$", "", base, flags=re.IGNORECASE)
+                base = re.sub(r"(_paper)?_clean$", "", base, flags=re.IGNORECASE)
+                return base.replace("_", " ").strip()
+
+            records = await dify_client.search_records(
+                center.title,
+                top_k=_settings.dify_sphere_top_k,
+                search_method=_settings.dify_search_method,
+            )
+            seen_docs: set[str] = set()
+            for rec in records:
+                doc_id = rec.get("document_id", "")
+                if not doc_id or doc_id in seen_docs:
+                    continue
+                seen_docs.add(doc_id)
+                title = _lib_title(rec.get("document_name", ""))
+                if not title or _is_center_paper(center, title, ""):
+                    continue
+                try:
+                    score = float(rec.get("score") or 0.0)
+                except (TypeError, ValueError):
+                    score = 0.0
+                sphere.library_matches.append(LibraryMatch(
+                    document_id=doc_id,
+                    title=title,
+                    score=score,
+                    snippet=(rec.get("content", "") or "").strip()[:300],
+                ))
+                # If this paper already surfaced via another source, tag the node.
+                node_id = make_node_id(title=title)
+                existing = sphere.nodes.get(node_id)
+                if existing is not None:
+                    if CandidateSource.LIBRARY not in existing.sources:
+                        existing.sources.append(CandidateSource.LIBRARY)
+                    if not existing.library_document_id:
+                        existing.library_document_id = doc_id
+            logger.info(
+                f"[{paper_id}] sphere step 4: library -> {len(sphere.library_matches)} "
+                f"matches from KB"
+            )
+        except Exception as e:
+            logger.warning(f"[{paper_id}] sphere step 4: library channel failed: {e}")
 
     # Enforce candidate_cap by trimming lowest-cited_by_count
     cap = sphere.config.candidate_cap
@@ -1397,6 +1454,8 @@ async def step_10_render_output(
             "hubs_h": "## 关键枢纽论文\n", "gaps_h": "## 研究空白与想法\n",
             "paths_h": "## 推荐阅读路径\n", "cited_by": "被引", "more": "篇",
             "evidence_from": "证据来源", "path_suffix": "路径", "unknown": "[未知论文]",
+            "library_h": "## 你的文献库中的相关工作\n",
+            "library_intro": "以下论文来自你自己的知识库,与本文语义相关:\n",
         }
         if zh
         else {
@@ -1406,6 +1465,8 @@ async def step_10_render_output(
             "hubs_h": "## Key Hub Papers\n", "gaps_h": "## Research Gaps & Ideas\n",
             "paths_h": "## Suggested Reading Paths\n", "cited_by": "cited by", "more": "more",
             "evidence_from": "Evidence from", "path_suffix": "Path", "unknown": "[unknown paper]",
+            "library_h": "## Related Work in Your Library\n",
+            "library_intro": "These papers from your own knowledge base are semantically related to this paper:\n",
         }
     )
 
@@ -1496,6 +1557,16 @@ async def step_10_render_output(
                     md_parts.append(f"{j}. {node.title}{year_str}\n")
             md_parts.append("\n")
 
+    # ── Section 7: Related work in the user's own library (Dify KB) ──
+    if sphere.library_matches:
+        md_parts.append(t["library_h"])
+        md_parts.append(t["library_intro"])
+        for m in sphere.library_matches[:15]:
+            label = f"[{m.title}](/library?doc={m.document_id})" if m.document_id else m.title
+            score = f" ({m.score:.2f})" if m.score and m.score > 0 else ""
+            md_parts.append(f"- {label}{score}\n")
+        md_parts.append("\n")
+
     markdown = "".join(md_parts)
 
     # Build JSON output
@@ -1507,6 +1578,8 @@ async def step_10_render_output(
         "num_edges": len(sphere.edges),
         "num_layer1": len(sphere.layer1_node_ids),
         "num_layer2": len(sphere.layer2_node_ids),
+        "num_library_matches": len(sphere.library_matches),
+        "library_matches": [m.model_dump() for m in sphere.library_matches],
         "sphere_output": output.model_dump(),
     }, ensure_ascii=False)
 
