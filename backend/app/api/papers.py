@@ -51,6 +51,10 @@ async def upload_paper(request: Request, file: UploadFile):
     content = b"".join(chunks)
     if not content:
         raise HTTPException(status_code=400, detail="Empty file")
+    # A .pdf extension is trivially spoofed; require the real PDF signature so
+    # non-PDF payloads are rejected before they reach MinerU / storage.
+    if not content[:1024].lstrip().startswith(b"%PDF"):
+        raise HTTPException(status_code=400, detail="File is not a valid PDF")
 
     paper_id = hashlib.sha1(content).hexdigest()
     settings = get_settings()
@@ -135,10 +139,3 @@ async def get_paper_image(request: Request, paper_id: str, filename: str):
 
     media_type = _IMAGE_MEDIA_TYPES.get(match.suffix.lower(), "application/octet-stream")
     return FileResponse(path=str(match), media_type=media_type)
-
-
-@router.get("/papers", response_model=list[PaperResponse])
-@limiter.limit("20/minute")
-async def list_papers(request: Request):
-    rows = await db.fetch_all("SELECT * FROM papers ORDER BY created_at DESC")
-    return [PaperResponse(**r) for r in rows]

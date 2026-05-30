@@ -11,6 +11,7 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from langgraph.graph.state import CompiledStateGraph
 
+from app.config import get_settings
 from app.db import database as db
 from app.rate_limit import limiter
 from app.models.schemas import RecentRunResponse, RunCreate, RunOutputResponse, RunResponse
@@ -81,6 +82,17 @@ async def create_run(request: Request, req: RunCreate):
     question = (req.question or "").strip()[:_MAX_QUESTION_LEN]
     owner_token = (req.owner_token or "").strip()[:_MAX_OWNER_TOKEN_LEN]
 
+    # Only allow models the operator explicitly configured (THINKING_MODELNAME).
+    # An unknown model name is dropped to the default rather than forwarded to
+    # the LLM backend, so a caller can't point a run at an arbitrary/unauthorised
+    # (e.g. far more expensive) model. When no list is configured we can't
+    # validate, so pass through unchanged.
+    allowed_models = get_settings().thinking_models
+    llm_model = (req.llm_model or "").strip()
+    if llm_model and allowed_models and llm_model not in allowed_models:
+        logger.warning(f"[run] Rejected unknown llm_model={llm_model!r}; using default")
+        llm_model = ""
+
     if mode == "auto" and not question:
         raise HTTPException(status_code=400, detail="Smart Q&A mode requires a non-empty question")
 
@@ -88,18 +100,18 @@ async def create_run(request: Request, req: RunCreate):
     await db.execute(
         "INSERT INTO runs (run_id, paper_id, mode, llm_model, language, status, user_question, owner_token) "
         "VALUES (?, ?, ?, ?, ?, 'pending', ?, ?)",
-        (run_id, req.paper_id, mode, req.llm_model, language, question, owner_token),
+        (run_id, req.paper_id, mode, llm_model, language, question, owner_token),
     )
 
     # Create queue for SSE
     _run_queues[run_id] = asyncio.Queue()
 
     logger.info(
-        f"[run:{run_id}] Created run paper={req.paper_id} mode={mode} model={req.llm_model or '(default)'} lang={language} q={'(yes)' if question else '(no)'}"
+        f"[run:{run_id}] Created run paper={req.paper_id} mode={mode} model={llm_model or '(default)'} lang={language} q={'(yes)' if question else '(no)'}"
     )
 
     # Launch graph in background
-    asyncio.create_task(_execute_run(run_id, req.paper_id, mode, req.llm_model, language, question))
+    asyncio.create_task(_execute_run(run_id, req.paper_id, mode, llm_model, language, question))
 
     row = await db.fetch_one("SELECT * FROM runs WHERE run_id = ?", (run_id,))
     return RunResponse(**row)
