@@ -16,6 +16,26 @@ class RunCreate(BaseModel):
     owner_token: str = ""       # per-browser token; scopes which runs the client sees
 
 
+SearchMethod = Literal["semantic_search", "full_text_search", "hybrid_search"]
+
+
+class LibrarySearchRequest(BaseModel):
+    query: str
+    top_k: int = 10
+    score_threshold: float | None = None
+    search_method: SearchMethod | None = None   # defaults to DIFY_SEARCH_METHOD
+    dataset_id: str = ""                          # empty → project/proxy default dataset
+
+
+class LibraryAskRequest(BaseModel):
+    question: str
+    top_k: int = 10
+    search_method: SearchMethod | None = None   # defaults to DIFY_SEARCH_METHOD
+    language: str = "en"        # en | zh
+    llm_model: str = ""
+    dataset_id: str = ""
+
+
 # --- Response models ---
 
 class PaperResponse(BaseModel):
