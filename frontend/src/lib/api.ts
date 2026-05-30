@@ -6,6 +6,13 @@ import type {
   RunCreate,
   RunResponse,
   RunOutputResponse,
+  LibraryDatasetsResponse,
+  LibraryDocumentsResponse,
+  LibraryMarkdownResponse,
+  LibrarySearchRequest,
+  LibrarySearchResponse,
+  LibraryAskRequest,
+  LibraryAskResponse,
 } from "./types";
 import { getOwnerToken } from "./owner";
 
@@ -82,4 +89,57 @@ export function getPaperPdfUrl(paperId: string): string {
 
 export function getRunStreamUrl(runId: string): string {
   return `${BACKEND_SSE_BASE}/api/runs/${runId}/stream`;
+}
+
+// --- Knowledge base (Dify) ---
+
+export async function listLibraryDatasets(
+  page = 1,
+  limit = 20,
+): Promise<LibraryDatasetsResponse> {
+  const qs = new URLSearchParams({ page: String(page), limit: String(limit) });
+  return request(`/library/datasets?${qs.toString()}`);
+}
+
+export async function listLibraryDocuments(opts: {
+  datasetId?: string;
+  page?: number;
+  limit?: number;
+} = {}): Promise<LibraryDocumentsResponse> {
+  const qs = new URLSearchParams({
+    page: String(opts.page ?? 1),
+    limit: String(opts.limit ?? 20),
+  });
+  if (opts.datasetId) qs.set("dataset_id", opts.datasetId);
+  return request(`/library/documents?${qs.toString()}`);
+}
+
+export async function getLibraryMarkdown(
+  documentId: string,
+  datasetId?: string,
+): Promise<LibraryMarkdownResponse> {
+  const qs = new URLSearchParams();
+  if (datasetId) qs.set("dataset_id", datasetId);
+  const suffix = qs.toString() ? `?${qs.toString()}` : "";
+  return request(`/library/documents/${encodeURIComponent(documentId)}/markdown${suffix}`);
+}
+
+export async function searchLibrary(
+  body: LibrarySearchRequest,
+): Promise<LibrarySearchResponse> {
+  return request("/library/search", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+export async function askLibrary(
+  body: LibraryAskRequest,
+): Promise<LibraryAskResponse> {
+  return request("/library/ask", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
 }
