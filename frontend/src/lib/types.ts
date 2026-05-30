@@ -73,3 +73,99 @@ export interface RunCreate {
   question?: string;  // non-empty only when mode === "auto"
   owner_token?: string;  // injected by the API client; scopes recent-runs visibility
 }
+
+// --- Knowledge base (Dify) ---
+
+export type SearchMethod = "semantic_search" | "full_text_search" | "hybrid_search";
+
+export interface LibraryDataset {
+  id: string;
+  name: string;
+  description?: string;
+  document_count?: number;
+  word_count?: number;
+  created_at?: number;
+  [key: string]: unknown;
+}
+
+export interface LibraryDatasetsResponse {
+  data: LibraryDataset[];
+  has_more?: boolean;
+  total?: number;
+  page?: number;
+  limit?: number;
+}
+
+export interface LibraryDocument {
+  id: string;
+  name: string;
+  word_count?: number;
+  tokens?: number;
+  indexing_status?: string;
+  display_status?: string;
+  enabled?: boolean;
+  created_at?: number;
+  [key: string]: unknown;
+}
+
+export interface LibraryDocumentsResponse {
+  data: LibraryDocument[];
+  has_more?: boolean;
+  total?: number;
+  page?: number;
+  limit?: number;
+}
+
+export interface LibrarySearchRecord {
+  document_id: string;
+  document_name: string;
+  segment_id: string;
+  content: string;
+  score: number | null;
+  metadata?: unknown;
+}
+
+export interface LibrarySearchResponse {
+  query: string;
+  records: LibrarySearchRecord[];
+}
+
+export interface LibraryMarkdownResponse {
+  document_id: string;
+  document_name: string;
+  markdown_file?: string;
+  content: string;
+}
+
+export interface LibrarySource {
+  idx: number;
+  document_id: string;
+  document_name: string;
+  segment_id: string;
+  score: number | null;
+}
+
+export interface LibraryAskResponse {
+  markdown: string;
+  sources: LibrarySource[];
+  blocks_used: number;
+  search_method: string;
+  question: string;
+}
+
+export interface LibrarySearchRequest {
+  query: string;
+  top_k?: number;
+  score_threshold?: number | null;
+  search_method?: SearchMethod | null;
+  dataset_id?: string;
+}
+
+export interface LibraryAskRequest {
+  question: string;
+  top_k?: number;
+  search_method?: SearchMethod | null;
+  language?: string;
+  llm_model?: string;
+  dataset_id?: string;
+}

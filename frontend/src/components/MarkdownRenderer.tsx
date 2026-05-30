@@ -34,6 +34,11 @@ const LEGACY_CITATION_SPAN_RE =
 const PLAIN_CITATION_RE = /\[p\.(\d+)\]/gi;
 const CITATION_HREF_RE = /^#cite-page-(\d+)$/;
 
+// Library (knowledge-base) citations: corpus answers carry document-level
+// `[L1]`, `[L2]`… markers (no page index) that link to a source document.
+const PLAIN_LIB_CITATION_RE = /\[L(\d+)\]/g;
+const LIB_CITATION_HREF_RE = /^#cite-lib-(\d+)$/;
+
 // remark-math only treats `$$...$$` as a display (block) equation when it is
 // separated from the surrounding text by blank lines. LLM output routinely puts
 // each equation on its own line but with no blank line around it, so the whole
@@ -62,15 +67,21 @@ export function normalizeDisplayMath(content: string): string {
 export function prepareCitationMarkdown(content: string): string {
   return content
     .replace(LEGACY_CITATION_SPAN_RE, "[p.$1]")
-    .replace(PLAIN_CITATION_RE, (_match, page: string) => `[[p.${page}]](#cite-page-${page})`);
+    .replace(PLAIN_CITATION_RE, (_match, page: string) => `[[p.${page}]](#cite-page-${page})`)
+    .replace(PLAIN_LIB_CITATION_RE, (_match, idx: string) => `[[L${idx}]](#cite-lib-${idx})`);
 }
 
 interface MarkdownRendererProps {
   content: string;
   onCitationClick?: (page: number) => void;
+  onLibraryCitationClick?: (idx: number) => void;
 }
 
-export default function MarkdownRenderer({ content, onCitationClick }: MarkdownRendererProps) {
+export default function MarkdownRenderer({
+  content,
+  onCitationClick,
+  onLibraryCitationClick,
+}: MarkdownRendererProps) {
   const { t } = useTranslation();
 
   // Normalize display equations to block form first, then keep citations as
@@ -100,6 +111,24 @@ export default function MarkdownRenderer({ content, onCitationClick }: MarkdownR
                   title={t("pdf.jump_to_page", { page: String(page) })}
                 >
                   p.{page}
+                </button>
+              );
+            }
+
+            const libMatch = LIB_CITATION_HREF_RE.exec(href);
+            if (libMatch) {
+              const idx = parseInt(libMatch[1], 10);
+              return (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    onLibraryCitationClick?.(idx);
+                  }}
+                  className="mx-0.5 inline-flex cursor-pointer items-center rounded-md border border-primary/30 bg-accent px-1.5 py-0.5 align-baseline font-mono text-xs font-medium text-primary transition-colors hover:bg-primary hover:text-primary-foreground"
+                  title={t("library.open_doc")}
+                >
+                  L{idx}
                 </button>
               );
             }
