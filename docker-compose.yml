@@ -20,7 +20,7 @@ services:
           "CMD",
           "python",
           "-c",
-          "import urllib.request; urllib.request.urlopen('http://localhost:8000/docs')",
+          "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/models')",
         ]
       interval: 30s
       timeout: 10s
