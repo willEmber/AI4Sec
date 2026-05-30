@@ -51,6 +51,22 @@ class AppSettings(BaseSettings):
     sphere_layer1_cap: int = Field(default=40, alias="SPHERE_LAYER1_CAP")
     sphere_pdf_parse_cap: int = Field(default=0, alias="SPHERE_PDF_PARSE_CAP")
 
+    # --- Dify knowledge base (self-hosted proxy) ---
+    # Base URL of the Dify knowledge API proxy (e.g. http://8.217.68.153:3002).
+    # Empty disables every library feature (see `dify_enabled`); the proxy holds
+    # the real Dify API key server-side, so no key is configured here.
+    dify_api_base: str = Field(default="", alias="DIFY_API_BASE")
+    # Optional explicit dataset id. When empty, the proxy's own default dataset
+    # (DIFY_DEFAULT_DATASET_ID on the proxy) is used via the short `/api/...` paths.
+    dify_default_dataset_id: str = Field(default="", alias="DIFY_DEFAULT_DATASET_ID")
+    # Default retrieval mode. `full_text_search` is fast (~1.5s); `semantic_search`
+    # / `hybrid_search` are higher quality but slow (8B reranker, tens of seconds).
+    dify_search_method: str = Field(default="full_text_search", alias="DIFY_SEARCH_METHOD")
+    dify_timeout_seconds: int = Field(default=90, alias="DIFY_TIMEOUT_SECONDS")
+    # How many library candidates Research Sphere pulls per run (0 disables the
+    # library channel in Sphere while leaving the standalone library API on).
+    dify_sphere_top_k: int = Field(default=10, alias="DIFY_SPHERE_TOP_K")
+
     # --- server ---
     host: str = "0.0.0.0"
     port: int = 8000
@@ -82,6 +98,11 @@ class AppSettings(BaseSettings):
         """First configured model — used when the caller does not pick one."""
         models = self.thinking_models
         return models[0] if models else ""
+
+    @property
+    def dify_enabled(self) -> bool:
+        """Whether the Dify knowledge base integration is configured."""
+        return bool(self.dify_api_base.strip())
 
 
 @lru_cache(maxsize=1)
