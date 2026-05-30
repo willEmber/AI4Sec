@@ -22,6 +22,7 @@ class CandidateSource(str, Enum):
     S2_CITED_BY = "s2_cited_by"
     S2_RECO = "s2_reco"
     QUERY_SEARCH = "query_search"
+    LIBRARY = "library"  # matched from the user's own Dify knowledge base
 
 
 def make_node_id(doi: str = "", title: str = "") -> str:
@@ -54,6 +55,8 @@ class SphereNode(BaseModel):
     mineru_parsed: bool = False
     source: CandidateSource = CandidateSource.SEED_REF
     sources: list[CandidateSource] = Field(default_factory=list)
+    # Dify document id when this node also exists in the user's knowledge base.
+    library_document_id: str = ""
 
     # Scoring
     score_text: float = 0.0
@@ -145,6 +148,19 @@ class ReadingPath(BaseModel):
     node_ids: list[str] = Field(default_factory=list)
 
 
+class LibraryMatch(BaseModel):
+    """A paper from the user's own Dify knowledge base related to the center paper.
+
+    Captured directly in step 4 and rendered as its own section, independent of
+    the citation-graph scoring/cap pipeline (so it always survives to the output).
+    """
+
+    document_id: str = ""
+    title: str = ""
+    score: float = 0.0
+    snippet: str = ""
+
+
 class SphereOutput(BaseModel):
     sphere_overview: str = ""
     themes: list[ThemeCluster] = Field(default_factory=list)
@@ -163,4 +179,5 @@ class SphereState(BaseModel):
     pdf_refs: list[dict[str, str]] = Field(default_factory=list)
     layer1_node_ids: list[str] = Field(default_factory=list)
     layer2_node_ids: list[str] = Field(default_factory=list)
+    library_matches: list[LibraryMatch] = Field(default_factory=list)
     output: SphereOutput = Field(default_factory=SphereOutput)
