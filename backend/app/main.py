@@ -90,6 +90,7 @@ def create_app() -> FastAPI:
     )
 
     from app.api.admin import router as admin_router
+    from app.api.library import router as library_router
     from app.api.papers import router as papers_router
     from app.api.runs import router as runs_router
     from app.api.system import router as system_router
@@ -98,6 +99,7 @@ def create_app() -> FastAPI:
     app.include_router(runs_router, prefix="/api")
     app.include_router(admin_router, prefix="/api")
     app.include_router(system_router, prefix="/api")
+    app.include_router(library_router, prefix="/api")
 
     return app
 
