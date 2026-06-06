@@ -8,13 +8,14 @@ import uuid
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import StreamingResponse
+from fastapi.responses import Response, StreamingResponse
 from langgraph.graph.state import CompiledStateGraph
 
 from app.config import get_settings
 from app.db import database as db
 from app.rate_limit import limiter
 from app.models.schemas import RecentRunResponse, RunCreate, RunOutputResponse, RunResponse
+from app.services import zotero_export
 from app.workflows.main_graph import build_main_graph
 from app.workflows.progress import emit_progress
 from app.workflows.state import MainGraphState
@@ -274,6 +275,47 @@ async def get_run_output(request: Request, run_id: str):
     if not row:
         raise HTTPException(status_code=404, detail="Run output not found")
     return RunOutputResponse(**row)
+
+
+@router.get("/runs/{run_id}/zotero-bundle")
+@limiter.limit("20/minute")
+async def get_run_zotero_bundle(request: Request, run_id: str):
+    """Download a Zotero RDF import bundle (.zip) for this run.
+
+    The bundle holds a ``.rdf`` (the paper as a journalArticle, the AI report as
+    a child note) plus the original PDF under ``files/``. The user runs
+    File → Import on the ``.rdf`` to add the item, note, and stored PDF straight
+    into a *local* Zotero — no Zotero cloud account or running app required.
+    """
+    run = await db.fetch_one("SELECT * FROM runs WHERE run_id = ?", (run_id,))
+    if not run:
+        raise HTTPException(status_code=404, detail="Run not found")
+    paper = await db.fetch_one(
+        "SELECT * FROM papers WHERE paper_id = ?", (run["paper_id"],)
+    )
+    if not paper:
+        raise HTTPException(status_code=404, detail="Paper not found")
+
+    output = await db.fetch_one(
+        "SELECT markdown FROM run_outputs WHERE run_id = ?", (run_id,)
+    )
+    markdown_report = output["markdown"] if output else ""
+
+    settings = get_settings()
+    pdf_path = (settings.data_dir / paper["file_path"]).resolve()
+    # Path traversal guard + existence: drop the PDF if anything is off; the
+    # bundle is still useful with just the item + note.
+    if not pdf_path.is_relative_to(settings.data_dir.resolve()) or not pdf_path.exists():
+        pdf_path = None
+
+    zip_bytes, filename = await zotero_export.build_zotero_bundle(
+        paper=paper, markdown_report=markdown_report, pdf_path=pdf_path
+    )
+    return Response(
+        content=zip_bytes,
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @router.post("/runs/{run_id}/dismiss", response_model=RunResponse)

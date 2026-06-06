@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
-import { getRun, getRunOutput, getPaperPdfUrl, getPaper } from "@/lib/api";
+import { getRun, getRunOutput, getPaperPdfUrl, getPaper, getZoteroBundleUrl } from "@/lib/api";
 import { useRunStream } from "@/hooks/useRunStream";
 import { useTranslation } from "@/lib/i18n";
 import MarkdownRenderer from "@/components/MarkdownRenderer";
@@ -119,6 +119,16 @@ export default function RunPage() {
     URL.revokeObjectURL(url);
   }, [markdown, paper?.title, paperId, run?.mode]);
 
+  // Download a Zotero RDF import bundle (.zip: item + report note + PDF).
+  // The browser handles the download via the server's Content-Disposition.
+  const handleExportZotero = useCallback(() => {
+    const a = document.createElement("a");
+    a.href = getZoteroBundleUrl(runId);
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  }, [runId]);
+
   // Progress steps merged from two sources:
   //   1. persisted `run.progress_json` (full history, even if SSE wasn't connected)
   //   2. live SSE events received this session
@@ -179,6 +189,16 @@ export default function RunPage() {
             >
               <IconDownload className="text-[15px]" />
               {t("run.export_md")}
+            </button>
+          )}
+          {markdown && (
+            <button
+              onClick={handleExportZotero}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-sm transition-colors hover:bg-muted"
+              title={t("run.export_zotero_title")}
+            >
+              <IconDownload className="text-[15px]" />
+              {t("run.export_zotero")}
             </button>
           )}
           {isRunning && (

@@ -87,6 +87,11 @@ export function getPaperPdfUrl(paperId: string): string {
   return `${API_BASE}/papers/${paperId}/pdf`;
 }
 
+// Zotero RDF import bundle (.zip: item + report note + PDF) for a run.
+export function getZoteroBundleUrl(runId: string): string {
+  return `${API_BASE}/runs/${runId}/zotero-bundle`;
+}
+
 export function getRunStreamUrl(runId: string): string {
   return `${BACKEND_SSE_BASE}/api/runs/${runId}/stream`;
 }
