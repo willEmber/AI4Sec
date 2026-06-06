@@ -92,6 +92,12 @@ export function getZoteroBundleUrl(runId: string): string {
   return `${API_BASE}/runs/${runId}/zotero-bundle`;
 }
 
+// Portable Markdown export. The backend rewrites figure links to their public
+// object-storage URLs (uploading on demand) when R2 is configured.
+export function getMarkdownExportUrl(runId: string): string {
+  return `${API_BASE}/runs/${runId}/markdown`;
+}
+
 export function getRunStreamUrl(runId: string): string {
   return `${BACKEND_SSE_BASE}/api/runs/${runId}/stream`;
 }

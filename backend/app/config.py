@@ -67,6 +67,17 @@ class AppSettings(BaseSettings):
     # library channel in Sphere while leaving the standalone library API on).
     dify_sphere_top_k: int = Field(default=10, alias="DIFY_SPHERE_TOP_K")
 
+    # --- R2 / S3-compatible object storage (figure hosting for exports) ---
+    # When fully configured, figures embedded in reports are uploaded here and
+    # referenced by public URL in the Zotero note (external images render in
+    # Zotero notes; base64 data URIs do not sync and hit note-size limits).
+    r2_account_id: str = Field(default="", alias="R2_ACCOUNT_ID")
+    r2_access_key_id: str = Field(default="", alias="R2_ACCESS_KEY_ID")
+    r2_secret_access_key: str = Field(default="", alias="R2_SECRET_ACCESS_KEY")
+    r2_bucket: str = Field(default="", alias="R2_BUCKET")
+    r2_endpoint: str = Field(default="", alias="R2_ENDPOINT")
+    r2_public_base_url: str = Field(default="", alias="R2_PUBLIC_BASE_URL")
+
     # --- server ---
     host: str = "0.0.0.0"
     port: int = 8000
@@ -103,6 +114,20 @@ class AppSettings(BaseSettings):
     def dify_enabled(self) -> bool:
         """Whether the Dify knowledge base integration is configured."""
         return bool(self.dify_api_base.strip())
+
+    @property
+    def r2_enabled(self) -> bool:
+        """Whether object storage is fully configured for figure hosting."""
+        return all(
+            v.strip()
+            for v in (
+                self.r2_access_key_id,
+                self.r2_secret_access_key,
+                self.r2_bucket,
+                self.r2_endpoint,
+                self.r2_public_base_url,
+            )
+        )
 
 
 @lru_cache(maxsize=1)

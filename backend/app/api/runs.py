@@ -15,7 +15,7 @@ from app.config import get_settings
 from app.db import database as db
 from app.rate_limit import limiter
 from app.models.schemas import RecentRunResponse, RunCreate, RunOutputResponse, RunResponse
-from app.services import zotero_export
+from app.services import report_images, zotero_export
 from app.workflows.main_graph import build_main_graph
 from app.workflows.progress import emit_progress
 from app.workflows.state import MainGraphState
@@ -309,11 +309,56 @@ async def get_run_zotero_bundle(request: Request, run_id: str):
         pdf_path = None
 
     zip_bytes, filename = await zotero_export.build_zotero_bundle(
-        paper=paper, markdown_report=markdown_report, pdf_path=pdf_path, run=run
+        paper=paper,
+        markdown_report=markdown_report,
+        pdf_path=pdf_path,
+        run=run,
+        data_dir=settings.data_dir,
     )
     return Response(
         content=zip_bytes,
         media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.get("/runs/{run_id}/markdown")
+@limiter.limit("20/minute")
+async def get_run_markdown_export(request: Request, run_id: str):
+    """Download the report as a portable ``.md``.
+
+    Internal figure links (``/api/papers/.../images/...``) are rewritten to their
+    public object-storage URLs when R2 is configured (figures are uploaded on
+    demand), so the file renders outside the app. When R2 is not configured the
+    links are left unchanged — the original behaviour.
+    """
+    run = await db.fetch_one("SELECT * FROM runs WHERE run_id = ?", (run_id,))
+    if not run:
+        raise HTTPException(status_code=404, detail="Run not found")
+    paper = await db.fetch_one(
+        "SELECT * FROM papers WHERE paper_id = ?", (run["paper_id"],)
+    )
+    output = await db.fetch_one(
+        "SELECT markdown FROM run_outputs WHERE run_id = ?", (run_id,)
+    )
+    if not output or not (output["markdown"] or "").strip():
+        raise HTTPException(status_code=404, detail="Run output not found")
+
+    settings = get_settings()
+    markdown_text = await report_images.process_report_markdown(
+        output["markdown"],
+        paper_id=run["paper_id"],
+        data_dir=settings.data_dir,
+        embed_fallback=False,
+        drop_unresolved=False,
+    )
+
+    title = (paper.get("title") if paper else "") or run["paper_id"]
+    base = zotero_export._safe_name(title, fallback=f"paper_{run['paper_id'][:8]}")
+    filename = f"{base}_{run['mode']}.md"
+    return Response(
+        content=markdown_text,
+        media_type="text/markdown; charset=utf-8",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 

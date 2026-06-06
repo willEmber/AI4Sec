@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
-import { getRun, getRunOutput, getPaperPdfUrl, getPaper, getZoteroBundleUrl } from "@/lib/api";
+import { getRun, getRunOutput, getPaperPdfUrl, getPaper, getZoteroBundleUrl, getMarkdownExportUrl } from "@/lib/api";
 import { useRunStream } from "@/hooks/useRunStream";
 import { useTranslation } from "@/lib/i18n";
 import MarkdownRenderer from "@/components/MarkdownRenderer";
@@ -105,19 +105,17 @@ export default function RunPage() {
     setTargetPage(page);
   }, []);
 
+  // Download via the backend so figures are rewritten to public object-storage
+  // URLs (uploaded on demand) when R2 is configured; the browser handles the
+  // download via the server's Content-Disposition.
   const handleExportMarkdown = useCallback(() => {
     if (!markdown) return;
-    const title = paper?.title || paperId;
-    const mode = run?.mode || "analysis";
-    const filename = `${title.replace(/[^a-zA-Z0-9一-鿿]+/g, "_").slice(0, 60)}_${mode}.md`;
-    const blob = new Blob([markdown], { type: "text/markdown;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
-    a.href = url;
-    a.download = filename;
+    a.href = getMarkdownExportUrl(runId);
+    document.body.appendChild(a);
     a.click();
-    URL.revokeObjectURL(url);
-  }, [markdown, paper?.title, paperId, run?.mode]);
+    a.remove();
+  }, [markdown, runId]);
 
   // Download a Zotero RDF import bundle (.zip: item + report note + PDF).
   // The browser handles the download via the server's Content-Disposition.

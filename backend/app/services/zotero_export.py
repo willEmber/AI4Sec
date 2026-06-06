@@ -533,6 +533,7 @@ async def build_zotero_bundle(
     markdown_report: str,
     pdf_path: Path | None,
     run: dict | None = None,
+    data_dir: Path | None = None,
 ) -> tuple[bytes, str]:
     """Build the ``.zip`` bundle (``<name>.rdf`` + ``files/2/<name>.pdf``).
 
@@ -562,9 +563,24 @@ async def build_zotero_bundle(
     issn = extra.get("issn") or ""
     url = extra.get("url") or ""
 
+    # Host/inline report figures so they render outside the app. For the offline
+    # note we embed as data URIs when object storage is off, and drop figures we
+    # can neither host nor embed (a broken link shows an error icon in Zotero).
+    note_md = markdown_report
+    if markdown_report and data_dir is not None:
+        from app.services.report_images import process_report_markdown
+
+        note_md = await process_report_markdown(
+            markdown_report,
+            paper_id=paper_id,
+            data_dir=data_dir,
+            embed_fallback=True,
+            drop_unresolved=True,
+        )
+
     note_html = (
-        _render_note_html(markdown_report, first_line=_note_first_line(paper, run))
-        if markdown_report
+        _render_note_html(note_md, first_line=_note_first_line(paper, run))
+        if note_md
         else ""
     )
 
