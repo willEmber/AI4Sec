@@ -37,6 +37,7 @@
 - 🎯 **四种阅读模式**：速览要点、深读公式算法、梳理文献网络，以及让 AI 自动选路的智能问答。
 - 🧠 **智能问答路由**：直接提问，意图分类器自动路由到最合适的分析路径，或基于单篇论文直接作答。
 - 📚 **知识库 RAG**：在你自建的论文语料库上检索与跨文献问答（基于自托管 Dify 检索代理）。
+- 📤 **一键导出**：导出 **Zotero 导入包**（条目 + 元数据 + AI 报告笔记 + PDF 原文）或便携 **Markdown**；笔记内公式以 Zotero 原生 KaTeX 节点渲染，图片可经对象存储托管为公共链接（详见[导出](#导出export)）。
 - ⚡ **流式输出**：通过 SSE 实时推送分析进度与结果，长文档无需干等。
 - 🌍 **双语输出 + 多模型**：分析流程内部统一用英文，最终结果可翻译为中文/英文；推理模型支持下拉切换。
 - 📊 **期刊分级**：集成 EasyScholar，展示 SCI / CCF / CSCD 分区，辅助判断文献质量。
@@ -58,6 +59,18 @@
 - **问答（Ask）**：跨多篇论文提问，由 LLM 基于检索片段综合作答并给出来源。
 
 该功能由自托管的 Dify 知识库检索代理提供支撑。设置 `DIFY_API_BASE` 即可启用；留空则自动关闭「知识库」页面与 Research Sphere 中的「库内相关工作」匹配，其余功能不受影响。
+
+## 导出（Export）
+
+在结果页可将精读成果一键导出，便于归档与文献管理：
+
+- **Zotero 导入包（`.zip`）**：在本地 Zotero 中 `文件 → 导入` 该 `.zip`，即可得到一个 `journalArticle` 条目、一条 AI 报告子笔记、以及作为附件存储的 PDF 原文——全程离线，无需 Zotero 云账号。
+  - **元数据自动补全**：作者、摘要、卷期页码、ISSN、DOI 等通过多源（Crossref → OpenAlex，按 DOI 或标题）尽力补齐，避免条目只有标题/期刊/日期。
+  - **笔记标题清晰**：笔记首行即 Zotero 中显示的笔记名，使用「模式 + 论文标题」（智能问答模式则用你的问题）。
+  - **公式正常渲染**：报告中的 LaTeX 转为 Zotero 笔记编辑器原生的数学节点（行内 `<span class="math">`、块级 `<pre class="math">`），由 Zotero 用 KaTeX 渲染，不再显示为裸 `$...$`。
+- **便携 Markdown（`.md`）**：导出可在 App 外正常查看的 Markdown。
+
+**图片托管（可选）**：报告中的图片原本是 App 内部链接，离开应用后无法显示。配置对象存储（R2 / S3 兼容）后，导出时图片会自动上传并在 Zotero 笔记与 Markdown 中替换为公共链接；未配置时，Zotero 笔记会将图片以 base64 内嵌（离线兜底），Markdown 则保留原链接。配置见下方 `R2_*` 变量。
 
 ## 快速开始（Docker）
 
@@ -90,6 +103,7 @@ cp .env.example .env
 | `EASYSCHOLAR_SECRET_KEY` | 期刊分级（SCI / CCF / CSCD 分区） |
 | `TAVILY_KEY` | 期刊分级的 Web 兜底检索 |
 | `DIFY_API_BASE` | 知识库 RAG 与 Sphere 库内匹配（见上文） |
+| `R2_ACCOUNT_ID` / `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` / `R2_BUCKET` / `R2_ENDPOINT` / `R2_PUBLIC_BASE_URL` | 导出时把报告图片托管到对象存储（R2 / S3 兼容），替换为公共链接（见[导出](#导出export)）；需全部填写才生效，且 `R2_BUCKET` 必须是绑定 `R2_PUBLIC_BASE_URL` 域名的桶 |
 | `UNPAYWALL_EMAIL` / `CORE_API_KEY` / `ELSEVIER_API_KEY` / `ELSEVIER_INSTTOKEN` / `WILEY_TDM_TOKEN` | Research Sphere 抓取参考文献全文 |
 | `ADMIN_API_TOKEN` | 为 `/api/admin/*` 启用 `X-Admin-Token` 鉴权 |
 | `ENABLE_DOCS` | 生产环境设为 `false`，关闭 Swagger / OpenAPI |

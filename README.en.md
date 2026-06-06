@@ -37,6 +37,7 @@
 - 🎯 **Four reading modes** — a quick overview, a deep equations/algorithms read, a reference-network map, and a Smart Q&A that picks the path for you.
 - 🧠 **Smart Q&A routing** — just ask; an intent classifier routes your question to the best analysis path, or answers directly from the single paper.
 - 📚 **Knowledge-base RAG** — search and ask across your own paper corpus (backed by a self-hosted Dify retrieval proxy).
+- 📤 **One-click export** — export a **Zotero import bundle** (item + metadata + AI report note + original PDF) or portable **Markdown**; note equations render as Zotero's native KaTeX nodes, and figures can be hosted on object storage as public links (see [Export](#export)).
 - ⚡ **Streaming output** — progress and results stream live over SSE, so long papers don't leave you waiting.
 - 🌍 **Bilingual output + multi-model** — the workflow runs in English internally and translates the final result to English/Chinese; pick the reasoning model from a dropdown.
 - 📊 **Journal ranking** — EasyScholar integration surfaces SCI / CCF / CSCD tiers to gauge source quality.
@@ -58,6 +59,18 @@ The **Knowledge Base** page lets you work across your own paper corpus:
 - **Ask** — pose a question across many papers; the LLM synthesizes an answer from the retrieved passages and cites its sources.
 
 This is powered by a self-hosted Dify knowledge-base retrieval proxy. Set `DIFY_API_BASE` to enable it; leave it empty and the Knowledge Base page and the Research Sphere "related work in your library" matches are disabled, with everything else unaffected.
+
+## Export
+
+From the result page you can export your reading output for archiving and reference management:
+
+- **Zotero import bundle (`.zip`)** — run `File → Import` on the `.zip` in your local Zotero to get a `journalArticle` item, an AI-report child note, and the original PDF stored as an attachment — fully offline, no Zotero cloud account needed.
+  - **Metadata auto-fill** — authors, abstract, volume/issue/pages, ISSN, DOI, etc. are recovered best-effort from multiple sources (Crossref → OpenAlex, by DOI or title) so the item isn't left with only a title/journal/date.
+  - **Clear note title** — a note's name in Zotero is its first line, so the note leads with "mode + paper title" (or your question in Smart Q&A mode).
+  - **Equations render** — LaTeX in the report is converted to Zotero note-editor math nodes (inline `<span class="math">`, block `<pre class="math">`), which Zotero renders via KaTeX instead of showing raw `$...$`.
+- **Portable Markdown (`.md`)** — export Markdown that renders correctly outside the app.
+
+**Figure hosting (optional)** — report figures are originally in-app links that won't load outside the application. Configure object storage (R2 / S3-compatible) and exports upload figures on demand, replacing the links with public URLs in both the Zotero note and the Markdown. Without it, the Zotero note inlines figures as base64 (offline fallback) and the Markdown keeps the original links. See the `R2_*` variables below.
 
 ## Quick Start (Docker)
 
@@ -90,6 +103,7 @@ cp .env.example .env
 | `EASYSCHOLAR_SECRET_KEY` | Journal ranking (SCI / CCF / CSCD tiers) |
 | `TAVILY_KEY` | Web fallback search for journal ranking |
 | `DIFY_API_BASE` | Knowledge-base RAG and Sphere library matches (see above) |
+| `R2_ACCOUNT_ID` / `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` / `R2_BUCKET` / `R2_ENDPOINT` / `R2_PUBLIC_BASE_URL` | Host report figures on object storage (R2 / S3-compatible) and rewrite them to public URLs on export (see [Export](#export)); all must be set, and `R2_BUCKET` must be the bucket bound to `R2_PUBLIC_BASE_URL`'s domain |
 | `UNPAYWALL_EMAIL` / `CORE_API_KEY` / `ELSEVIER_API_KEY` / `ELSEVIER_INSTTOKEN` / `WILEY_TDM_TOKEN` | Fetching reference full text in Research Sphere |
 | `ADMIN_API_TOKEN` | Require an `X-Admin-Token` header on `/api/admin/*` |
 | `ENABLE_DOCS` | Set `false` in production to disable Swagger / OpenAPI |
