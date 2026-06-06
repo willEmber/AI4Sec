@@ -188,6 +188,59 @@ class ParseMetaTest(unittest.TestCase):
         self.assertEqual(base["year"], 2022)
 
 
+class RenderNoteHtmlTest(unittest.TestCase):
+    def test_first_line_becomes_h1_title(self):
+        html_out = zotero_export._render_note_html(
+            "## Some sub-heading\n\nbody", first_line="My Note Title"
+        )
+        self.assertTrue(html_out.startswith("<h1>My Note Title</h1>"))
+        # The report's own heading stays below the title line.
+        self.assertIn("Some sub-heading", html_out)
+
+    def test_inline_and_block_math_become_zotero_math_nodes(self):
+        md = "Inline $E=mc^2$ and a block:\n\n$$\\int_0^1 x\\,dx$$\n\ndone."
+        html_out = zotero_export._render_note_html(md, first_line="T")
+        self.assertIn('<span class="math">$E=mc^2$</span>', html_out)
+        self.assertIn('<pre class="math">$$\\int_0^1 x\\,dx$$</pre>', html_out)
+        # Block math is not left wrapped inside a <p> (invalid <p><pre>).
+        self.assertNotIn("<p><pre", html_out.replace(" ", ""))
+
+    def test_latex_delimiter_variants_supported(self):
+        html_out = zotero_export._render_note_html(
+            "see \\(a+b\\) and \\[c+d\\]", first_line="T"
+        )
+        self.assertIn('<span class="math">$a+b$</span>', html_out)
+        self.assertIn('<pre class="math">$$c+d$$</pre>', html_out)
+
+    def test_math_content_is_html_escaped(self):
+        html_out = zotero_export._render_note_html("$a < b & c$", first_line="T")
+        self.assertIn('<span class="math">$a &lt; b &amp; c$</span>', html_out)
+
+    def test_dollar_inside_code_is_not_treated_as_math(self):
+        html_out = zotero_export._render_note_html(
+            "use `print($x)` here", first_line="T"
+        )
+        self.assertNotIn('class="math"', html_out)
+        self.assertIn("print($x)", html_out)
+
+    def test_note_first_line_variants(self):
+        paper = {"title": "Some Paper"}
+        self.assertEqual(
+            zotero_export._note_first_line(paper, {"mode": "lens", "language": "en"}),
+            "AI Reading Report · Logic Lens — Some Paper",
+        )
+        self.assertEqual(
+            zotero_export._note_first_line(paper, {"mode": "snap", "language": "zh"}),
+            "AI 阅读报告 · 快速洞察：Some Paper",
+        )
+        self.assertEqual(
+            zotero_export._note_first_line(
+                paper, {"mode": "qa", "language": "en", "user_question": "Why?"}
+            ),
+            "Smart Q&A: Why?",
+        )
+
+
 class BuildBundleTest(unittest.IsolatedAsyncioTestCase):
     async def test_zip_contains_rdf_and_pdf_with_matching_path(self):
         # Patch network enrichment so the test is deterministic and offline, and

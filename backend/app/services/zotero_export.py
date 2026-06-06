@@ -89,6 +89,108 @@ def _clean_report_md(md: str) -> str:
     return _CITE_BADGE_RE.sub(r"[p.\1]", md)
 
 
+# --- Note HTML rendering for Zotero's note editor --------------------------
+#
+# A Zotero note's *name* in the items list is simply the first line of its HTML,
+# so the note must lead with a clear title line (otherwise Zotero names it after
+# the report's first sub-heading, which reads poorly).
+#
+# Zotero 7's note editor renders math through KaTeX, but only from its own HTML
+# nodes — inline ``<span class="math">$…$</span>`` and block
+# ``<pre class="math">$$…$$</pre>`` (delimiters kept inside, per the
+# zotero/note-editor ProseMirror schema). python-markdown emits raw ``$…$`` text,
+# which shows as literal LaTeX, so we convert math to those nodes explicitly.
+
+_MODE_LABELS: dict[str, dict[str, str]] = {
+    "snap": {"en": "Insight Snap", "zh": "快速洞察"},
+    "lens": {"en": "Logic Lens", "zh": "逻辑透镜"},
+    "sphere": {"en": "Research Sphere", "zh": "研究全景"},
+    "auto": {"en": "Smart Q&A", "zh": "智能问答"},
+    "qa": {"en": "Smart Q&A", "zh": "智能问答"},
+}
+
+_FENCED_CODE_RE = re.compile(r"```[\s\S]*?```")
+_INLINE_CODE_RE = re.compile(r"`[^`\n]+`")
+_BLOCK_MATH_RES = (
+    re.compile(r"\$\$([\s\S]+?)\$\$"),
+    re.compile(r"\\\[([\s\S]+?)\\\]"),
+)
+_INLINE_MATH_RES = (
+    re.compile(r"\$([^\$\n]+?)\$"),
+    re.compile(r"\\\(([\s\S]+?)\\\)"),
+)
+_MATH_PH_RE = re.compile(r"MATHPH(\d+)PH")
+_BLOCK_MATH_PH_RE = re.compile(r"<p>\s*MATHPH(\d+)PH\s*</p>")
+
+
+def _note_first_line(paper: dict, run: dict | None) -> str:
+    """A clear, recognizable first line so Zotero names the note sensibly."""
+    run = run or {}
+    lang = "zh" if (run.get("language") or "").startswith("zh") else "en"
+    mode = (run.get("mode") or "snap").lower()
+    label = _MODE_LABELS.get(mode, _MODE_LABELS["snap"])[lang]
+    question = (run.get("user_question") or "").strip()
+    if mode in ("auto", "qa") and question:
+        q = question if len(question) <= 80 else question[:79] + "…"
+        return f"{label}：{q}" if lang == "zh" else f"{label}: {q}"
+    title = (paper.get("title") or "").strip()
+    if lang == "zh":
+        head = f"AI 阅读报告 · {label}"
+        return f"{head}：{title}" if title else head
+    head = f"AI Reading Report · {label}"
+    return f"{head} — {title}" if title else head
+
+
+def _render_note_html(md: str, *, first_line: str) -> str:
+    """Markdown report -> Zotero-note HTML (math nodes + leading title line)."""
+    md = _clean_report_md(md)
+
+    # 1. Park code (fenced then inline) so any '$' inside it is never read as math.
+    code_stash: list[str] = []
+
+    def _stash_code(m: re.Match) -> str:
+        code_stash.append(m.group(0))
+        return f"CODEPH{len(code_stash) - 1}PH"
+
+    md = _FENCED_CODE_RE.sub(_stash_code, md)
+    md = _INLINE_CODE_RE.sub(_stash_code, md)
+
+    # 2. Pull math out into placeholders (block first, so '$$' isn't seen as two '$').
+    maths: list[tuple[bool, str]] = []
+
+    def _stash_math(is_block: bool):
+        def repl(m: re.Match) -> str:
+            maths.append((is_block, m.group(1).strip()))
+            return f"MATHPH{len(maths) - 1}PH"
+
+        return repl
+
+    for rx in _BLOCK_MATH_RES:
+        md = rx.sub(_stash_math(True), md)
+    for rx in _INLINE_MATH_RES:
+        md = rx.sub(_stash_math(False), md)
+
+    # 3. Restore code so markdown renders it as <pre><code> normally.
+    md = re.sub(r"CODEPH(\d+)PH", lambda m: code_stash[int(m.group(1))], md)
+
+    # 4. Markdown -> HTML.
+    body = _md_to_html(md)
+
+    # 5. Swap math placeholders for Zotero math nodes (a block placeholder that
+    #    markdown wrapped in its own <p> becomes a <pre>, not <p><pre>).
+    def _to_math(idx: int) -> str:
+        is_block, latex = maths[idx]
+        esc = html.escape(latex, quote=False)
+        if is_block:
+            return f'<pre class="math">$${esc}$$</pre>'
+        return f'<span class="math">${esc}$</span>'
+
+    body = _BLOCK_MATH_PH_RE.sub(lambda m: _to_math(int(m.group(1))), body)
+    body = _MATH_PH_RE.sub(lambda m: _to_math(int(m.group(1))), body)
+
+    return f"<h1>{_xml_escape(first_line)}</h1>\n{body}"
+
+
 def _safe_name(title: str, fallback: str) -> str:
     """ASCII-safe base for filenames / Content-Disposition (avoids header encoding
     pitfalls). The *item* title inside the RDF keeps the real Unicode value."""
@@ -430,6 +532,7 @@ async def build_zotero_bundle(
     paper: dict,
     markdown_report: str,
     pdf_path: Path | None,
+    run: dict | None = None,
 ) -> tuple[bytes, str]:
     """Build the ``.zip`` bundle (``<name>.rdf`` + ``files/2/<name>.pdf``).
 
@@ -459,7 +562,11 @@ async def build_zotero_bundle(
     issn = extra.get("issn") or ""
     url = extra.get("url") or ""
 
-    note_html = _md_to_html(_clean_report_md(markdown_report)) if markdown_report else ""
+    note_html = (
+        _render_note_html(markdown_report, first_line=_note_first_line(paper, run))
+        if markdown_report
+        else ""
+    )
 
     base = _safe_name(title, fallback=f"paper_{paper_id[:8]}")
 

@@ -309,7 +309,7 @@ async def get_run_zotero_bundle(request: Request, run_id: str):
         pdf_path = None
 
     zip_bytes, filename = await zotero_export.build_zotero_bundle(
-        paper=paper, markdown_report=markdown_report, pdf_path=pdf_path
+        paper=paper, markdown_report=markdown_report, pdf_path=pdf_path, run=run
     )
     return Response(
         content=zip_bytes,
