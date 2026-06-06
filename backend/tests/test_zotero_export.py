@@ -5,6 +5,7 @@ import unittest
 import zipfile
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from unittest.mock import AsyncMock, patch
 from xml.etree import ElementTree as ET
 
 from app.services import zotero_export
@@ -17,7 +18,13 @@ NS = {
     "link": "http://purl.org/rss/1.0/modules/link/",
     "dc": "http://purl.org/dc/elements/1.1/",
     "dcterms": "http://purl.org/dc/terms/",
+    "prism": "http://prismstandard.org/namespaces/1.2/basic/",
 }
+
+
+def _identifiers(element) -> list[str]:
+    """Direct dc:identifier text values of an element (plain "DOI ..."/"ISSN ...")."""
+    return [n.text for n in element.findall("dc:identifier", NS) if n.text]
 
 
 class BuildRdfTest(unittest.TestCase):
@@ -31,6 +38,11 @@ class BuildRdfTest(unittest.TestCase):
             abstract="The dominant sequence transduction models...",
             note_html="<h1>Report</h1><p>Body &amp; more</p>",
             pdf_rel_path="files/2/paper.pdf",
+            volume="30",
+            issue="2",
+            pages="5998-6008",
+            issn="1049-5258",
+            url="https://doi.org/10.5555/3295222.3295349",
         )
         # Parses as XML (catches escaping / structural errors).
         root = ET.fromstring(rdf)
@@ -40,6 +52,9 @@ class BuildRdfTest(unittest.TestCase):
         self.assertEqual(article.find("z:itemType", NS).text, "journalArticle")
         self.assertEqual(article.find("dc:title", NS).text, "Attention Is All You Need")
         self.assertEqual(article.find("dc:date", NS).text, "2017")
+        self.assertEqual(article.find("prism:volume", NS).text, "30")
+        self.assertEqual(article.find("prism:number", NS).text, "2")
+        self.assertEqual(article.find("bib:pages", NS).text, "5998-6008")
         self.assertEqual(
             article.find("dcterms:abstract", NS).text,
             "The dominant sequence transduction models...",
@@ -51,12 +66,18 @@ class BuildRdfTest(unittest.TestCase):
         self.assertEqual(people[0].find("foaf:surname", NS).text, "Vaswani")
         self.assertEqual(people[0].find("foaf:givenName", NS).text, "Ashish")
 
-        # Venue + DOI live on the Journal container.
+        # DOI lives on the *item* (Zotero maps an item-level "DOI ..." identifier
+        # to the DOI field); ISSN lives on the Journal container.
+        self.assertIn("DOI 10.5555/3295222.3295349", _identifiers(article))
         journal = article.find("dcterms:isPartOf/bib:Journal", NS)
         self.assertEqual(journal.find("dc:title", NS).text, "NeurIPS")
-        self.assertEqual(
-            journal.find("dc:identifier", NS).text, "DOI 10.5555/3295222.3295349"
-        )
+        self.assertIn("ISSN 1049-5258", _identifiers(journal))
+        # DOI must NOT be on the container.
+        self.assertNotIn("DOI 10.5555/3295222.3295349", _identifiers(journal))
+
+        # URL is exported via the dcterms:URI form.
+        uri = article.find("dc:identifier/dcterms:URI/rdf:value", NS)
+        self.assertEqual(uri.text, "https://doi.org/10.5555/3295222.3295349")
 
         # Note linked via dcterms:isReferencedBy -> bib:Memo with escaped HTML.
         ref = article.find("dcterms:isReferencedBy", NS)
@@ -89,19 +110,110 @@ class BuildRdfTest(unittest.TestCase):
         self.assertIsNone(root.find("z:Attachment", NS))
         self.assertIsNone(root.find("bib:Memo", NS))
         self.assertIsNone(root.find("bib:Article/link:link", NS))
+        self.assertIsNone(root.find("bib:Article/bib:authors", NS))
         self.assertEqual(root.find("bib:Article/dc:title", NS).text, "No DOI No PDF")
+
+
+class ParseMetaTest(unittest.TestCase):
+    def test_parse_crossref_extracts_structured_authors_and_fields(self):
+        msg = {
+            "title": ["Some Paper"],
+            "author": [
+                {"family": "Doe", "given": "Jane"},
+                {"family": "Smith", "given": "John"},
+                {"name": "The Collaboration"},  # corporate author, no family/given
+            ],
+            "container-title": ["Journal of Things"],
+            "issued": {"date-parts": [[2020, 5]]},
+            "volume": "12",
+            "issue": "3",
+            "page": "100-110",
+            "ISSN": ["1234-5678"],
+            "DOI": "10.1/abc",
+            "URL": "https://doi.org/10.1/abc",
+            "abstract": "<jats:p>Hello &amp; world</jats:p>",
+        }
+        meta = zotero_export._parse_crossref(msg)
+        self.assertEqual(
+            meta["authors"], [("Doe", "Jane"), ("Smith", "John"), ("The Collaboration", "")]
+        )
+        self.assertEqual(meta["venue"], "Journal of Things")
+        self.assertEqual(meta["year"], 2020)
+        self.assertEqual(meta["volume"], "12")
+        self.assertEqual(meta["issue"], "3")
+        self.assertEqual(meta["pages"], "100-110")
+        self.assertEqual(meta["issn"], "1234-5678")
+        self.assertEqual(meta["doi"], "10.1/abc")
+        self.assertEqual(meta["abstract"], "Hello & world")  # tags stripped, unescaped
+
+    def test_parse_openalex_splits_names_and_reconstructs_abstract(self):
+        work = {
+            "title": "Deep Thing",
+            "authorships": [
+                {"author": {"display_name": "Ashish Vaswani"}},
+                {"author": {"display_name": "Plato"}},
+            ],
+            "publication_year": 2019,
+            "primary_location": {
+                "source": {"display_name": "ICLR", "issn_l": "9999-0000"},
+                "landing_page_url": "https://example.org/x",
+            },
+            "biblio": {"volume": "7", "issue": "1", "first_page": "1", "last_page": "9"},
+            "abstract_inverted_index": {"Big": [0], "model": [1]},
+            "ids": {"doi": "https://doi.org/10.2/xyz"},
+        }
+        meta = zotero_export._parse_openalex(work)
+        self.assertEqual(meta["authors"], [("Vaswani", "Ashish"), ("Plato", "")])
+        self.assertEqual(meta["venue"], "ICLR")
+        self.assertEqual(meta["issn"], "9999-0000")
+        self.assertEqual(meta["year"], 2019)
+        self.assertEqual(meta["pages"], "1-9")
+        self.assertEqual(meta["doi"], "10.2/xyz")
+        self.assertEqual(meta["abstract"], "Big model")
+
+    def test_merge_prefers_first_authors_and_fills_gaps(self):
+        base = zotero_export._meta_skeleton()
+        base["authors"] = [("A", "B")]
+        base["venue"] = "X"
+        extra = {
+            "authors": [("C", "D")],  # ignored: base already has authors
+            "venue": "Y",             # ignored: base already has venue
+            "abstract": "filled",     # taken: base empty
+            "year": 2022,
+        }
+        zotero_export._merge_meta(base, extra)
+        self.assertEqual(base["authors"], [("A", "B")])
+        self.assertEqual(base["venue"], "X")
+        self.assertEqual(base["abstract"], "filled")
+        self.assertEqual(base["year"], 2022)
 
 
 class BuildBundleTest(unittest.IsolatedAsyncioTestCase):
     async def test_zip_contains_rdf_and_pdf_with_matching_path(self):
-        with TemporaryDirectory() as tmp:
+        # Patch network enrichment so the test is deterministic and offline, and
+        # so we can assert the looked-up authors land in the RDF.
+        fake_meta = {
+            "authors": [("Vaswani", "Ashish")],
+            "abstract": "An abstract.",
+            "venue": "",
+            "year": 0,
+            "volume": "30",
+            "issue": "",
+            "pages": "",
+            "issn": "",
+            "url": "",
+            "doi": "",
+        }
+        with TemporaryDirectory() as tmp, patch.object(
+            zotero_export, "fetch_item_meta", new_callable=AsyncMock, return_value=fake_meta
+        ):
             pdf = Path(tmp) / "original.pdf"
             pdf.write_bytes(b"%PDF-1.4 fake pdf bytes")
 
             paper = {
                 "paper_id": "abc123def456",
                 "title": "Test Paper",
-                "doi": "",  # empty -> no Crossref network call (deterministic)
+                "doi": "",
                 "venue": "Some Journal",
                 "year": 2021,
             }
@@ -124,15 +236,27 @@ class BuildBundleTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(zpath, pdf_name)
             self.assertEqual(zf.read(pdf_name), b"%PDF-1.4 fake pdf bytes")
 
+            # Looked-up authors are present in the item.
+            surname = root.find(
+                "bib:Article/bib:authors/rdf:Seq/rdf:li/foaf:Person/foaf:surname", NS
+            )
+            self.assertEqual(surname.text, "Vaswani")
+
             # Report became a note; citation badge downgraded to plain text.
             memo_html = root.find("bib:Memo/rdf:value", NS).text
             self.assertIn("[p.3]", memo_html)
 
     async def test_no_pdf_still_produces_rdf_only_bundle(self):
         paper = {"paper_id": "x", "title": "T", "doi": "", "venue": "", "year": 0}
-        zip_bytes, _ = await zotero_export.build_zotero_bundle(
-            paper=paper, markdown_report="hello", pdf_path=None
-        )
+        with patch.object(
+            zotero_export,
+            "fetch_item_meta",
+            new_callable=AsyncMock,
+            return_value=zotero_export._meta_skeleton(),
+        ):
+            zip_bytes, _ = await zotero_export.build_zotero_bundle(
+                paper=paper, markdown_report="hello", pdf_path=None
+            )
         zf = zipfile.ZipFile(io.BytesIO(zip_bytes))
         self.assertEqual([n for n in zf.namelist() if n.endswith(".pdf")], [])
         self.assertTrue(any(n.endswith(".rdf") for n in zf.namelist()))

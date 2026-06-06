@@ -12,6 +12,14 @@ The RDF shape here mirrors Zotero's own ``Zotero RDF`` export translator exactly
 (``bib:Article`` + ``bib:Journal`` container, ``foaf:Person`` authors,
 ``bib:Memo`` child note linked via ``dcterms:isReferencedBy``, ``z:Attachment``
 with a relative ``z:path``) so it round-trips through Zotero's importer.
+
+Authors and other bibliographic fields are not stored in the ``papers`` table
+(only title/venue/year/DOI), so they are recovered here at export time via a
+multi-source, best-effort lookup (Crossref by DOI → OpenAlex by DOI → OpenAlex /
+Crossref by title). This is why an item can otherwise import with only the
+title, venue and date: the single DOI-only Crossref call it used before returned
+nothing whenever the paper had no DOI (preprints, conference papers, scanned
+PDFs) or Crossref had no author record for it.
 """
 
 from __future__ import annotations
@@ -24,6 +32,12 @@ from pathlib import Path
 from xml.sax.saxutils import escape as _xml_escape
 
 import httpx
+
+from app.services.paper_search.utils import (
+    jaccard_similarity,
+    normalize_whitespace,
+    openalex_abstract_from_inverted_index,
+)
 
 # --- Markdown -> HTML, with a safe fallback when python-markdown is absent ---
 try:  # pragma: no cover - exercised by import availability, not unit tests
@@ -62,6 +76,14 @@ _CITE_BADGE_RE = re.compile(
     re.IGNORECASE,
 )
 
+# --- Bibliographic enrichment -------------------------------------------------
+_CR_BASE = "https://api.crossref.org/works"
+_OA_BASE = "https://api.openalex.org/works"
+_HTTP_HEADERS = {"User-Agent": "scholar/1.0 (zotero-export; mailto:scholar@example.com)"}
+# A title-search hit is only trusted when this similar to the query title, so a
+# DOI-less paper never imports another paper's authors by mistake.
+_TITLE_MATCH_THRESHOLD = 0.55
+
 
 def _clean_report_md(md: str) -> str:
     return _CITE_BADGE_RE.sub(r"[p.\1]", md)
@@ -74,40 +96,230 @@ def _safe_name(title: str, fallback: str) -> str:
     return name[:60] or fallback
 
 
-async def fetch_crossref_meta(doi: str) -> dict:
-    """Best-effort authors + abstract from Crossref by DOI. Never raises.
+def _meta_skeleton() -> dict:
+    return {
+        "authors": [],  # list[tuple[family, given]]
+        "abstract": "",
+        "venue": "",
+        "year": 0,
+        "volume": "",
+        "issue": "",
+        "pages": "",
+        "issn": "",
+        "url": "",
+        "doi": "",
+        "_title": "",  # for title-similarity guard only; popped before return
+    }
 
-    The ``papers`` table stores only title/venue/year/DOI, so authors and the
-    abstract are pulled here at export time to produce a complete Zotero item.
-    """
-    if not doi:
-        return {}
-    url = f"https://api.crossref.org/works/{doi}"
-    try:
-        async with httpx.AsyncClient(timeout=8.0) as client:
-            resp = await client.get(
-                url, headers={"User-Agent": "scholar/1.0 (zotero-export)"}
-            )
-            resp.raise_for_status()
-            msg = resp.json().get("message", {})
-    except Exception:
-        return {}
+
+def _split_name(display_name: str) -> tuple[str, str]:
+    """Best-effort split of a single display name into (family, given).
+
+    Sources that only give a full name (OpenAlex) are split on the last space —
+    ``"Ashish Vaswani"`` -> ``("Vaswani", "Ashish")``, single-token names keep an
+    empty given name."""
+    name = normalize_whitespace(display_name)
+    if not name:
+        return ("", "")
+    parts = name.rsplit(" ", 1)
+    if len(parts) == 2:
+        return (parts[1], parts[0])
+    return (name, "")
+
+
+def _parse_crossref(msg: dict) -> dict:
+    """Crossref ``message`` (a /works/{doi} record or a search item) -> meta."""
+    meta = _meta_skeleton()
 
     authors: list[tuple[str, str]] = []
-    for a in msg.get("author", []) or []:
+    for a in msg.get("author") or []:
         family = (a.get("family") or "").strip()
         given = (a.get("given") or "").strip()
         if family:
             authors.append((family, given))
         elif given:
             authors.append((given, ""))
+        elif (a.get("name") or "").strip():
+            authors.append((a["name"].strip(), ""))
+    meta["authors"] = authors
 
     abstract = msg.get("abstract") or ""
     if abstract:
         abstract = re.sub(r"<[^>]+>", "", abstract)  # strip JATS XML tags
-        abstract = html.unescape(abstract).strip()
+        meta["abstract"] = html.unescape(abstract).strip()
 
-    return {"authors": authors, "abstract": abstract}
+    container = msg.get("container-title") or []
+    if container:
+        meta["venue"] = (container[0] or "").strip()
+
+    for date_field in ("published-print", "published-online", "issued"):
+        parts = (msg.get(date_field) or {}).get("date-parts") or []
+        if parts and parts[0] and parts[0][0]:
+            meta["year"] = int(parts[0][0])
+            break
+
+    meta["volume"] = str(msg.get("volume") or "").strip()
+    meta["issue"] = str(msg.get("issue") or "").strip()
+    meta["pages"] = str(msg.get("page") or "").strip()
+    issn = msg.get("ISSN") or []
+    if issn:
+        meta["issn"] = (issn[0] or "").strip()
+    meta["url"] = (msg.get("URL") or "").strip()
+    meta["doi"] = (msg.get("DOI") or "").strip()
+
+    title = msg.get("title")
+    if isinstance(title, list):
+        meta["_title"] = (title[0] if title else "") or ""
+    else:
+        meta["_title"] = title or ""
+    return meta
+
+
+def _parse_openalex(work: dict) -> dict:
+    """OpenAlex ``work`` record -> meta."""
+    meta = _meta_skeleton()
+
+    authors: list[tuple[str, str]] = []
+    for a in work.get("authorships") or []:
+        name = ((a.get("author") or {}).get("display_name") or "").strip()
+        if name:
+            authors.append(_split_name(name))
+    meta["authors"] = authors
+
+    meta["abstract"] = openalex_abstract_from_inverted_index(
+        work.get("abstract_inverted_index")
+    )
+
+    loc = work.get("primary_location") or {}
+    source = loc.get("source") or {}
+    meta["venue"] = normalize_whitespace(source.get("display_name") or "")
+    issn_l = (source.get("issn_l") or "").strip()
+    if not issn_l:
+        issn = source.get("issn") or []
+        if isinstance(issn, list) and issn:
+            issn_l = (issn[0] or "").strip()
+    meta["issn"] = issn_l
+
+    meta["year"] = int(work.get("publication_year") or 0)
+
+    biblio = work.get("biblio") or {}
+    meta["volume"] = str(biblio.get("volume") or "").strip()
+    meta["issue"] = str(biblio.get("issue") or "").strip()
+    first = str(biblio.get("first_page") or "").strip()
+    last = str(biblio.get("last_page") or "").strip()
+    if first and last:
+        meta["pages"] = f"{first}-{last}"
+    elif first:
+        meta["pages"] = first
+
+    doi = ((work.get("ids") or {}).get("doi") or "").strip()
+    if doi.startswith("https://doi.org/"):
+        doi = doi[len("https://doi.org/"):]
+    meta["doi"] = doi
+    meta["url"] = (loc.get("landing_page_url") or "").strip() or (
+        f"https://doi.org/{doi}" if doi else ""
+    )
+    meta["_title"] = normalize_whitespace(work.get("title") or "")
+    return meta
+
+
+def _merge_meta(base: dict, extra: dict) -> dict:
+    """Fill empty fields of ``base`` from ``extra`` (first source wins).
+
+    Authors are filled only when ``base`` still has none, so a structured
+    Crossref author list is never overwritten by a coarser split-name list."""
+    if not base.get("authors") and extra.get("authors"):
+        base["authors"] = extra["authors"]
+    for key in ("abstract", "venue", "volume", "issue", "pages", "issn", "url", "doi"):
+        if not base.get(key) and extra.get(key):
+            base[key] = extra[key]
+    if not base.get("year") and extra.get("year"):
+        base["year"] = extra["year"]
+    return base
+
+
+def _oa_params() -> dict:
+    """OpenAlex ``mailto`` for the polite pool, if an email is configured."""
+    try:
+        from app.services.paper_search.config import Settings
+
+        email = Settings.from_env().pick_openalex_mailto()
+    except Exception:
+        email = ""
+    return {"mailto": email} if email else {}
+
+
+async def _get_json(client: httpx.AsyncClient, url: str, params: dict | None = None):
+    try:
+        resp = await client.get(url, params=params)
+        resp.raise_for_status()
+        return resp.json()
+    except Exception:
+        return None
+
+
+async def fetch_item_meta(doi: str = "", title: str = "") -> dict:
+    """Best-effort bibliographic metadata for a Zotero item. Never raises.
+
+    Combines several keyless sources so an item still gets authors / abstract /
+    volume / issue / pages even when one source has gaps or there is no DOI at
+    all:
+
+      1. Crossref by DOI    — authoritative, structured ``family``/``given`` names
+      2. OpenAlex by DOI    — fills gaps (esp. preprints & conferences)
+      3. OpenAlex by title  — recovers authors when there is no DOI
+      4. Crossref by title  — last-resort author source
+
+    Title-search hits (3, 4) are accepted only when the returned title is close
+    enough to the query title, so a DOI-less paper never adopts another paper's
+    authors.
+    """
+    meta = _meta_skeleton()
+    doi = (doi or "").strip()
+    title = (title or "").strip()
+    if not doi and not title:
+        meta.pop("_title", None)
+        return meta
+
+    async with httpx.AsyncClient(timeout=10.0, headers=_HTTP_HEADERS) as client:
+        # 1. Crossref by DOI
+        if doi:
+            data = await _get_json(client, f"{_CR_BASE}/{doi}")
+            if data:
+                _merge_meta(meta, _parse_crossref(data.get("message") or {}))
+
+        # 2. OpenAlex by DOI (fills authors/abstract Crossref may lack)
+        if doi and (not meta["authors"] or not meta["abstract"]):
+            data = await _get_json(client, f"{_OA_BASE}/doi:{doi}", params=_oa_params())
+            if data:
+                _merge_meta(meta, _parse_openalex(data))
+
+        # 3. OpenAlex by title (no DOI, or DOI gave us no authors)
+        if not meta["authors"] and title:
+            data = await _get_json(
+                client,
+                _OA_BASE,
+                params={**_oa_params(), "search": title, "per_page": "1"},
+            )
+            results = (data or {}).get("results") or []
+            if results:
+                cand = _parse_openalex(results[0])
+                if jaccard_similarity(cand.get("_title", ""), title) >= _TITLE_MATCH_THRESHOLD:
+                    _merge_meta(meta, cand)
+
+        # 4. Crossref bibliographic query (last-resort author source)
+        if not meta["authors"] and title:
+            data = await _get_json(
+                client, _CR_BASE, params={"query.bibliographic": title, "rows": "1"}
+            )
+            items = ((data or {}).get("message") or {}).get("items") or []
+            if items:
+                cand = _parse_crossref(items[0])
+                if jaccard_similarity(cand.get("_title", ""), title) >= _TITLE_MATCH_THRESHOLD:
+                    _merge_meta(meta, cand)
+
+    meta.pop("_title", None)
+    return meta
 
 
 def build_rdf(
@@ -120,6 +332,11 @@ def build_rdf(
     abstract: str,
     note_html: str,
     pdf_rel_path: str | None,
+    volume: str = "",
+    issue: str = "",
+    pages: str = "",
+    issn: str = "",
+    url: str = "",
     pdf_title: str = "Full Text PDF",
 ) -> str:
     """Render the Zotero RDF/XML for one journalArticle, optional child note,
@@ -153,14 +370,14 @@ def build_rdf(
         out.append("            </rdf:Seq>")
         out.append("        </bib:authors>")
 
-    # Journal container carries venue title + DOI (matches Zotero's exporter,
-    # which writes "DOI ..." as a dc:identifier on the container).
+    # Journal container carries the venue title + ISSN (matches Zotero's
+    # exporter, which writes ISSN — not the article DOI — on the container).
     out.append("        <dcterms:isPartOf>")
     out.append("            <bib:Journal>")
     if venue:
         out.append(f"                <dc:title>{e(venue)}</dc:title>")
-    if doi:
-        out.append(f"                <dc:identifier>DOI {e(doi)}</dc:identifier>")
+    if issn:
+        out.append(f"                <dc:identifier>ISSN {e(issn)}</dc:identifier>")
     out.append("            </bib:Journal>")
     out.append("        </dcterms:isPartOf>")
 
@@ -168,6 +385,22 @@ def build_rdf(
         out.append(f"        <dc:title>{e(title)}</dc:title>")
     if year:
         out.append(f"        <dc:date>{e(str(year))}</dc:date>")
+    if volume:
+        out.append(f"        <prism:volume>{e(volume)}</prism:volume>")
+    if issue:
+        out.append(f"        <prism:number>{e(issue)}</prism:number>")
+    if pages:
+        out.append(f"        <bib:pages>{e(pages)}</bib:pages>")
+    # The article DOI belongs on the item itself; Zotero's importer maps a
+    # "DOI ..." dc:identifier on the item to the DOI field.
+    if doi:
+        out.append(f"        <dc:identifier>DOI {e(doi)}</dc:identifier>")
+    if url:
+        out.append("        <dc:identifier>")
+        out.append("            <dcterms:URI>")
+        out.append(f"                <rdf:value>{e(url)}</rdf:value>")
+        out.append("            </dcterms:URI>")
+        out.append("        </dc:identifier>")
     if abstract:
         out.append(f"        <dcterms:abstract>{e(abstract)}</dcterms:abstract>")
     out.append("    </bib:Article>")
@@ -204,13 +437,27 @@ async def build_zotero_bundle(
     """
     paper_id = paper.get("paper_id") or "paper"
     title = paper.get("title") or paper_id
-    doi = paper.get("doi") or ""
+    doi = (paper.get("doi") or "").strip()
     venue = paper.get("venue") or ""
     year = int(paper.get("year") or 0)
 
-    extra = await fetch_crossref_meta(doi)
+    # Don't title-search on a sha1 fallback "title" — it would match nothing
+    # useful and risks importing a wrong paper's authors.
+    lookup_title = title if title != paper_id else ""
+    extra = await fetch_item_meta(doi=doi, title=lookup_title)
+
     authors = extra.get("authors") or []
     abstract = extra.get("abstract") or ""
+    # The DB venue/year are curated for ranking — keep them, fill gaps only.
+    venue = venue or extra.get("venue") or ""
+    if not year:
+        year = int(extra.get("year") or 0)
+    doi = doi or (extra.get("doi") or "")
+    volume = extra.get("volume") or ""
+    issue = extra.get("issue") or ""
+    pages = extra.get("pages") or ""
+    issn = extra.get("issn") or ""
+    url = extra.get("url") or ""
 
     note_html = _md_to_html(_clean_report_md(markdown_report)) if markdown_report else ""
 
@@ -231,6 +478,11 @@ async def build_zotero_bundle(
         abstract=abstract,
         note_html=note_html,
         pdf_rel_path=pdf_rel,
+        volume=volume,
+        issue=issue,
+        pages=pages,
+        issn=issn,
+        url=url,
     )
 
     buf = io.BytesIO()
