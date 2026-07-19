@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 # --- Request models ---
@@ -14,6 +14,11 @@ class RunCreate(BaseModel):
     language: str = "en"        # en | zh
     question: str = ""          # required (non-empty) when mode == "auto"
     owner_token: str = ""       # per-browser token; scopes which runs the client sees
+
+
+class TrafficVisitCreate(BaseModel):
+    owner_token: str = Field(min_length=1, max_length=256)
+    path: str = Field(default="/", min_length=1, max_length=512, pattern=r"^/")
 
 
 SearchMethod = Literal["semantic_search", "full_text_search", "hybrid_search"]
@@ -58,6 +63,10 @@ class ModelListResponse(BaseModel):
     """Selectable LLM models offered to the frontend dropdown."""
     models: list[str]
     default: str
+
+
+class TrafficVisitResponse(BaseModel):
+    recorded: bool = True
 
 
 class RunResponse(BaseModel):

@@ -88,6 +88,18 @@ CREATE INDEX IF NOT EXISTS idx_runs_paper ON runs(paper_id);
 -- exists without owner_token, so this script runs before the column is added and
 -- an inline index on owner_token would raise "no such column" and abort init.
 
+-- Anonymous traffic aggregates. visitor_hash is a SHA-256 digest of the
+-- per-browser owner token; the raw token and network address are not stored.
+CREATE TABLE IF NOT EXISTS traffic_visitors (
+    visitor_hash  TEXT PRIMARY KEY,
+    first_seen_at TEXT NOT NULL DEFAULT (datetime('now')),
+    last_seen_at  TEXT NOT NULL DEFAULT (datetime('now')),
+    visit_count   INTEGER NOT NULL DEFAULT 1,
+    last_path     TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS idx_traffic_visitors_last_seen
+    ON traffic_visitors(last_seen_at DESC);
+
 CREATE TABLE IF NOT EXISTS run_outputs (
     run_id   TEXT PRIMARY KEY REFERENCES runs(run_id),
     markdown TEXT DEFAULT '',

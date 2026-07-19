@@ -36,6 +36,16 @@ export async function listModels(): Promise<ModelListResponse> {
   return request("/models");
 }
 
+export async function recordVisit(path: string): Promise<void> {
+  const ownerToken = getOwnerToken();
+  if (!ownerToken) return;
+  await request<{ recorded: boolean }>("/traffic/visit", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ owner_token: ownerToken, path }),
+  });
+}
+
 export async function uploadPaper(file: File): Promise<PaperUploadResponse> {
   const form = new FormData();
   form.append("file", file);

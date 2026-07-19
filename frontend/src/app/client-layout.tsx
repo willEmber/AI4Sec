@@ -1,7 +1,8 @@
 "use client";
 
 import { LanguageProvider, LanguageToggle, useTranslation } from "@/lib/i18n";
-import type { ReactNode } from "react";
+import { recordVisit } from "@/lib/api";
+import { useEffect, type ReactNode } from "react";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
 
@@ -50,6 +51,13 @@ function NavBar() {
 }
 
 export default function ClientLayout({ children }: { children: ReactNode }) {
+  const pathname = usePathname();
+
+  useEffect(() => {
+    // Traffic collection must never affect page rendering or navigation.
+    recordVisit(pathname).catch(() => {});
+  }, [pathname]);
+
   return (
     <LanguageProvider>
       <NavBar />

@@ -26,7 +26,15 @@ def _setup_logging() -> None:
     fmt = "%(asctime)s [%(name)s] %(levelname)s %(message)s"
     logging.basicConfig(level=logging.INFO, format=fmt, stream=sys.stdout, force=True)
     # Ensure our loggers are at INFO even if root is higher
-    for name in ("scholar", "scholar.runs", "scholar.graph", "scholar.llm", "scholar.mineru", "scholar.papers"):
+    for name in (
+        "scholar",
+        "scholar.runs",
+        "scholar.graph",
+        "scholar.llm",
+        "scholar.mineru",
+        "scholar.papers",
+        "scholar.traffic",
+    ):
         logging.getLogger(name).setLevel(logging.INFO)
 
 

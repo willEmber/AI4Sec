@@ -148,3 +148,38 @@ async def fetch_all(sql: str, params: tuple[Any, ...] = ()) -> list[dict[str, An
         cursor = await db.execute(sql, params)
         rows = await cursor.fetchall()
         return [dict(r) for r in rows]
+
+
+async def record_traffic_visit(visitor_hash: str, path: str) -> dict[str, Any]:
+    """Upsert one anonymous visit and return the current traffic totals."""
+    async with aiosqlite.connect(_get_db_path()) as db:
+        await db.execute("PRAGMA journal_mode=WAL")
+        await db.execute(
+            "INSERT INTO traffic_visitors "
+            "(visitor_hash, first_seen_at, last_seen_at, visit_count, last_path) "
+            "VALUES (?, datetime('now'), datetime('now'), 1, ?) "
+            "ON CONFLICT(visitor_hash) DO UPDATE SET "
+            "last_seen_at = datetime('now'), "
+            "visit_count = traffic_visitors.visit_count + 1, "
+            "last_path = excluded.last_path",
+            (visitor_hash, path),
+        )
+        await db.commit()
+
+        cursor = await db.execute(
+            "SELECT visit_count FROM traffic_visitors WHERE visitor_hash = ?",
+            (visitor_hash,),
+        )
+        visitor_row = await cursor.fetchone()
+        cursor = await db.execute(
+            "SELECT COUNT(*) AS unique_users, "
+            "COALESCE(SUM(visit_count), 0) AS total_visits "
+            "FROM traffic_visitors"
+        )
+        totals_row = await cursor.fetchone()
+
+    return {
+        "new_user": bool(visitor_row and visitor_row[0] == 1),
+        "unique_users": int(totals_row[0]) if totals_row else 0,
+        "total_visits": int(totals_row[1]) if totals_row else 0,
+    }
