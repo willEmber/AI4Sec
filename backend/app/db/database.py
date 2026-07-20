@@ -92,6 +92,22 @@ async def init_db() -> None:
                 logger.info("Reconciled %d interrupted run(s) on startup", cursor.rowcount)
         except Exception:
             logger.exception("Failed to reconcile interrupted runs on startup")
+        # Migrate sphere_nodes table: relevance-gate + quality columns.
+        for col, col_def in [
+            ("tier", "INTEGER DEFAULT 3"),
+            ("relation_type", "TEXT DEFAULT 'unknown'"),
+            ("relevance", "INTEGER DEFAULT -1"),
+            ("relation_reason", "TEXT DEFAULT ''"),
+            ("quality_score", "REAL DEFAULT 0.0"),
+            ("sci_rank", "TEXT DEFAULT ''"),
+            ("ccf_rank", "TEXT DEFAULT ''"),
+            ("influential", "INTEGER DEFAULT 0"),
+        ]:
+            try:
+                await db.execute(f"ALTER TABLE sphere_nodes ADD COLUMN {col} {col_def}")
+                await db.commit()
+            except Exception:
+                pass  # column already exists
         # Migrate mineru_parses table: add remote poll diagnostics.
         for col, col_def in [
             ("remote_batch_id", "TEXT DEFAULT ''"),

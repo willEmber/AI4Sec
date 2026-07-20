@@ -11,6 +11,7 @@ class EdgeType(str, Enum):
     CITES = "cites"
     CITED_BY = "cited_by"
     RELATED = "related"
+    COUPLING = "coupling"  # bibliographic coupling between candidates
 
 
 class CandidateSource(str, Enum):
@@ -23,6 +24,44 @@ class CandidateSource(str, Enum):
     S2_RECO = "s2_reco"
     QUERY_SEARCH = "query_search"
     LIBRARY = "library"  # matched from the user's own Dify knowledge base
+
+
+# Provenance trust tiers: how much we trust that a candidate is genuinely
+# related to the center paper, based on where it came from.
+#   T1 — citation-graph evidence (the paper cites / is cited by / is
+#        recommended for the center paper)
+#   T2 — indirect evidence (OpenAlex related works, user's own library)
+#   T3 — keyword search only (weakest; must clear extra quality gates)
+_SOURCE_TIER: dict[CandidateSource, int] = {
+    CandidateSource.SEED_REF: 1,
+    CandidateSource.OPENALEX_REF: 1,
+    CandidateSource.S2_REF: 1,
+    CandidateSource.OPENALEX_CITED_BY: 1,
+    CandidateSource.S2_CITED_BY: 1,
+    CandidateSource.S2_RECO: 1,
+    CandidateSource.OPENALEX_RELATED: 2,
+    CandidateSource.LIBRARY: 2,
+    CandidateSource.QUERY_SEARCH: 3,
+}
+
+
+def tier_for_sources(sources: list[CandidateSource]) -> int:
+    """Best (lowest) trust tier across all sources that surfaced a node."""
+    if not sources:
+        return 3
+    return min(_SOURCE_TIER.get(s, 3) for s in sources)
+
+
+class RelationType(str, Enum):
+    """How a candidate relates to the center paper (LLM relevance gate)."""
+
+    FOUNDATION = "foundation"          # prior work the center paper builds on
+    METHOD_NEIGHBOR = "method_neighbor"  # same methodology family
+    COMPETITOR = "competitor"          # solves the same problem, comparable
+    FOLLOW_UP = "follow_up"            # extends/builds on the center paper
+    APPLICATION = "application"        # applies the center paper's ideas elsewhere
+    UNRELATED = "unrelated"            # keyword overlap only — discard
+    UNKNOWN = "unknown"                # not yet judged / gate failed
 
 
 def make_node_id(doi: str = "", title: str = "") -> str:
@@ -58,15 +97,27 @@ class SphereNode(BaseModel):
     # Dify document id when this node also exists in the user's knowledge base.
     library_document_id: str = ""
 
-    # Scoring
-    score_text: float = 0.0
-    score_graph: float = 0.0
-    score_time: float = 0.0
-    score_venue: float = 0.0
-    score_novelty: float = 0.0
-    score_total: float = 0.0
+    # Provenance trust tier (1 strongest .. 3 weakest), see tier_for_sources.
+    tier: int = 3
+    # OpenAlex work IDs referenced by this paper (for bibliographic coupling).
+    referenced_ids: list[str] = Field(default_factory=list)
 
-    layer: int = 0  # 0=all, 1=abstract-analyzed, 2=full-text-parsed
+    # Relevance gate results (LLM-judged relation to the center paper)
+    relation_type: RelationType = RelationType.UNKNOWN
+    relevance: int = -1  # 0-3; -1 = not judged
+    relation_reason: str = ""
+
+    # Quality signals
+    quality_score: float = 0.0  # [0,1] citations/venue/recency composite
+    sci_rank: str = ""          # e.g. "Q1" (EasyScholar)
+    ccf_rank: str = ""          # e.g. "A" (EasyScholar)
+    influential: bool = False   # S2 isInfluential citation flag
+
+    # Graph + final ranking scores
+    score_graph: float = 0.0    # PageRank on the similarity graph
+    score_total: float = 0.0    # combined relevance × quality (selection key)
+
+    layer: int = 0  # 0=all, 1=core set (abstract-analyzed), 2=full-text-parsed
     cluster_id: int = -1
 
     # LLM extraction results (populated in layer1_abstract_snap)
@@ -77,7 +128,7 @@ class SphereNode(BaseModel):
     dataset: str = ""
     metric_keywords: str = ""
 
-    # Metadata reason string (populated in layer0_summarize_metadata)
+    # Human-readable provenance/quality summary (rendered in reports)
     reason: str = ""
 
 
@@ -90,18 +141,39 @@ class SphereEdge(BaseModel):
 
 class SphereConfig(BaseModel):
     radius: int = 1
-    candidate_cap: int = 200
-    layer1_cap: int = 40
-    pdf_parse_cap: int = 0  # Phase A: skip downloads
-    num_clusters: int = 5
+    candidate_cap: int = 200     # max candidates fetched from all channels
+    gate_cap: int = 120          # max candidates entering the LLM relevance gate
+    core_cap: int = 40           # size of the final core set
+    pdf_parse_cap: int = 0       # Phase A: skip downloads
     comparison_top_k: int = 10
 
-    # Scoring weights
-    w_text: float = 0.30
-    w_graph: float = 0.25
-    w_time: float = 0.15
-    w_venue: float = 0.10
-    w_novelty: float = 0.20
+    # Relevance gate
+    min_relevance: int = 1       # candidates below this are discarded
+    # T3 (keyword-search-only) hard gate: need citations or a ranked venue
+    t3_min_citations: int = 5
+    # Frontier quality floor: a merely-newest paper can't claim a frontier
+    # seat unless it has real impact (citations) or a ranked venue
+    frontier_min_citations: int = 10
+
+    # Quality score weights (citation impact / venue rank / recency)
+    w_citation: float = 0.5
+    w_venue: float = 0.3
+    w_recency: float = 0.2
+    venue_rank_enabled: bool = True
+
+    # Core-set quotas per relation partition (sum ≈ core_cap).
+    # "frontier" is relative: the newest still-unselected relevant papers
+    # published after the center paper — no absolute year window, so it
+    # works for a 2017 center paper as well as a 2025 one.
+    # "survey" quarantines review papers: useful entry points, but they are
+    # not methods/competitors and must not eat those partitions' seats.
+    quota_foundation: int = 8
+    quota_method: int = 8        # method_neighbor + competitor
+    quota_follow_up: int = 8
+    quota_application: int = 5   # cross-domain applications of the center's ideas
+    quota_frontier: int = 5
+    quota_survey: int = 2
+    quota_library: int = 4
 
 
 class ThemeCluster(BaseModel):
@@ -161,8 +233,16 @@ class LibraryMatch(BaseModel):
     snippet: str = ""
 
 
+class CorePartition(BaseModel):
+    """One relation-based partition of the core set (rendered as a section)."""
+
+    key: str = ""   # foundation / method / follow_up / application / frontier / survey / library
+    node_ids: list[str] = Field(default_factory=list)
+
+
 class SphereOutput(BaseModel):
     sphere_overview: str = ""
+    partitions: list[CorePartition] = Field(default_factory=list)
     themes: list[ThemeCluster] = Field(default_factory=list)
     timeline: list[TimelineEntry] = Field(default_factory=list)
     key_hubs: list[KeyHub] = Field(default_factory=list)
@@ -181,3 +261,7 @@ class SphereState(BaseModel):
     layer2_node_ids: list[str] = Field(default_factory=list)
     library_matches: list[LibraryMatch] = Field(default_factory=list)
     output: SphereOutput = Field(default_factory=SphereOutput)
+    # Pipeline funnel instrumentation: one record per stage with candidate
+    # counts and the highest-cited papers dropped there. Surfaced in
+    # final_json.debug so "why is BERT missing" is answerable from the output.
+    funnel: list[dict[str, Any]] = Field(default_factory=list)

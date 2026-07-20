@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -41,6 +42,11 @@ class PaperMetadata:
     authors: str = ""
     abstract_text: str = ""
     cited_by_count: int = 0
+    # OpenAlex work IDs this paper references (bibliographic coupling input)
+    referenced_works: list[str] = field(default_factory=list)
+    # S2 citation-edge signals (only set on citations/references responses)
+    influential: bool = False
+    intents: list[str] = field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
@@ -135,7 +141,12 @@ async def _post_json(
 # ---------------------------------------------------------------------------
 
 _OA_BASE = "https://api.openalex.org"
-_OA_SELECT = "id,title,publication_year,primary_location,authorships,cited_by_count,abstract_inverted_index,ids,referenced_works,related_works"
+_OA_SELECT = "id,title,publication_year,primary_location,locations,authorships,cited_by_count,abstract_inverted_index,ids,referenced_works,related_works"
+
+# Preprint servers: never the venue we want when a published version exists
+_OA_PREPRINT_RE = re.compile(
+    r"arxiv|preprint|biorxiv|medrxiv|ssrn|research square|repec", re.IGNORECASE
+)
 
 
 def _oa_mailto_param() -> dict[str, str]:
@@ -167,9 +178,37 @@ def _oa_extract_arxiv(ids: dict[str, Any] | None) -> str:
 
 
 def _oa_extract_venue(work: dict[str, Any]) -> str:
-    loc = work.get("primary_location") or {}
-    source = loc.get("source") or {}
-    return normalize_whitespace(source.get("display_name", ""))
+    """Venue of the published version, not a preprint server or repository.
+
+    For arXiv-first papers OpenAlex's primary_location is arXiv, which used
+    to make every top-conference paper score as a preprint. But "any
+    non-preprint location" is not enough either: OpenAlex lists institutional
+    repositories (HAL, LA Referencia, Apollo, UvA-DARE, …) as locations, and
+    those beat the real journal/conference by list order. OpenAlex marks all
+    of them — arXiv included — with source.type == "repository", so filter by
+    type first and keep the name regex as a backstop for untyped sources.
+    """
+    def _loc_source(loc: dict[str, Any] | None) -> tuple[str, str]:
+        source = (loc or {}).get("source") or {}
+        name = normalize_whitespace(source.get("display_name", "") or "")
+        stype = (source.get("type") or "").strip().lower()
+        return name, stype
+
+    def _is_published_outlet(name: str, stype: str) -> bool:
+        if not name or stype == "repository":
+            return False
+        return not _OA_PREPRINT_RE.search(name)
+
+    primary_name, primary_type = _loc_source(work.get("primary_location"))
+    if _is_published_outlet(primary_name, primary_type):
+        return primary_name
+
+    for loc in work.get("locations") or []:
+        name, stype = _loc_source(loc)
+        if _is_published_outlet(name, stype):
+            return name
+
+    return primary_name
 
 
 def _oa_extract_authors(work: dict[str, Any], limit: int = 5) -> str:
@@ -188,6 +227,10 @@ def _oa_work_to_metadata(work: dict[str, Any]) -> PaperMetadata:
     doi = _oa_extract_doi(ids)
     openalex_id = (work.get("id") or "").replace("https://openalex.org/", "")
     abstract = openalex_abstract_from_inverted_index(work.get("abstract_inverted_index"))
+    referenced = [
+        rid.replace("https://openalex.org/", "")
+        for rid in (work.get("referenced_works") or [])
+    ]
 
     return PaperMetadata(
         title=normalize_whitespace(work.get("title", "") or ""),
@@ -198,6 +241,7 @@ def _oa_work_to_metadata(work: dict[str, Any]) -> PaperMetadata:
         authors=_oa_extract_authors(work),
         abstract_text=abstract,
         cited_by_count=work.get("cited_by_count") or 0,
+        referenced_works=referenced,
     )
 
 
@@ -305,6 +349,38 @@ async def openalex_get_cited_by(
     return _oa_works_to_metadata(data.get("results") or [])
 
 
+async def openalex_get_recent_cited_by(
+    client: httpx.AsyncClient,
+    openalex_id: str,
+    since_year: int,
+    limit: int = 40,
+) -> list[PaperMetadata]:
+    """Top-cited *recent* citers — the dedicated frontier channel.
+
+    The all-time citers channel is dominated by decade-old landmarks, so for
+    an older center paper the newest high-impact follow-ups never crack its
+    top-N and the frontier quota ends up fed by whatever low-impact recent
+    citers drifted in through other channels. Restricting to works published
+    since `since_year` (still sorted by citations) fixes the supply side.
+    """
+    params = {
+        **_oa_mailto_param(),
+        "filter": f"cites:{openalex_id},from_publication_date:{since_year}-01-01",
+        "per_page": str(min(limit, 200)),
+        "sort": "cited_by_count:desc",
+        "select": _OA_SELECT,
+    }
+    data = await _get_json(
+        client,
+        f"{_OA_BASE}/works",
+        params=params,
+        semaphore=_OPENALEX_SEM,
+    )
+    if not data:
+        return []
+    return _oa_works_to_metadata(data.get("results") or [])
+
+
 async def openalex_get_related_works(
     client: httpx.AsyncClient,
     openalex_id: str,
@@ -320,6 +396,69 @@ async def openalex_get_related_works(
 
     clean_ids = [rid.replace("https://openalex.org/", "") for rid in related_ids[:50]]
     return await _oa_batch_fetch(client, clean_ids)
+
+
+async def openalex_batch_fetch_by_doi(
+    client: httpx.AsyncClient,
+    dois: list[str],
+    batch_size: int = 40,
+) -> dict[str, PaperMetadata]:
+    """Batch fetch OpenAlex works by DOI. Returns {lowercase doi: metadata}."""
+    result: dict[str, PaperMetadata] = {}
+    clean = [d.strip().lower() for d in dois if d and d.strip()]
+
+    for i in range(0, len(clean), batch_size):
+        batch = clean[i : i + batch_size]
+        filter_str = "|".join(batch)
+        params = {
+            **_oa_mailto_param(),
+            "filter": f"doi:{filter_str}",
+            "per_page": str(len(batch)),
+            "select": _OA_SELECT,
+        }
+        data = await _get_json(
+            client,
+            f"{_OA_BASE}/works",
+            params=params,
+            semaphore=_OPENALEX_SEM,
+        )
+        if data:
+            for meta in _oa_works_to_metadata(data.get("results") or []):
+                if meta.doi:
+                    result[meta.doi] = meta
+
+    return result
+
+
+async def openalex_search_one(
+    client: httpx.AsyncClient,
+    title: str,
+    min_similarity: float = 0.6,
+) -> PaperMetadata | None:
+    """Resolve a single paper by title search; returns full metadata or None."""
+    if not title or len(title.strip()) < 10:
+        return None
+    params = {
+        **_oa_mailto_param(),
+        "search": title[:300],
+        "per_page": "1",
+        "select": _OA_SELECT,
+    }
+    data = await _get_json(
+        client,
+        f"{_OA_BASE}/works",
+        params=params,
+        semaphore=_OPENALEX_SEM,
+    )
+    if not data:
+        return None
+    results = data.get("results") or []
+    if not results:
+        return None
+    meta = _oa_work_to_metadata(results[0])
+    if jaccard_similarity(title, meta.title) < min_similarity:
+        return None
+    return meta
 
 
 async def _oa_batch_fetch(
@@ -406,6 +545,10 @@ def _s2_papers_to_metadata(items: list[dict[str, Any]], key: str = "") -> list[P
             continue
         meta = _s2_paper_to_metadata(paper)
         if meta.title:
+            # Edge-level citation signals live on the wrapper item, not the paper
+            if key:
+                meta.influential = bool(item.get("isInfluential"))
+                meta.intents = [i for i in (item.get("intents") or []) if isinstance(i, str)]
             results.append(meta)
     return results
 
@@ -490,19 +633,31 @@ async def s2_get_citations(
     s2_id: str,
     limit: int = 80,
 ) -> list[PaperMetadata]:
-    """Get papers that cite the given paper."""
+    """Get papers that cite the given paper, highest-cited first.
+
+    The S2 citations endpoint returns entries in no useful order (roughly
+    recency), so a naive first-N slice hands back mostly low-impact recent
+    citers. Over-fetch a larger page and keep the top `limit` by citation
+    count instead.
+    """
     await _s2_throttle()
     headers = _s2_headers()
+    fetch = min(max(limit * 3, 300), 1000)
     data = await _get_json(
         client,
         f"{_S2_BASE}/graph/v1/paper/{s2_id}/citations",
-        params={"fields": _S2_FIELDS, "limit": str(min(limit, 1000))},
+        params={
+            "fields": _S2_FIELDS + ",intents,isInfluential",
+            "limit": str(fetch),
+        },
         headers=headers,
         semaphore=_S2_SEM,
     )
     if not data:
         return []
-    return _s2_papers_to_metadata(data.get("data") or [], key="citingPaper")
+    metas = _s2_papers_to_metadata(data.get("data") or [], key="citingPaper")
+    metas.sort(key=lambda m: m.cited_by_count, reverse=True)
+    return metas[:limit]
 
 
 async def s2_get_recommendations(

@@ -125,6 +125,14 @@ CREATE TABLE IF NOT EXISTS sphere_nodes (
     score_total REAL DEFAULT 0.0,
     layer   INTEGER DEFAULT 0,
     cluster_id INTEGER DEFAULT -1,
+    tier    INTEGER DEFAULT 3,               -- provenance trust tier (1 strongest)
+    relation_type TEXT DEFAULT 'unknown',    -- foundation|method_neighbor|competitor|follow_up|application|unrelated|unknown
+    relevance INTEGER DEFAULT -1,            -- LLM gate 0-3; -1 = not judged
+    relation_reason TEXT DEFAULT '',
+    quality_score REAL DEFAULT 0.0,          -- citations/venue/recency composite
+    sci_rank TEXT DEFAULT '',                -- EasyScholar SCI quartile
+    ccf_rank TEXT DEFAULT '',                -- EasyScholar CCF tier
+    influential INTEGER DEFAULT 0,           -- S2 isInfluential citation flag
     PRIMARY KEY (node_id, run_id)
 );
 CREATE INDEX IF NOT EXISTS idx_sphere_nodes_run ON sphere_nodes(run_id);

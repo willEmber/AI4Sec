@@ -48,8 +48,20 @@ class AppSettings(BaseSettings):
     # --- Research Sphere ---
     sphere_radius: int = Field(default=1, alias="SPHERE_RADIUS")
     sphere_candidate_cap: int = Field(default=200, alias="SPHERE_CANDIDATE_CAP")
-    sphere_layer1_cap: int = Field(default=40, alias="SPHERE_LAYER1_CAP")
+    # Max candidates entering the LLM relevance gate (after quality gates)
+    sphere_gate_cap: int = Field(default=120, alias="SPHERE_GATE_CAP")
+    # Final core-set size (papers used for all synthesis/reporting)
+    sphere_core_cap: int = Field(default=40, alias="SPHERE_CORE_CAP")
     sphere_pdf_parse_cap: int = Field(default=0, alias="SPHERE_PDF_PARSE_CAP")
+    # Keyword-search-only candidates need at least this many citations or a
+    # ranked venue to survive (they lack citation-graph evidence)
+    sphere_t3_min_citations: int = Field(default=5, alias="SPHERE_T3_MIN_CITATIONS")
+    # EasyScholar venue-rank lookup during scoring (cache-backed, no LLM fallback)
+    sphere_venue_rank_enabled: bool = Field(default=True, alias="SPHERE_VENUE_RANK_ENABLED")
+    # A merely-newest post-center-year paper needs at least this many citations
+    # (or a ranked venue) to claim a "frontier" seat — otherwise low-impact
+    # recent citers crowd out real cutting-edge follow-ups
+    sphere_frontier_min_citations: int = Field(default=10, alias="SPHERE_FRONTIER_MIN_CITATIONS")
 
     # --- Dify knowledge base (self-hosted proxy) ---
     # Base URL of the Dify knowledge API proxy (e.g. http://8.217.68.153:3002).
