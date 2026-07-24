@@ -22,6 +22,7 @@ export default function RunPage() {
   const [paper, setPaper] = useState<PaperResponse | null>(null);
   const [markdown, setMarkdown] = useState<string>("");
   const [targetPage, setTargetPage] = useState<number | undefined>(undefined);
+  const [pdfCollapsed, setPdfCollapsed] = useState(false);
   const [pageLoadTime] = useState(() => performance.now());
 
   const { events, isConnected, isDone, error, connect } = useRunStream();
@@ -102,6 +103,8 @@ export default function RunPage() {
   }, [runId, paperId, markdown, run?.status, paper?.venue]);
 
   const handleCitationClick = useCallback((page: number) => {
+    // Jumping to a citation implies the user wants to see the PDF — expand it if collapsed.
+    setPdfCollapsed(false);
     setTargetPage(page);
   }, []);
 
@@ -239,6 +242,10 @@ export default function RunPage() {
           while the left side shows progress / failure / markdown as state evolves. */}
       <div className="flex-1 overflow-hidden">
         <SplitPane
+          collapsed={pdfCollapsed}
+          onToggleCollapse={() => setPdfCollapsed((v) => !v)}
+          collapseTitle={t("pdf.collapse")}
+          expandTitle={t("pdf.expand")}
           left={
             markdown ? (
               <div className="px-6 py-8 sm:px-10">

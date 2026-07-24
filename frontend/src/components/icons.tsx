@@ -143,3 +143,25 @@ export function IconPlus(props: IconProps) {
     </Svg>
   );
 }
+
+/** Collapse the right-hand panel (e.g. hide the PDF pane). */
+export function IconPanelRightClose(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <rect x="3" y="4" width="18" height="16" rx="2" />
+      <path d="M15 4v16" />
+      <path d="m10 9 3 3-3 3" />
+    </Svg>
+  );
+}
+
+/** Expand the right-hand panel (e.g. show the PDF pane). */
+export function IconPanelRightOpen(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <rect x="3" y="4" width="18" height="16" rx="2" />
+      <path d="M15 4v16" />
+      <path d="m12 9-3 3 3 3" />
+    </Svg>
+  );
+}

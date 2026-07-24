@@ -117,6 +117,8 @@ const translations: Record<Locale, Record<string, string>> = {
     "pdf.next": "Next",
     "pdf.loading": "Loading PDF...",
     "pdf.jump_to_page": "Jump to page",
+    "pdf.collapse": "Hide PDF",
+    "pdf.expand": "Show PDF",
 
     // Knowledge base (library)
     "library.title": "Knowledge Base",
@@ -258,6 +260,8 @@ const translations: Record<Locale, Record<string, string>> = {
     "pdf.next": "下一页",
     "pdf.loading": "加载PDF中...",
     "pdf.jump_to_page": "跳转到第{page}页",
+    "pdf.collapse": "收起原文",
+    "pdf.expand": "展开原文",
 
     // 知识库
     "library.title": "我的文献库",
