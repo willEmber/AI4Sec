@@ -53,7 +53,6 @@ Return ONLY a JSON object (no markdown fences, no commentary):
   "must_read_sections": [         // 0-3 items; the parts that are worth a reader's time
     {"where": "§4.3 Ablation [p.7]", "why": "first to isolate the effect of A vs B"}
   ],
-  "skip_cost": "one sentence: what a reader loses by not reading this paper",
   "target_readers": "one sentence: who specifically should read it",
   "reasons": ["2-4 short justifications, each carrying a [p.X] citation"],
   "red_flags": ["0-3 concrete methodological problems, each with [p.X]; omit if none"]
@@ -80,7 +79,7 @@ Add two fields to the JSON:
 # under Chinese headings.
 _REVIEW_ZH_DIRECTIVE = """
 Output language: write every string value in Simplified Chinese — "must_read_sections",
-"skip_cost", "target_readers", "reasons", "red_flags" and "question_note". Keep these
+"target_readers", "reasons", "red_flags" and "question_note". Keep these
 in their original English form: page citations [p.X], LaTeX, section numbers, metric
 and dataset names, paper titles and author names. JSON keys and the numeric scores
 stay exactly as specified.
@@ -106,7 +105,6 @@ class ContentReview(BaseModel):
     reproducibility: int = 1
     limitation_severity: int = 1
     must_read_sections: list[dict[str, str]] = Field(default_factory=list)
-    skip_cost: str = ""
     target_readers: str = ""
     reasons: list[str] = Field(default_factory=list)
     red_flags: list[str] = Field(default_factory=list)
@@ -181,7 +179,6 @@ def parse_content_review(raw: str) -> ContentReview:
         reproducibility=_clamp(data.get("reproducibility")),
         limitation_severity=_clamp(data.get("limitation_severity")),
         must_read_sections=sections,
-        skip_cost=str(data.get("skip_cost", "")).strip()[:400],
         target_readers=str(data.get("target_readers", "")).strip()[:400],
         reasons=_str_list("reasons", 4),
         red_flags=_str_list("red_flags", 3),
@@ -327,7 +324,6 @@ _L = {
         "survey": "review/survey",
         "read_this": "**Worth your time**",
         "why": "**Why**",
-        "skip_cost": "**Cost of skipping**",
         "readers": "**Who should read it**",
         "red_flags": "**Red flags**",
         "for_question": "**Against your question**",
@@ -371,7 +367,6 @@ _L = {
         "survey": "综述",
         "read_this": "**值得花时间的部分**",
         "why": "**理由**",
-        "skip_cost": "**跳过的代价**",
         "readers": "**适合读者**",
         "red_flags": "**风险提示**",
         "for_question": "**针对你的问题**",
@@ -546,9 +541,6 @@ def render_verdict_markdown(
         parts.append(f"{lang['for_question']}: {review.question_note}")
         parts.append("")
 
-    if review.skip_cost:
-        parts.append(f"{lang['skip_cost']}: {review.skip_cost}")
-        parts.append("")
     if review.target_readers:
         parts.append(f"{lang['readers']}: {review.target_readers}")
         parts.append("")

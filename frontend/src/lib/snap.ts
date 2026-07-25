@@ -95,7 +95,6 @@ export interface SnapContentReview {
   reproducibility: number;
   limitation_severity: number;
   must_read_sections: { where: string; why: string }[];
-  skip_cost: string;
   target_readers: string;
   reasons: string[];
   red_flags: string[];
@@ -156,7 +155,7 @@ const EMPTY_SIGNALS: SnapSignals = {
 
 const EMPTY_REVIEW: SnapContentReview = {
   contribution_strength: 0, evidence_strength: 0, novelty: 0, reproducibility: 0,
-  limitation_severity: 0, must_read_sections: [], skip_cost: "", target_readers: "",
+  limitation_severity: 0, must_read_sections: [], target_readers: "",
   reasons: [], red_flags: [], question_relevance: -1, question_note: "", available: false,
 };
 

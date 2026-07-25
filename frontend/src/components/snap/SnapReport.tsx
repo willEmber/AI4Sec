@@ -513,21 +513,13 @@ export default function SnapReport({
         </Section>
       )}
 
-      {(review.skip_cost || review.target_readers) && (
+      {review.target_readers && (
         <Section title={t("snap.sec.decide")}>
           <dl className="space-y-2.5">
-            {review.skip_cost && (
-              <div>
-                <dt className="text-xs font-medium text-muted-foreground">{t("snap.skip_cost")}</dt>
-                <dd className="mt-0.5 text-[13.5px] leading-relaxed">{review.skip_cost}</dd>
-              </div>
-            )}
-            {review.target_readers && (
-              <div>
-                <dt className="text-xs font-medium text-muted-foreground">{t("snap.readers")}</dt>
-                <dd className="mt-0.5 text-[13.5px] leading-relaxed">{review.target_readers}</dd>
-              </div>
-            )}
+            <div>
+              <dt className="text-xs font-medium text-muted-foreground">{t("snap.readers")}</dt>
+              <dd className="mt-0.5 text-[13.5px] leading-relaxed">{review.target_readers}</dd>
+            </div>
           </dl>
         </Section>
       )}
