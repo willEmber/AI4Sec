@@ -165,3 +165,45 @@ export function IconPanelRightOpen(props: IconProps) {
     </Svg>
   );
 }
+
+/** Opens in a new tab. */
+export function IconExternal(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M14 4h6v6" />
+      <path d="M20 4 11 13" />
+      <path d="M18 14v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4" />
+    </Svg>
+  );
+}
+
+/** Grid / table layout. */
+export function IconTable(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <rect x="3" y="4" width="18" height="16" rx="2" />
+      <path d="M3 10h18M9 10v10" />
+    </Svg>
+  );
+}
+
+/** Stacked cards layout. */
+export function IconCards(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <rect x="3" y="4" width="18" height="6" rx="1.5" />
+      <rect x="3" y="14" width="18" height="6" rx="1.5" />
+    </Svg>
+  );
+}
+
+/** Raw document / markdown source. */
+export function IconDocument(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8Z" />
+      <path d="M14 3v5h5" />
+      <path d="M9 13h6M9 17h4" />
+    </Svg>
+  );
+}

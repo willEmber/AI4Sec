@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import { getRun, getRunOutput, getPaperPdfUrl, getPaper, getZoteroBundleUrl, getMarkdownExportUrl } from "@/lib/api";
 import { useRunStream } from "@/hooks/useRunStream";
@@ -9,7 +9,9 @@ import MarkdownRenderer from "@/components/MarkdownRenderer";
 import PdfViewer from "@/components/PdfViewer";
 import SplitPane from "@/components/SplitPane";
 import RankBadges from "@/components/RankBadges";
-import { IconDownload, IconCheck } from "@/components/icons";
+import SphereReport from "@/components/sphere/SphereReport";
+import { IconCards, IconCheck, IconDocument, IconDownload } from "@/components/icons";
+import { parseSphereData } from "@/lib/sphere";
 import type { RunResponse, PaperResponse, SSEEvent, ProgressEntry } from "@/lib/types";
 
 export default function RunPage() {
@@ -21,6 +23,8 @@ export default function RunPage() {
   const [run, setRun] = useState<RunResponse | null>(null);
   const [paper, setPaper] = useState<PaperResponse | null>(null);
   const [markdown, setMarkdown] = useState<string>("");
+  const [jsonData, setJsonData] = useState<string>("");
+  const [sphereView, setSphereView] = useState<"structured" | "markdown">("structured");
   const [targetPage, setTargetPage] = useState<number | undefined>(undefined);
   const [pdfCollapsed, setPdfCollapsed] = useState(false);
   const [pageLoadTime] = useState(() => performance.now());
@@ -51,6 +55,7 @@ export default function RunPage() {
         getRunOutput(runId).then((o) => {
           console.log(`[RunPage] Initial getRunOutput: ${o.markdown.length} chars`);
           setMarkdown(o.markdown);
+          setJsonData(o.json_data);
         }).catch(() => {});
       }
     }).catch(() => {});
@@ -74,6 +79,7 @@ export default function RunPage() {
       console.log(`[RunPage] SSE done -> getRunOutput: ${(performance.now() - t0).toFixed(0)}ms markdown=${o.markdown.length} chars`);
       console.log(`[RunPage] Total time from page load to output: ${((performance.now() - pageLoadTime) / 1000).toFixed(1)}s`);
       setMarkdown(o.markdown);
+      setJsonData(o.json_data);
     }).catch(() => {});
   }, [isDone, runId, pageLoadTime]);
 
@@ -90,6 +96,7 @@ export default function RunPage() {
           getRunOutput(runId).then((o) => {
             console.log(`[RunPage] Poll -> getRunOutput: markdown=${o.markdown.length} chars`);
             setMarkdown(o.markdown);
+            setJsonData(o.json_data);
           }).catch(() => {});
         }
       }).catch(() => {});
@@ -160,6 +167,11 @@ export default function RunPage() {
     ? progressSteps[progressSteps.length - 1]
     : null;
 
+  // Research Sphere ships a structured twin of the report next to the markdown;
+  // when it is present the report renders as cards instead of raw markdown.
+  const sphereData = useMemo(() => parseSphereData(jsonData), [jsonData]);
+  const showSphereReport = sphereData !== null && sphereView === "structured";
+
   const isComplete = run?.status === "done" || (isDone && markdown);
   const isFailed = (run?.status === "failed" || !!error) && !isComplete;
   const isRunning = (run?.status === "running" || isConnected) && !isComplete && !isFailed;
@@ -182,6 +194,31 @@ export default function RunPage() {
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-3">
+          {sphereData && (
+            <div className="flex items-center rounded-lg border border-border p-0.5">
+              {(
+                [
+                  ["structured", IconCards, t("sphere.view.structured")],
+                  ["markdown", IconDocument, t("sphere.view.markdown")],
+                ] as const
+              ).map(([key, Icon, label]) => (
+                <button
+                  key={key}
+                  onClick={() => setSphereView(key)}
+                  title={label}
+                  aria-pressed={sphereView === key}
+                  className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-sm transition-colors ${
+                    sphereView === key
+                      ? "bg-accent text-accent-foreground"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  <Icon className="text-[15px]" />
+                  <span className="hidden lg:inline">{label}</span>
+                </button>
+              ))}
+            </div>
+          )}
           {markdown && (
             <button
               onClick={handleExportMarkdown}
@@ -247,7 +284,13 @@ export default function RunPage() {
           collapseTitle={t("pdf.collapse")}
           expandTitle={t("pdf.expand")}
           left={
-            markdown ? (
+            showSphereReport && sphereData ? (
+              <div className="px-6 pb-8 pt-2 sm:px-8">
+                <div className="mx-auto max-w-4xl">
+                  <SphereReport data={sphereData} />
+                </div>
+              </div>
+            ) : markdown ? (
               <div className="px-6 py-8 sm:px-10">
                 <div className="mx-auto max-w-3xl">
                   <MarkdownRenderer content={markdown} onCitationClick={handleCitationClick} />

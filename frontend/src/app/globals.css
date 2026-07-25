@@ -307,3 +307,27 @@
 .animate-fade-in-up {
   animation: fade-in-up 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
+
+/* Cross-link highlight: flashes a Research Sphere paper card when it is
+   targeted from a theme chip, evidence chip or reading-path step. */
+@keyframes sphere-flash {
+  0% {
+    background-color: color-mix(in srgb, var(--primary) 16%, transparent);
+    border-color: var(--primary);
+  }
+  100% {
+    background-color: transparent;
+    border-color: var(--border);
+  }
+}
+.sphere-flash {
+  animation: sphere-flash 1.6s ease-out;
+}
+
+/* Horizontal rails (e.g. the sphere section nav) that scroll without a bar. */
+.no-scrollbar {
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}

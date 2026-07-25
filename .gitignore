@@ -47,9 +47,11 @@ Thumbs.db
 test_doc/
 test_result/
 
-# === Generated analysis exports (Insight Snap / Logic Lens markdown) ===
+# === Generated analysis exports (Insight Snap / Logic Lens / Research Sphere markdown) ===
 *_lens.md
 *_snap.md
+*_sphere.md
+*_sphere_*.md
 
 # === Cache databases ===
 rank_cache.sqlite3

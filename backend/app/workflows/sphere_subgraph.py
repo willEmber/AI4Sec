@@ -2676,6 +2676,63 @@ async def step_render_output(
 
     markdown = "".join(md_parts)
 
+    # ── Node dictionary for structured (non-markdown) renderers ──
+    # The markdown above flattens every node into a prose bullet; the frontend
+    # needs the same nodes as fields so it can render cards, badges and filters.
+    # Only nodes actually referenced by the report are emitted, keeping the
+    # payload proportional to the core set rather than to every candidate.
+    referenced_ids: set[str] = set()
+    for part in output.partitions:
+        referenced_ids.update(part.node_ids)
+    for theme in output.themes:
+        referenced_ids.update(theme.representative_node_ids)
+    for entry in output.timeline:
+        referenced_ids.update(entry.node_ids)
+    for hub in output.key_hubs:
+        referenced_ids.add(hub.node_id)
+    for row in output.comparison_table:
+        referenced_ids.add(row.node_id)
+    for gap in output.gaps_and_ideas:
+        referenced_ids.update(gap.evidence_node_ids)
+    for path in output.reading_paths:
+        referenced_ids.update(path.node_ids)
+    if center:
+        referenced_ids.add(center.node_id)
+
+    def _node_payload(node: SphereNode) -> dict[str, Any]:
+        return {
+            "node_id": node.node_id,
+            "title": node.title,
+            "year": node.year,
+            "venue": normalize_venue(node.venue) if node.venue else "",
+            "authors": node.authors,
+            "doi": node.doi,
+            "arxiv_id": node.arxiv_id,
+            "openalex_id": node.openalex_id,
+            "cited_by_count": node.cited_by_count,
+            "sci_rank": node.sci_rank,
+            "ccf_rank": node.ccf_rank,
+            "tier": node.tier,
+            "quality_score": round(node.quality_score, 3),
+            "relevance": node.relevance,
+            "relation_type": node.relation_type.value,
+            "relation_reason": node.relation_reason,
+            "reason": node.reason,
+            "cluster_id": node.cluster_id,
+            "influential": node.influential,
+            "library_document_id": node.library_document_id,
+            "method_summary": node.method_summary,
+            "contribution": node.contribution,
+            "task": node.task,
+            "dataset": node.dataset,
+        }
+
+    nodes_payload = {
+        nid: _node_payload(node)
+        for nid in sorted(referenced_ids)
+        if (node := sphere.nodes.get(nid)) is not None
+    }
+
     # Build JSON output
     json_data = json.dumps({
         "mode": "sphere",
@@ -2685,6 +2742,9 @@ async def step_render_output(
         "num_edges": len(sphere.edges),
         "num_core": len(sphere.layer1_node_ids),
         "num_layer2": len(sphere.layer2_node_ids),
+        "language": lang,
+        "center_node_id": center.node_id if center else "",
+        "nodes": nodes_payload,
         "partitions": [p.model_dump() for p in output.partitions],
         "num_library_matches": len(sphere.library_matches),
         "library_matches": [m.model_dump() for m in sphere.library_matches],
