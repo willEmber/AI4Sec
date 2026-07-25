@@ -2,6 +2,7 @@
 
 import { BADGE_BASE, CCF_COLORS, SCI_COLORS } from "@/components/RankBadges";
 import { IconCheck, IconExternal } from "@/components/icons";
+import { ClaimList, FindingsTable, MeterCard, Section } from "@/components/report/primitives";
 import { useTranslation } from "@/lib/i18n";
 import {
   TIER_ACCENT,
@@ -221,141 +222,9 @@ function ReviewScores({ data }: { data: SnapData }) {
   return (
     <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-5">
       {dims.map((d) => (
-        <div key={d.label} className="rounded-lg border border-border bg-card px-2.5 py-2">
-          <p className="truncate text-[11px] text-muted-foreground" title={d.label}>
-            {d.label}
-          </p>
-          <p className="mt-0.5 font-mono text-[15px] tabular-nums">
-            {d.value}
-            <span className="text-[11px] text-muted-foreground">/3</span>
-          </p>
-          <div className="mt-1 flex gap-0.5" aria-hidden>
-            {[0, 1, 2].map((i) => (
-              <span
-                key={i}
-                className={`h-1 flex-1 rounded-full ${
-                  i < d.value
-                    ? d.invert
-                      ? "bg-destructive/60"
-                      : "bg-primary/70"
-                    : "bg-border"
-                }`}
-              />
-            ))}
-          </div>
-        </div>
+        <MeterCard key={d.label} label={d.label} value={d.value} invert={d.invert} />
       ))}
     </div>
-  );
-}
-
-/** Quantified results as a real table — the numbers, not "significantly better". */
-function FindingsTable({ data, onCite }: { data: SnapData; onCite?: (page: number) => void }) {
-  const { t } = useTranslation();
-  const findings = data.report.findings;
-
-  if (findings.length === 0) {
-    return <p className="text-[13px] italic text-muted-foreground">{t("snap.no_findings")}</p>;
-  }
-
-  return (
-    <div className="overflow-x-auto rounded-xl border border-border">
-      <table className="w-full min-w-[38rem] border-collapse text-[13px]">
-        <thead>
-          <tr className="bg-muted/60 text-left text-xs text-muted-foreground">
-            <th className="px-3 py-2 font-medium">{t("snap.col.metric")}</th>
-            <th className="px-3 py-2 font-medium">{t("snap.col.dataset")}</th>
-            <th className="px-3 py-2 text-right font-medium">{t("snap.col.value")}</th>
-            <th className="px-3 py-2 text-right font-medium">{t("snap.col.baseline")}</th>
-            <th className="px-3 py-2 text-right font-medium">{t("snap.col.delta")}</th>
-            <th className="px-3 py-2 font-medium">{t("snap.col.page")}</th>
-          </tr>
-        </thead>
-        <tbody>
-          {findings.map((f, i) => (
-            <tr key={i} className="border-t border-border/70 align-top">
-              <td className="px-3 py-2 font-medium">{f.metric}</td>
-              <td className="px-3 py-2 text-foreground/80">{f.dataset || "—"}</td>
-              <td className="px-3 py-2 text-right font-mono tabular-nums">{f.value}</td>
-              <td className="px-3 py-2 text-right font-mono tabular-nums text-muted-foreground">
-                {f.baseline || "—"}
-              </td>
-              <td
-                className={`px-3 py-2 text-right font-mono tabular-nums ${
-                  f.delta.startsWith("+") ? "text-success" : f.delta.startsWith("-") ? "text-destructive" : ""
-                }`}
-              >
-                {f.delta || "—"}
-              </td>
-              <td className="px-3 py-2">
-                {f.page > 0 ? (
-                  <button
-                    type="button"
-                    onClick={() => onCite?.(f.page)}
-                    className="rounded-md border border-primary/25 bg-accent/60 px-1.5 py-0.5 font-mono text-[11px] text-primary transition-colors hover:bg-accent"
-                  >
-                    p.{f.page}
-                  </button>
-                ) : (
-                  <span className="text-muted-foreground">—</span>
-                )}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      {findings.some((f) => f.note) && (
-        <ul className="space-y-0.5 border-t border-border/70 bg-muted/30 px-3 py-2 text-[12px] text-muted-foreground">
-          {findings
-            .filter((f) => f.note)
-            .map((f, i) => (
-              <li key={i}>
-                <span className="font-medium text-foreground/70">{f.metric}</span>: {f.note}
-              </li>
-            ))}
-        </ul>
-      )}
-    </div>
-  );
-}
-
-/** A bullet list of claims, each with a clickable page badge. */
-function ClaimList({
-  claims,
-  onCite,
-}: {
-  claims: { text: string; page: number }[];
-  onCite?: (page: number) => void;
-}) {
-  return (
-    <ul className="space-y-1.5">
-      {claims.map((c, i) => (
-        <li key={i} className="flex gap-2 text-[13.5px] leading-relaxed">
-          <span className="mt-[0.45rem] h-1 w-1 shrink-0 rounded-full bg-muted-foreground/60" />
-          <span className="min-w-0">
-            {c.text}
-            {c.page > 0 && (
-              <button
-                type="button"
-                onClick={() => onCite?.(c.page)}
-                className="ml-1.5 rounded-md border border-primary/25 bg-accent/60 px-1 py-px align-[0.05em] font-mono text-[11px] text-primary transition-colors hover:bg-accent"
-              >
-                p.{c.page}
-              </button>
-            )}
-          </span>
-        </li>
-      ))}
-    </ul>
-  );
-}
-
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <section className="pt-7 first:pt-1">
-      <h2 className="font-display text-[17px] font-semibold tracking-tight">{title}</h2>
-      <div className="mt-3">{children}</div>
-    </section>
   );
 }
 
@@ -423,7 +292,7 @@ export default function SnapReport({
           {data.citation_audit && data.citation_audit.claims_total > 0 && (
             <span className="inline-flex items-center gap-1">
               <IconCheck className="text-[11px]" />
-              {t("snap.audit.coverage", {
+              {t("report.audit.coverage", {
                 pct: String(Math.round(data.citation_audit.coverage * 100)),
               })}
             </span>
@@ -496,7 +365,11 @@ export default function SnapReport({
       )}
 
       <Section title={t("snap.sec.findings")}>
-        <FindingsTable data={data} onCite={onCitationClick} />
+        <FindingsTable
+          findings={report.findings}
+          emptyText={t("snap.no_findings")}
+          onCite={onCitationClick}
+        />
       </Section>
 
       {(report.suitable_for || report.limitations.length > 0) && (

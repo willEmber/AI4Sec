@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import re
 import time
 from typing import Any
 
+from app.config import get_settings
+from app.models.lens_models import LensDigest, LensFigure
 from app.models.paper_ir import PaperIR
 from app.services.citation_validator import (
     format_coverage_summary,
@@ -22,6 +25,7 @@ from app.services.ir_extract import (
     extract_tables as _extract_tables,
     section_text,
 )
+from app.services.lens_digest import generate_lens_digest
 from app.services.llm_service import get_llm_service
 from app.workflows.state import MainGraphState
 
@@ -205,6 +209,15 @@ LENS_SYSTEM_PROMPT_ZH = """你是一名资深的科研论文分析专家。请�
 """
 
 
+async def _digest_disabled() -> LensDigest:
+    """Stand-in for the digest pass when ``LENS_DIGEST_ENABLED`` is off.
+
+    Keeps the concurrent gather below symmetric; the run simply has no
+    structured view and the frontend renders the Markdown, as it always did.
+    """
+    return LensDigest()
+
+
 async def run_logic_lens(state: MainGraphState) -> dict[str, Any]:
     """Run Logic Lens deep analysis."""
     paper_id = state["paper_id"]
@@ -220,6 +233,10 @@ async def run_logic_lens(state: MainGraphState) -> dict[str, Any]:
     figures = _extract_figures(paper_ir)
     method_text = _extract_method_section(paper_ir)
     experiment_text = _extract_experiment_section(paper_ir)
+    # Selected once: the prompt is told to embed these, and the structured view
+    # renders the same ones — a figure card must show a URL we extracted, never
+    # one the model wrote.
+    key_figs, other_figs = _select_framework_figures(figures) if figures else ([], [])
     logger.info(
         f"[{paper_id}] lens: Extracted — framing={len(framing_text)} chars "
         f"equations={len(equations)} algorithms={len(algorithms)} tables={len(tables)} "
@@ -282,35 +299,33 @@ async def run_logic_lens(state: MainGraphState) -> dict[str, Any]:
             et = et[:experiment_cap] + "\n[...truncated...]"
         context_parts.append(f"## Experiment Section\n{et}")
 
-    if figures:
-        key_figs, other_figs = _select_framework_figures(figures)
-        if key_figs:
-            key_lines: list[str] = []
-            for f in key_figs:
-                cap = f["text"]
-                if len(cap) > 300:
-                    cap = cap[:300] + "…"
-                url = _figure_embed_url(paper_id, f.get("img_path", ""))
-                alt = cap[:80]
-                if url:
-                    key_lines.append(f"- [p.{f['page']}] {cap}\n  embed: ![{alt}]({url})")
-                else:
-                    key_lines.append(f"- [p.{f['page']}] {cap}  (no image file to embed)")
-            context_parts.append(
-                "## Key Architecture Figures (embed these in the Method section)\n"
-                + "\n".join(key_lines)
-            )
-        if other_figs:
-            o_lines = []
-            for f in other_figs:
-                cap = f["text"]
-                if len(cap) > 300:
-                    cap = cap[:300] + "…"
-                o_lines.append(f"- [p.{f['page']}] {cap}")
-            o_text = "\n".join(o_lines)
-            if len(o_text) > figures_cap:
-                o_text = o_text[:figures_cap] + "\n[...truncated...]"
-            context_parts.append(f"## Other Figures (captions, for reference)\n{o_text}")
+    if key_figs:
+        key_lines: list[str] = []
+        for f in key_figs:
+            cap = f["text"]
+            if len(cap) > 300:
+                cap = cap[:300] + "…"
+            url = _figure_embed_url(paper_id, f.get("img_path", ""))
+            alt = cap[:80]
+            if url:
+                key_lines.append(f"- [p.{f['page']}] {cap}\n  embed: ![{alt}]({url})")
+            else:
+                key_lines.append(f"- [p.{f['page']}] {cap}  (no image file to embed)")
+        context_parts.append(
+            "## Key Architecture Figures (embed these in the Method section)\n"
+            + "\n".join(key_lines)
+        )
+    if other_figs:
+        o_lines = []
+        for f in other_figs:
+            cap = f["text"]
+            if len(cap) > 300:
+                cap = cap[:300] + "…"
+            o_lines.append(f"- [p.{f['page']}] {cap}")
+        o_text = "\n".join(o_lines)
+        if len(o_text) > figures_cap:
+            o_text = o_text[:figures_cap] + "\n[...truncated...]"
+        context_parts.append(f"## Other Figures (captions, for reference)\n{o_text}")
 
     if equations:
         eq_text = "\n".join(f"- {e['text']} [p.{e['page']}]" for e in equations)
@@ -367,17 +382,29 @@ async def run_logic_lens(state: MainGraphState) -> dict[str, Any]:
             f"[{paper_id}] lens: {audit['claims_uncited']} uncited claims — samples: {audit['uncited_samples'][:3]}"
         )
 
-    t_evidence = time.perf_counter()
-    evidence_pool = await extract_evidence_pool(
-        llm,
-        context=context,
-        slots=LENS_SLOTS,
-        model=model,
-        log_label=f"[{paper_id}] lens",
+    # Two post-report passes, both best-effort and both reading material that
+    # already exists, so they run concurrently: the evidence pool quotes the
+    # paper context, the digest indexes the report we just produced.
+    t_passes = time.perf_counter()
+    digest, evidence_pool = await asyncio.gather(
+        generate_lens_digest(
+            llm, markdown=markdown, model=model, log_label=f"[{paper_id}] lens"
+        )
+        if get_settings().lens_digest_enabled
+        else _digest_disabled(),
+        extract_evidence_pool(
+            llm,
+            context=context,
+            slots=LENS_SLOTS,
+            model=model,
+            log_label=f"[{paper_id}] lens",
+        ),
     )
     logger.info(
-        f"[{paper_id}] lens: evidence extraction in {time.perf_counter()-t_evidence:.1f}s "
-        f"— {len(evidence_pool)} cards"
+        f"[{paper_id}] lens: post-report passes in {time.perf_counter()-t_passes:.1f}s "
+        f"— {len(evidence_pool)} evidence cards, digest available={digest.available} "
+        f"(formulas={len(digest.formulas)} stages={len(digest.pipeline)} "
+        f"findings={len(digest.findings)})"
     )
 
     logger.info(f"[{paper_id}] lens: TOTAL {time.perf_counter()-t0:.1f}s")
@@ -388,12 +415,23 @@ async def run_logic_lens(state: MainGraphState) -> dict[str, Any]:
             "mode": "lens",
             "paper_id": state["paper_id"],
             "title": paper_ir.title,
+            "language": language,
             "num_equations": len(equations),
             "num_algorithms": len(algorithms),
             "num_tables": len(tables),
             "num_figures": len(figures),
             "citation_audit": audit,
             "evidence_pool": evidence_pool,
+            "digest": digest.model_dump(mode="json"),
+            "key_figures": [
+                LensFigure(
+                    page=f["page"],
+                    caption=f["text"][:300],
+                    url=_figure_embed_url(paper_id, f.get("img_path", "")),
+                ).model_dump(mode="json")
+                for f in key_figs
+                if f.get("img_path")
+            ],
         }),
         "progress": state.get("progress", []) + [{"step": "run_lens", "status": "done"}],
     }

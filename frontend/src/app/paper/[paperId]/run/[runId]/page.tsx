@@ -11,9 +11,11 @@ import SplitPane from "@/components/SplitPane";
 import RankBadges from "@/components/RankBadges";
 import SphereReport from "@/components/sphere/SphereReport";
 import SnapReport from "@/components/snap/SnapReport";
+import LensReport from "@/components/lens/LensReport";
 import { IconCards, IconCheck, IconDocument, IconDownload } from "@/components/icons";
 import { parseSphereData } from "@/lib/sphere";
 import { parseSnapData } from "@/lib/snap";
+import { parseLensData } from "@/lib/lens";
 import type { RunResponse, PaperResponse, SSEEvent, ProgressEntry } from "@/lib/types";
 
 export default function RunPage() {
@@ -26,8 +28,8 @@ export default function RunPage() {
   const [paper, setPaper] = useState<PaperResponse | null>(null);
   const [markdown, setMarkdown] = useState<string>("");
   const [jsonData, setJsonData] = useState<string>("");
-  // Shared by both structured modes (Sphere and Snap) — the toggle looks and
-  // behaves the same, only one of them is mounted per run.
+  // Shared by all three structured modes (Sphere, Snap, Lens) — the toggle
+  // looks and behaves the same, only one of them is mounted per run.
   const [structuredView, setStructuredView] = useState<"structured" | "markdown">("structured");
   const [targetPage, setTargetPage] = useState<number | undefined>(undefined);
   const [pdfCollapsed, setPdfCollapsed] = useState(false);
@@ -171,12 +173,14 @@ export default function RunPage() {
     ? progressSteps[progressSteps.length - 1]
     : null;
 
-  // Research Sphere and Insight Snap both ship a structured twin of the report
-  // next to the markdown; when one is present the report renders as cards
-  // instead of raw markdown. A degraded Snap run has no twin and falls back.
+  // All three modes ship a structured twin of the report next to the markdown;
+  // when one is present the report renders as cards instead of raw markdown.
+  // Each parser keys on the payload's `mode`, so at most one matches; runs whose
+  // structured pass degraded (or predate it) match none and keep the markdown.
   const sphereData = useMemo(() => parseSphereData(jsonData), [jsonData]);
   const snapData = useMemo(() => parseSnapData(jsonData), [jsonData]);
-  const structuredData = sphereData ?? snapData;
+  const lensData = useMemo(() => parseLensData(jsonData), [jsonData]);
+  const structuredData = sphereData ?? snapData ?? lensData;
   const showStructured = structuredData !== null && structuredView === "structured";
 
   const isComplete = run?.status === "done" || (isDone && markdown);
@@ -205,8 +209,8 @@ export default function RunPage() {
             <div className="flex items-center rounded-lg border border-border p-0.5">
               {(
                 [
-                  ["structured", IconCards, t("sphere.view.structured")],
-                  ["markdown", IconDocument, t("sphere.view.markdown")],
+                  ["structured", IconCards, t("report.view.structured")],
+                  ["markdown", IconDocument, t("report.view.markdown")],
                 ] as const
               ).map(([key, Icon, label]) => (
                 <button
@@ -301,6 +305,12 @@ export default function RunPage() {
               <div className="px-6 pb-8 pt-2 sm:px-8">
                 <div className="mx-auto max-w-3xl">
                   <SnapReport data={snapData} onCitationClick={handleCitationClick} />
+                </div>
+              </div>
+            ) : showStructured && lensData ? (
+              <div className="px-6 pb-8 pt-2 sm:px-8">
+                <div className="mx-auto max-w-3xl">
+                  <LensReport data={lensData} onCitationClick={handleCitationClick} />
                 </div>
               </div>
             ) : markdown ? (

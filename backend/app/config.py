@@ -66,6 +66,12 @@ class AppSettings(BaseSettings):
     # result) — one extra request that runs concurrently with the LLM calls.
     snap_citation_intents: bool = Field(default=True, alias="SNAP_CITATION_INTENTS")
 
+    # --- Logic Lens ---
+    # After the deep report is written, extract a structured digest from it so
+    # the run view can offer the same structured/Markdown toggle as Snap and
+    # Sphere. One extra LLM call per run; off means markdown-only, as before.
+    lens_digest_enabled: bool = Field(default=True, alias="LENS_DIGEST_ENABLED")
+
     # --- GROBID (structured header extraction fallback) ---
     # Base URL of a GROBID server, e.g. http://localhost:8070. Empty disables it;
     # the regex DOI/arXiv scan over the first pages remains the primary path.
