@@ -42,6 +42,7 @@ Thumbs.db
 
 # === Logs ===
 *.log
+.dev-logs/
 
 # === Test artifacts ===
 test_doc/

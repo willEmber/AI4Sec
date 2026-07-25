@@ -68,9 +68,17 @@ export function useRunStream(): UseRunStreamReturn {
       }
     };
 
-    source.onerror = (e) => {
+    source.onerror = () => {
       const elapsed = ((performance.now() - connectTimeRef.current) / 1000).toFixed(1);
-      console.error(`[SSE +${elapsed}s] Connection error`, e);
+      // The error event carries no detail of its own (it serializes to `{}`).
+      // readyState is what separates "never reached the backend" — wrong port in
+      // NEXT_PUBLIC_BACKEND_URL, backend down — from a connection the backend
+      // itself refused or ended (404 once the run is over, or a CORS rejection).
+      const reason =
+        source.readyState === EventSource.CONNECTING
+          ? "backend unreachable — check NEXT_PUBLIC_BACKEND_URL"
+          : "stream refused or ended — run already finished, or CORS blocked it";
+      console.error(`[SSE +${elapsed}s] Connection error: ${reason} (${url})`);
       setIsConnected(false);
       source.close();
     };
