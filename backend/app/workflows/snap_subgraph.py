@@ -1,200 +1,283 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import time
 from typing import Any
 
+from app.config import get_settings
 from app.models.paper_ir import PaperIR
+from app.models.snap_models import SnapReport, TriageSignals
 from app.services.citation_validator import (
     format_coverage_summary,
     validate_citation_coverage,
 )
-from app.services.evidence_extractor import extract_evidence_pool
 from app.services.llm_service import get_llm_service
+from app.services.snap_context import build_triage_context
+from app.services.snap_report import (
+    citation_audit as report_citation_audit,
+    parse_snap_report,
+    render_markdown as render_report_markdown,
+    system_prompt as report_system_prompt,
+)
+from app.services.triage_signals import get_or_collect_triage_signals
+from app.services.triage_verdict import (
+    ContentReview,
+    content_review_prompt,
+    parse_content_review,
+    render_verdict_markdown,
+    synthesize_verdict,
+)
 from app.workflows.state import MainGraphState
 
 logger = logging.getLogger("scholar.graph")
 
-# Slot names exposed to the evidence extractor. Kept aligned with the section
-# headings the Snap prompt produces so the second LLM call can map quotes back.
-SNAP_SLOTS: list[str] = [
-    "problem",
-    "method",
-    "result",
-    "evidence_strength",
-    "limitation",
-    "verdict",
-]
 
 
-def _extract_key_sections(paper_ir: PaperIR) -> str:
-    """Extract title, abstract, introduction, conclusion, and contribution sections."""
-    key_section_names = {
-        "abstract", "introduction", "conclusion", "conclusions",
-        "contributions", "summary", "results",
-    }
+async def _generate_report(
+    llm: Any,
+    *,
+    context: str,
+    language: str,
+    model: str,
+    log_label: str,
+) -> SnapReport:
+    """Fill the ``SnapReport`` schema, retrying once if the JSON does not parse.
 
-    parts: list[str] = []
+    A model that ignores the schema on the first attempt usually complies when
+    told exactly what went wrong, so one repair round-trip is worth the latency.
+    If it fails twice the raw text is kept as Markdown (``degraded=True``) — a
+    prose report is worse than a structured one but far better than no run.
+    """
+    user_message = (
+        "请分析这篇论文:\n\n" if language == "zh" else "Analyze this paper:\n\n"
+    ) + context
 
-    if paper_ir.title:
-        parts.append(f"# {paper_ir.title}\n")
+    raw = ""
+    for attempt in (1, 2):
+        try:
+            raw = await llm.chat(
+                [
+                    {"role": "system", "content": report_system_prompt(language, repair=attempt == 2)},
+                    {"role": "user", "content": user_message},
+                ],
+                model=model,
+                temperature=0.2 if attempt == 1 else 0.0,
+                max_tokens=4096,
+            )
+        except Exception as exc:
+            logger.warning("%s: report call attempt %d failed: %s", log_label, attempt, exc)
+            continue
 
-    for section in paper_ir.sections:
-        section_lower = section.title.lower().strip()
-        is_key = any(kw in section_lower for kw in key_section_names)
-        # Also include sections with no title (pre-title content) or level 0
-        if is_key or section.level == 0:
-            section_text_parts: list[str] = []
-            for block in section.blocks:
-                if block.type in ("text", "title", "list"):
-                    text = block.text.strip()
-                    if text:
-                        page_ref = f" [p.{block.page_idx + 1}]"
-                        section_text_parts.append(f"{text}{page_ref}")
-            if section_text_parts:
-                header = f"## {section.title}\n" if section.title else ""
-                parts.append(header + "\n".join(section_text_parts))
+        report = parse_snap_report(raw)
+        if not report.degraded:
+            return report
+        if attempt == 1:
+            logger.info("%s: report JSON unparseable — retrying with repair prompt", log_label)
 
-    return "\n\n".join(parts)
-
-
-SNAP_SYSTEM_PROMPT_EN = """You are a research paper analysis assistant. Your task is to provide a quick "Insight Snap" - a 30-second triage summary to help a researcher decide if a paper is worth reading in depth.
-
-You MUST format your output as structured Markdown with the following sections exactly:
-
-## One-Sentence Summary
-(Problem + Method + Key Result in one sentence)
-
-## Core Contributions
-- (3-5 bullet points, each with a page citation like [p.X])
-
-## Key Experimental Findings
-- (Main metrics, improvements, comparisons, with page citations)
-
-## Applicability & Limitations
-- Suitable for: ...
-- Limitations: ... (with page citations)
-
-## Worth Reading?
-(Yes/No with brief justification. Consider the publication venue's reputation if available.)
-
-IMPORTANT RULES:
-1. Every factual claim MUST include a page citation in the format [p.X] where X is the page number.
-2. Be concise but precise. This is a triage tool.
-3. Use LaTeX for any mathematical notation: $inline$ or $$display$$.
-4. Do not fabricate information. Only cite what is in the paper.
-5. If a slot has no supporting evidence in the extracted text (e.g. the paper omits limitations or experimental setup), write `_Not reported in extracted text._` for that bullet instead of guessing or paraphrasing from general knowledge.
-"""
+    logger.warning("%s: report JSON failed twice — falling back to raw text", log_label)
+    return SnapReport(degraded=True, raw_markdown=raw)
 
 
-SNAP_SYSTEM_PROMPT_ZH = """你是一名科研论文分析助手。你的任务是给出一份快速的"洞察速览"(Insight Snap)——一个 30 秒分诊式摘要,帮助研究者判断这篇论文是否值得深入精读。
+async def _run_content_review(
+    llm: Any,
+    *,
+    context: str,
+    question: str,
+    language: str,
+    model: str,
+    log_label: str,
+) -> ContentReview:
+    """Second, independent LLM pass that scores the paper on its contents alone.
 
-你必须输出结构化 Markdown,且严格使用以下小节标题:
+    Deliberately given the same paper context as the report but none of the
+    external signals — see the module docstring of ``triage_verdict`` for why.
+    Failures degrade to an unavailable review, never to an exception.
+    """
+    try:
+        raw = await llm.chat(
+            messages=[
+                {
+                    "role": "system",
+                    "content": content_review_prompt(language, question=question),
+                },
+                {"role": "user", "content": context},
+            ],
+            model=model,
+            temperature=0.0,
+            max_tokens=2000,
+        )
+    except Exception as exc:
+        logger.warning("%s: content review call failed: %s", log_label, exc)
+        return ContentReview()
 
-## 一句话总结
-(用一句话概括:问题 + 方法 + 关键结果)
+    review = parse_content_review(raw)
+    if review.available:
+        logger.info(
+            "%s: content review — contribution=%d evidence=%d novelty=%d "
+            "reproducibility=%d limitations=%d score=%.2f",
+            log_label, review.contribution_strength, review.evidence_strength,
+            review.novelty, review.reproducibility, review.limitation_severity,
+            review.content_score,
+        )
+    return review
 
-## 核心贡献
-- (3-5 个要点,每条都要带形如 [p.X] 的页码引用)
 
-## 关键实验发现
-- (主要指标、提升幅度、对比结果,并附页码引用)
+async def _collect_signals_safe(
+    paper_ir: PaperIR,
+    *,
+    paper_id: str,
+    pub_rank: dict[str, Any],
+    log_label: str,
+) -> TriageSignals:
+    """Cache-backed signal collection with a hard timeout and a failure fallback.
 
-## 适用性与局限
-- 适用于:……
-- 局限:……(附页码引用)
+    Signals are corroboration, not a prerequisite: if every index is unreachable
+    the run still produces a report, with the affected rows marked unknown.
+    """
+    settings = get_settings()
+    try:
+        return await asyncio.wait_for(
+            get_or_collect_triage_signals(
+                paper_ir,
+                paper_id=paper_id,
+                ttl_hours=settings.snap_signals_ttl_hours,
+                pub_rank=pub_rank,
+                doi=pub_rank.get("doi", ""),
+                arxiv_id=pub_rank.get("arxiv_id", ""),
+                enable_network=settings.snap_signals_enabled,
+                probe_repos=settings.snap_probe_repos,
+                github_token=settings.github_token,
+                fetch_intents=settings.snap_citation_intents,
+                log_label=log_label,
+            ),
+            timeout=60.0,
+        )
+    except Exception as exc:
+        logger.warning("%s: signal collection failed (%s) — verdict falls back to content only", log_label, exc)
+        from app.services.triage_signals import compute_external_score
 
-## 是否值得精读?
-(给出 是/否 并简要说明理由。如有期刊/会议声誉信息,可纳入考量。)
-
-重要规则:
-1. 每一条事实性陈述都必须带形如 [p.X] 的页码引用(X 为页码),引用标记本身保持英文原样,不要翻译或改写。
-2. 简洁而精确——这是一个分诊工具。
-3. 所有数学记号一律使用 LaTeX:行内用 $inline$,独立公式用 $$display$$。
-4. 不得编造信息,只能引用论文中确有的内容。
-5. 若某一小节在提取文本中没有支撑证据(例如论文未给出局限或实验设置),该条写 `_提取文本中未提及。_`,不要凭常识猜测或臆造。
-6. 输出语言:整篇内容必须用简体中文撰写。但请保留以下内容的英文原样、不得翻译:LaTeX 公式、页码引用 [p.X]、论文标题、作者姓名、期刊/会议名称;专有技术术语首次出现时保留英文并在括号内给出中文解释(如 "Transformer(变换器)")。
-"""
+        fallback = TriageSignals(
+            venue=pub_rank.get("venue", ""),
+            year=int(pub_rank.get("year") or 0),
+            sci_rank=pub_rank.get("sci", ""),
+            ccf_rank=pub_rank.get("ccf", ""),
+            unavailable=["citations", "open_access", "retraction"],
+        )
+        return compute_external_score(fallback)
 
 
 async def run_insight_snap(state: MainGraphState) -> dict[str, Any]:
     """Run Insight Snap analysis on the paper."""
     paper_id = state["paper_id"]
     t0 = time.perf_counter()
+    settings = get_settings()
 
     paper_ir = PaperIR.model_validate_json(state["paper_ir_json"])
     logger.info(f"[{paper_id}] snap: Parsed PaperIR — {len(paper_ir.sections)} sections, {len(paper_ir.blocks)} blocks")
 
     t_extract = time.perf_counter()
-    key_content = _extract_key_sections(paper_ir)
-    logger.info(f"[{paper_id}] snap: Extracted key sections in {time.perf_counter()-t_extract:.3f}s — {len(key_content)} chars")
+    ctx = build_triage_context(paper_ir, total_budget=settings.snap_context_budget_chars)
+    logger.info(
+        f"[{paper_id}] snap: built triage context in {time.perf_counter()-t_extract:.3f}s — {ctx.summary()}"
+    )
 
-    if not key_content.strip():
+    if not ctx.text.strip():
         return {
             "final_markdown": "# Error\n\nNo content could be extracted from the paper.",
             "final_json": json.dumps({"error": "no_content"}),
             "progress": state.get("progress", []) + [{"step": "run_snap", "status": "failed"}],
         }
 
-    # Inject publication rank context if available
-    pub_rank_json = state.get("pub_rank_json", "")
-    if pub_rank_json:
-        try:
-            pub_rank = json.loads(pub_rank_json)
-            meta_parts: list[str] = []
-            if pub_rank.get("venue"):
-                meta_parts.append(f"Published in: {pub_rank['venue']}")
-            if pub_rank.get("sci"):
-                meta_parts.append(f"SCI Tier: {pub_rank['sci']}")
-            if pub_rank.get("ccf"):
-                meta_parts.append(f"CCF Rating: {pub_rank['ccf']}")
-            if meta_parts:
-                key_content = f"[Publication Info: {' | '.join(meta_parts)}]\n\n" + key_content
-        except (json.JSONDecodeError, TypeError):
-            pass
+    key_content = ctx.text
 
-    # Truncate if too long (rough token estimate: ~4 chars per token)
-    max_chars = 12000
-    if len(key_content) > max_chars:
-        key_content = key_content[:max_chars] + "\n\n[... truncated for length ...]"
-        logger.info(f"[{paper_id}] snap: Content truncated to {max_chars} chars")
+    try:
+        pub_rank = json.loads(state.get("pub_rank_json", "") or "{}")
+        if not isinstance(pub_rank, dict):
+            pub_rank = {}
+    except (json.JSONDecodeError, TypeError):
+        pub_rank = {}
+
+    # The report prompt may see the venue (it is asked to mention it in passing);
+    # the *content review* must not, so it gets the untouched context.
+    report_content = key_content
+    meta_parts: list[str] = []
+    if pub_rank.get("venue"):
+        meta_parts.append(f"Published in: {pub_rank['venue']}")
+    if pub_rank.get("sci"):
+        meta_parts.append(f"SCI Tier: {pub_rank['sci']}")
+    if pub_rank.get("ccf"):
+        meta_parts.append(f"CCF Rating: {pub_rank['ccf']}")
+    if meta_parts:
+        report_content = f"[Publication Info: {' | '.join(meta_parts)}]\n\n" + key_content
 
     language = state.get("language", "en")
-    system_prompt = SNAP_SYSTEM_PROMPT_ZH if language == "zh" else SNAP_SYSTEM_PROMPT_EN
-    user_prefix = "请分析这篇论文:" if language == "zh" else "Analyze this paper:"
-
     llm = get_llm_service()
-    messages = [
-        {"role": "system", "content": system_prompt},
-        {"role": "user", "content": f"{user_prefix}\n\n{key_content}"},
-    ]
-
     model = state.get("llm_model", "")
-    logger.info(f"[{paper_id}] snap: Calling LLM (model={model or '(default)'})...")
-    t_llm = time.perf_counter()
-    markdown = await llm.chat(messages, model=model, temperature=0.3, max_tokens=4096)
-    logger.info(f"[{paper_id}] snap: LLM returned in {time.perf_counter()-t_llm:.1f}s — {len(markdown)} chars response")
+    question = state.get("user_question", "") or ""
 
-    audit = validate_citation_coverage(markdown)
+    # Three independent passes, run concurrently: the structured report, the
+    # blind content review, and the external-signal lookups. Total latency is the
+    # slowest one rather than their sum — the old sequential report +
+    # evidence-pool pair was strictly slower than this while producing less.
+    logger.info(
+        f"[{paper_id}] snap: Calling LLM (model={model or '(default)'}) "
+        f"+ content review + signal lookup concurrently..."
+    )
+    t_llm = time.perf_counter()
+    report, review, signals = await asyncio.gather(
+        _generate_report(
+            llm,
+            context=report_content,
+            language=language,
+            model=model,
+            log_label=f"[{paper_id}] snap",
+        ),
+        _run_content_review(
+            llm,
+            context=key_content,
+            question=question,
+            language=language,
+            model=model,
+            log_label=f"[{paper_id}] snap",
+        ),
+        _collect_signals_safe(
+            paper_ir, paper_id=paper_id, pub_rank=pub_rank, log_label=f"[{paper_id}] snap"
+        ),
+    )
+    logger.info(
+        f"[{paper_id}] snap: all three passes done in {time.perf_counter()-t_llm:.1f}s — "
+        f"contributions={len(report.contributions)} findings={len(report.findings)} "
+        f"limitations={len(report.limitations)} degraded={report.degraded}"
+    )
+
+    markdown = render_report_markdown(report, language=language)
+    verdict = synthesize_verdict(review, signals)
+    logger.info(
+        f"[{paper_id}] snap: verdict={verdict.tier} combined={verdict.combined_score:.2f} "
+        f"(content={verdict.content_score:.2f} external={verdict.external_score:.2f}) "
+        f"drivers={','.join(verdict.drivers) or '-'} overrides={','.join(verdict.overrides) or '-'}"
+    )
+
+    # Coverage over the model's citable claims. A structured report can be audited
+    # exactly (a claim has a page or it does not); only the degraded prose path
+    # needs the regex heuristic. Either way the verdict section is excluded — it is
+    # assembled from typed signals and names a source per row, so auditing it for
+    # [p.X] would report our own table cells as uncited claims.
+    audit = (
+        validate_citation_coverage(markdown)
+        if report.degraded
+        else report_citation_audit(report)
+    )
     logger.info(f"[{paper_id}] snap: {format_coverage_summary(audit)}")
     if audit["claims_uncited"] > 0 and audit["uncited_samples"]:
         logger.warning(
             f"[{paper_id}] snap: {audit['claims_uncited']} uncited claims — samples: {audit['uncited_samples'][:3]}"
         )
 
-    t_evidence = time.perf_counter()
-    evidence_pool = await extract_evidence_pool(
-        llm,
-        context=key_content,
-        slots=SNAP_SLOTS,
-        model=model,
-        log_label=f"[{paper_id}] snap",
-    )
-    logger.info(
-        f"[{paper_id}] snap: evidence extraction in {time.perf_counter()-t_evidence:.1f}s "
-        f"— {len(evidence_pool)} cards"
-    )
+    verdict_markdown = render_verdict_markdown(verdict, review, signals, language=language)
+    markdown = f"{markdown.rstrip()}\n\n{verdict_markdown}"
 
     logger.info(f"[{paper_id}] snap: TOTAL {time.perf_counter()-t0:.1f}s")
     return {
@@ -206,7 +289,19 @@ async def run_insight_snap(state: MainGraphState) -> dict[str, Any]:
             "title": paper_ir.title,
             "sections_used": [s.title for s in paper_ir.sections if s.title],
             "citation_audit": audit,
-            "evidence_pool": evidence_pool,
+            "report": report.model_dump(mode="json"),
+            "signals": signals.model_dump(mode="json"),
+            "content_review": review.model_dump(mode="json"),
+            "verdict": verdict.model_dump(mode="json"),
+            "context_stats": {
+                "chars": len(ctx.text),
+                "budget": ctx.total_budget,
+                "slots": ctx.used,
+                "tables": ctx.tables_used,
+                "figures": ctx.figures_used,
+                "equations": ctx.equations_used,
+                "truncated": ctx.truncated,
+            },
         }),
         "progress": state.get("progress", []) + [{"step": "run_snap", "status": "done"}],
     }

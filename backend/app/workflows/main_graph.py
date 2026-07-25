@@ -281,6 +281,9 @@ async def enrich_metadata(state: MainGraphState) -> dict[str, Any]:
                 "year": existing.get("year", 0) or 0,
                 "sci": existing.get("sci_rank", ""),
                 "ccf": existing.get("ccf_rank", ""),
+                # Carried so downstream nodes (Snap's signal lookup) can resolve
+                # the paper in OpenAlex/S2 by DOI instead of by title.
+                "doi": existing.get("doi", "") or "",
             }
             logger.info("[%s] enrich_metadata: CACHED from DB (venue=%s sci=%s ccf=%s) in %.2fs",
                          paper_id, existing["venue"], existing.get("sci_rank", "-"), existing.get("ccf_rank", "-"),
@@ -299,6 +302,28 @@ async def enrich_metadata(state: MainGraphState) -> dict[str, Any]:
             doi = await _extract_doi_from_ir(state["paper_ir_json"])
         if state.get("paper_ir_json"):
             arxiv_id = await _extract_arxiv_id_from_ir(state["paper_ir_json"])
+
+        # 2b. GROBID fallback (optional, off unless GROBID_URL is set). The regex
+        # scan above misses DOIs in running footers, scanned pages and layouts
+        # whose reading order splits the header; GROBID parses the header as a
+        # structure instead. Only consulted when the cheap path came up empty.
+        grobid_venue = ""
+        grobid_year = 0
+        if not doi and not arxiv_id and state.get("pdf_path"):
+            from app.services.grobid_client import extract_header
+
+            header = await extract_header(state["pdf_path"])
+            if header.available:
+                doi = doi or header.doi
+                arxiv_id = arxiv_id or header.arxiv_id
+                grobid_venue = header.venue
+                grobid_year = header.year
+                if doi or arxiv_id:
+                    logger.info(
+                        "[%s] enrich_metadata: GROBID recovered doi=%s arxiv=%s",
+                        paper_id, doi or "-", arxiv_id or "-",
+                    )
+
         logger.info("[%s] enrich_metadata: DOI=%s arXiv=%s", paper_id, doi or "-", arxiv_id or "-")
 
         # 3. Multi-source venue + year lookup
@@ -334,6 +359,12 @@ async def enrich_metadata(state: MainGraphState) -> dict[str, Any]:
                 elif s2.get("year"):
                     year = s2["year"] or year
 
+            # Level 4: GROBID's own reading of the header, if it ran.
+            if not venue and grobid_venue:
+                venue = grobid_venue
+                year = year or grobid_year
+                logger.info("[%s] enrich_metadata: GROBID -> venue=%s year=%d", paper_id, venue, year)
+
             if not venue:
                 logger.warning("[%s] enrich_metadata: No venue found from any source", paper_id)
 
@@ -365,7 +396,14 @@ async def enrich_metadata(state: MainGraphState) -> dict[str, Any]:
                 (doi, venue, year, sci_rank, ccf_rank, paper_id),
             )
 
-        pub_rank = {"venue": venue, "year": year, "sci": sci_rank, "ccf": ccf_rank}
+        pub_rank = {
+            "venue": venue,
+            "year": year,
+            "sci": sci_rank,
+            "ccf": ccf_rank,
+            "doi": doi,
+            "arxiv_id": arxiv_id,
+        }
         elapsed = time.perf_counter() - t0
         logger.info("[%s] enrich_metadata: DONE in %.1fs — venue=%s year=%d sci=%s ccf=%s",
                      paper_id, elapsed, venue or "(none)", year, sci_rank or "-", ccf_rank or "-")
