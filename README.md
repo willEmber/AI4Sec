@@ -158,9 +158,29 @@ docker compose up -d --build
 
 ## 本地开发
 
-### 后端（FastAPI）
+### 一键启动（推荐）
 
 ```bash
+./scripts/dev.sh
+```
+
+同时拉起后端（`:8000`，`--reload` 热重载）与前端（`:3000`，HMR 热更新），Ctrl-C 一起退出。
+脚本会自动同步依赖、把前端的 `/api/*` 代理指向本次启动的后端端口，并把完整日志写入 `.dev-logs/`。
+
+```bash
+./scripts/dev.sh --backend            # 只起后端
+./scripts/dev.sh --frontend           # 只起前端（连已在跑的后端）
+./scripts/dev.sh --kill-port          # 端口被占用时自动结束占用进程
+./scripts/dev.sh --backend-port 8010 --frontend-port 3010
+./scripts/dev.sh --help
+```
+
+改后端 Python 文件或前端 React 文件后直接刷新页面即可，无需重启脚本。
+
+### 手动启动
+
+```bash
+# 后端（FastAPI）
 cd backend
 uv sync
 uv run uvicorn app.main:app --reload --port 8000
@@ -169,12 +189,22 @@ uv run uvicorn app.main:app --reload --port 8000
 uv run python -c "from app.main import app; print('OK')"
 ```
 
-### 前端（Next.js）
-
 ```bash
+# 前端（Next.js）—— 两个变量都要指向后端端口，否则默认打 :8001（Docker 端口）：
+#   BACKEND_URL             服务端，撑 /api/* 代理
+#   NEXT_PUBLIC_BACKEND_URL 浏览器端，EventSource 直连 SSE 流（代理会缓冲流式响应）
 cd frontend
 npm install
+BACKEND_URL=http://localhost:8000 \
+NEXT_PUBLIC_BACKEND_URL=http://localhost:8000 \
 npm run dev
+```
+
+SSE 是唯一跨域直连后端的请求，因此后端还需放行前端来源（默认已含 `http://localhost:3000`，
+换端口时要一并改）：
+
+```bash
+CORS_ORIGINS='["http://localhost:3000"]' uv run uvicorn app.main:app --reload --port 8000
 ```
 
 ## 架构概览

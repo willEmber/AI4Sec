@@ -1,17 +1,31 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import re
 import time
 from typing import Any
 
+from app.config import get_settings
+from app.models.lens_models import LensDigest, LensFigure
 from app.models.paper_ir import PaperIR
 from app.services.citation_validator import (
     format_coverage_summary,
     validate_citation_coverage,
 )
 from app.services.evidence_extractor import extract_evidence_pool
+from app.services.ir_extract import (
+    EXPERIMENT_KEYWORDS,
+    FRAMING_KEYWORDS,
+    METHOD_KEYWORDS,
+    extract_algorithms as _extract_algorithms,
+    extract_equations as _extract_equations,
+    extract_figures as _extract_figures,
+    extract_tables as _extract_tables,
+    section_text,
+)
+from app.services.lens_digest import generate_lens_digest
 from app.services.llm_service import get_llm_service
 from app.workflows.state import MainGraphState
 
@@ -32,81 +46,6 @@ LENS_SLOTS: list[str] = [
     "limitation",
 ]
 
-_SECTION_NUM_RE = re.compile(r"^\s*(\d+(?:\.\d+)*)")
-
-
-def _section_match_keys(paper_ir: PaperIR) -> dict[str, str]:
-    """Map each ``section.title`` to a lowercased match string that also includes
-    the titles of its numeric ancestors.
-
-    MinerU sometimes flattens heading levels, collapsing ``section_path`` to the
-    leaf (e.g. ``5.3 Optimizer`` loses its ``5 Training`` parent). We rebuild the
-    ancestor chain from section numbering so a sub-section inherits its parent's
-    keyword matches — e.g. ``5.3 Optimizer`` then matches the ``training`` keyword
-    and its optimizer/batch/hardware details are no longer dropped.
-    """
-    num_to_title: dict[str, str] = {}
-    for section in paper_ir.sections:
-        m = _SECTION_NUM_RE.match(section.title)
-        if m:
-            num_to_title[m.group(1)] = section.title
-
-    keys: dict[str, str] = {}
-    for section in paper_ir.sections:
-        titles = [section.title]
-        m = _SECTION_NUM_RE.match(section.title)
-        if m:
-            parts = m.group(1).split(".")
-            for i in range(1, len(parts)):
-                anc_title = num_to_title.get(".".join(parts[:i]))
-                if anc_title:
-                    titles.append(anc_title)
-        keys[section.title] = " ".join(titles).lower()
-    return keys
-
-
-def _extract_equations(paper_ir: PaperIR) -> list[dict[str, Any]]:
-    """Extract equation blocks with context."""
-    equations = []
-    for block in paper_ir.blocks:
-        if block.type in ("equation", "isolate_formula") or "formula" in block.sub_type.lower():
-            equations.append({
-                "text": block.text,
-                "page": block.page_idx + 1,
-                "section": block.section_path,
-                "bbox": block.bbox,
-            })
-    return equations
-
-
-def _extract_algorithms(paper_ir: PaperIR) -> list[dict[str, Any]]:
-    """Extract algorithm/code blocks."""
-    algos = []
-    for block in paper_ir.blocks:
-        if block.type in ("code", "algorithm") or "algorithm" in block.sub_type.lower():
-            algos.append({
-                "text": block.text,
-                "page": block.page_idx + 1,
-                "section": block.section_path,
-                "bbox": block.bbox,
-            })
-    return algos
-
-
-def _extract_tables(paper_ir: PaperIR) -> list[dict[str, Any]]:
-    """Extract table blocks."""
-    tables = []
-    for block in paper_ir.blocks:
-        if block.type == "table":
-            tables.append({
-                "text": block.text,
-                "page": block.page_idx + 1,
-                "section": block.section_path,
-                "bbox": block.bbox,
-            })
-    return tables
-
-
 def _extract_method_section(paper_ir: PaperIR) -> str:
     """Extract method-related text.
 
@@ -114,22 +53,11 @@ def _extract_method_section(paper_ir: PaperIR) -> str:
     (e.g. ``3.2.1 Scaled Dot-Product Attention``) inherit the match from their
     parent (``3 Model Architecture``).
     """
-    method_keywords = {
-        "method", "approach", "model", "framework", "architecture",
-        "proposed", "algorithm", "implementation", "design",
-    }
-    match_keys = _section_match_keys(paper_ir)
-    parts: list[str] = []
-    for section in paper_ir.sections:
-        key = match_keys.get(section.title, section.title.lower())
-        if not any(kw in key for kw in method_keywords):
-            continue
-        for block in section.blocks:
-            if block.type in ("text", "title", "list", "equation"):
-                text = block.text.strip()
-                if text:
-                    parts.append(f"{text} [p.{block.page_idx + 1}]")
-    return "\n".join(parts)
+    return section_text(
+        paper_ir,
+        METHOD_KEYWORDS,
+        block_types=("text", "title", "list", "equation"),
+    )
 
 
 def _extract_experiment_section(paper_ir: PaperIR) -> str:
@@ -140,22 +68,11 @@ def _extract_experiment_section(paper_ir: PaperIR) -> str:
     hardware, schedule) that papers nest under a "Training" section are captured
     instead of surfacing as "not reported".
     """
-    exp_keywords = {
-        "experiment", "evaluation", "result", "empirical", "ablation",
-        "setup", "training", "implementation", "dataset", "benchmark",
-    }
-    match_keys = _section_match_keys(paper_ir)
-    parts: list[str] = []
-    for section in paper_ir.sections:
-        key = match_keys.get(section.title, section.title.lower())
-        if not any(kw in key for kw in exp_keywords):
-            continue
-        for block in section.blocks:
-            if block.type in ("text", "title", "list", "table"):
-                text = block.text.strip()
-                if text:
-                    parts.append(f"{text} [p.{block.page_idx + 1}]")
-    return "\n".join(parts)
+    return section_text(
+        paper_ir,
+        EXPERIMENT_KEYWORDS,
+        block_types=("text", "title", "list", "table"),
+    )
 
 
 def _extract_framing_section(paper_ir: PaperIR) -> str:
@@ -165,46 +82,7 @@ def _extract_framing_section(paper_ir: PaperIR) -> str:
     prior work, and the paper's contributions) — material the method/experiment
     extractors do not cover.
     """
-    framing_keywords = {
-        "abstract", "introduction", "related work", "related", "background",
-        "motivation", "conclusion", "conclusions", "summary", "discussion",
-    }
-    match_keys = _section_match_keys(paper_ir)
-    parts: list[str] = []
-    for section in paper_ir.sections:
-        key = match_keys.get(section.title, section.title.lower())
-        if not any(kw in key for kw in framing_keywords):
-            continue
-        for block in section.blocks:
-            if block.type in ("text", "title", "list"):
-                text = block.text.strip()
-                if text:
-                    parts.append(f"{text} [p.{block.page_idx + 1}]")
-    return "\n".join(parts)
-
-
-def _extract_figures(paper_ir: PaperIR) -> list[dict[str, Any]]:
-    """Extract figure/image captions with page + section context.
-
-    MinerU stores each figure's caption as the image block's ``text``; empty or
-    placeholder captions are skipped so the LLM only sees figures it can actually
-    describe to the reader.
-    """
-    figures: list[dict[str, Any]] = []
-    for block in paper_ir.blocks:
-        if block.type != "image":
-            continue
-        caption = block.text.strip()
-        if not caption or caption == "[image]":
-            continue
-        figures.append({
-            "text": caption,
-            "page": block.page_idx + 1,
-            "section": block.section_path,
-            "bbox": block.bbox,
-            "img_path": block.img_path,
-        })
-    return figures
+    return section_text(paper_ir, FRAMING_KEYWORDS)
 
 
 # Caption cues that a figure depicts the overall method rather than a result plot.
@@ -331,6 +209,15 @@ LENS_SYSTEM_PROMPT_ZH = """你是一名资深的科研论文分析专家。请�
 """
 
 
+async def _digest_disabled() -> LensDigest:
+    """Stand-in for the digest pass when ``LENS_DIGEST_ENABLED`` is off.
+
+    Keeps the concurrent gather below symmetric; the run simply has no
+    structured view and the frontend renders the Markdown, as it always did.
+    """
+    return LensDigest()
+
+
 async def run_logic_lens(state: MainGraphState) -> dict[str, Any]:
     """Run Logic Lens deep analysis."""
     paper_id = state["paper_id"]
@@ -346,6 +233,10 @@ async def run_logic_lens(state: MainGraphState) -> dict[str, Any]:
     figures = _extract_figures(paper_ir)
     method_text = _extract_method_section(paper_ir)
     experiment_text = _extract_experiment_section(paper_ir)
+    # Selected once: the prompt is told to embed these, and the structured view
+    # renders the same ones — a figure card must show a URL we extracted, never
+    # one the model wrote.
+    key_figs, other_figs = _select_framework_figures(figures) if figures else ([], [])
     logger.info(
         f"[{paper_id}] lens: Extracted — framing={len(framing_text)} chars "
         f"equations={len(equations)} algorithms={len(algorithms)} tables={len(tables)} "
@@ -408,35 +299,33 @@ async def run_logic_lens(state: MainGraphState) -> dict[str, Any]:
             et = et[:experiment_cap] + "\n[...truncated...]"
         context_parts.append(f"## Experiment Section\n{et}")
 
-    if figures:
-        key_figs, other_figs = _select_framework_figures(figures)
-        if key_figs:
-            key_lines: list[str] = []
-            for f in key_figs:
-                cap = f["text"]
-                if len(cap) > 300:
-                    cap = cap[:300] + "…"
-                url = _figure_embed_url(paper_id, f.get("img_path", ""))
-                alt = cap[:80]
-                if url:
-                    key_lines.append(f"- [p.{f['page']}] {cap}\n  embed: ![{alt}]({url})")
-                else:
-                    key_lines.append(f"- [p.{f['page']}] {cap}  (no image file to embed)")
-            context_parts.append(
-                "## Key Architecture Figures (embed these in the Method section)\n"
-                + "\n".join(key_lines)
-            )
-        if other_figs:
-            o_lines = []
-            for f in other_figs:
-                cap = f["text"]
-                if len(cap) > 300:
-                    cap = cap[:300] + "…"
-                o_lines.append(f"- [p.{f['page']}] {cap}")
-            o_text = "\n".join(o_lines)
-            if len(o_text) > figures_cap:
-                o_text = o_text[:figures_cap] + "\n[...truncated...]"
-            context_parts.append(f"## Other Figures (captions, for reference)\n{o_text}")
+    if key_figs:
+        key_lines: list[str] = []
+        for f in key_figs:
+            cap = f["text"]
+            if len(cap) > 300:
+                cap = cap[:300] + "…"
+            url = _figure_embed_url(paper_id, f.get("img_path", ""))
+            alt = cap[:80]
+            if url:
+                key_lines.append(f"- [p.{f['page']}] {cap}\n  embed: ![{alt}]({url})")
+            else:
+                key_lines.append(f"- [p.{f['page']}] {cap}  (no image file to embed)")
+        context_parts.append(
+            "## Key Architecture Figures (embed these in the Method section)\n"
+            + "\n".join(key_lines)
+        )
+    if other_figs:
+        o_lines = []
+        for f in other_figs:
+            cap = f["text"]
+            if len(cap) > 300:
+                cap = cap[:300] + "…"
+            o_lines.append(f"- [p.{f['page']}] {cap}")
+        o_text = "\n".join(o_lines)
+        if len(o_text) > figures_cap:
+            o_text = o_text[:figures_cap] + "\n[...truncated...]"
+        context_parts.append(f"## Other Figures (captions, for reference)\n{o_text}")
 
     if equations:
         eq_text = "\n".join(f"- {e['text']} [p.{e['page']}]" for e in equations)
@@ -493,17 +382,29 @@ async def run_logic_lens(state: MainGraphState) -> dict[str, Any]:
             f"[{paper_id}] lens: {audit['claims_uncited']} uncited claims — samples: {audit['uncited_samples'][:3]}"
         )
 
-    t_evidence = time.perf_counter()
-    evidence_pool = await extract_evidence_pool(
-        llm,
-        context=context,
-        slots=LENS_SLOTS,
-        model=model,
-        log_label=f"[{paper_id}] lens",
+    # Two post-report passes, both best-effort and both reading material that
+    # already exists, so they run concurrently: the evidence pool quotes the
+    # paper context, the digest indexes the report we just produced.
+    t_passes = time.perf_counter()
+    digest, evidence_pool = await asyncio.gather(
+        generate_lens_digest(
+            llm, markdown=markdown, model=model, log_label=f"[{paper_id}] lens"
+        )
+        if get_settings().lens_digest_enabled
+        else _digest_disabled(),
+        extract_evidence_pool(
+            llm,
+            context=context,
+            slots=LENS_SLOTS,
+            model=model,
+            log_label=f"[{paper_id}] lens",
+        ),
     )
     logger.info(
-        f"[{paper_id}] lens: evidence extraction in {time.perf_counter()-t_evidence:.1f}s "
-        f"— {len(evidence_pool)} cards"
+        f"[{paper_id}] lens: post-report passes in {time.perf_counter()-t_passes:.1f}s "
+        f"— {len(evidence_pool)} evidence cards, digest available={digest.available} "
+        f"(formulas={len(digest.formulas)} stages={len(digest.pipeline)} "
+        f"findings={len(digest.findings)})"
     )
 
     logger.info(f"[{paper_id}] lens: TOTAL {time.perf_counter()-t0:.1f}s")
@@ -514,12 +415,23 @@ async def run_logic_lens(state: MainGraphState) -> dict[str, Any]:
             "mode": "lens",
             "paper_id": state["paper_id"],
             "title": paper_ir.title,
+            "language": language,
             "num_equations": len(equations),
             "num_algorithms": len(algorithms),
             "num_tables": len(tables),
             "num_figures": len(figures),
             "citation_audit": audit,
             "evidence_pool": evidence_pool,
+            "digest": digest.model_dump(mode="json"),
+            "key_figures": [
+                LensFigure(
+                    page=f["page"],
+                    caption=f["text"][:300],
+                    url=_figure_embed_url(paper_id, f.get("img_path", "")),
+                ).model_dump(mode="json")
+                for f in key_figs
+                if f.get("img_path")
+            ],
         }),
         "progress": state.get("progress", []) + [{"step": "run_lens", "status": "done"}],
     }

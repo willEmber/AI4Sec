@@ -45,6 +45,39 @@ class AppSettings(BaseSettings):
     elsevier_inst_token: str = Field(default="", alias="ELSEVIER_INSTTOKEN")
     wiley_tdm_token: str = Field(default="", alias="WILEY_TDM_TOKEN")
 
+    # --- Insight Snap ---
+    # Character budget for the triage context handed to the LLM. The old 12k
+    # prefix-cut dropped results tables and conclusions on any long paper; 40k
+    # (~10k tokens) fits comfortably in every model offered here.
+    snap_context_budget_chars: int = Field(default=40_000, alias="SNAP_CONTEXT_BUDGET_CHARS")
+    # Enrich the triage verdict with external evidence (venue rank, citation
+    # impact, code availability, retraction status). Adds a few seconds of
+    # network I/O per new paper; results are cached on the papers row.
+    snap_signals_enabled: bool = Field(default=True, alias="SNAP_SIGNALS_ENABLED")
+    # Probe resolved code repositories for stars / last-push date. Off by
+    # default: unauthenticated GitHub API allows only 60 requests/hour per IP.
+    snap_probe_repos: bool = Field(default=False, alias="SNAP_PROBE_REPOS")
+    # Optional token for the repo probe above; lifts the rate limit to 5000/h.
+    github_token: str = Field(default="", alias="GITHUB_TOKEN")
+    # How long cached per-paper signals stay fresh. Citation counts drift slowly,
+    # so a week avoids re-querying every index on each re-run. 0 disables caching.
+    snap_signals_ttl_hours: int = Field(default=168, alias="SNAP_SIGNALS_TTL_HOURS")
+    # Tally Semantic Scholar citation *intents* (background / methodology /
+    # result) — one extra request that runs concurrently with the LLM calls.
+    snap_citation_intents: bool = Field(default=True, alias="SNAP_CITATION_INTENTS")
+
+    # --- Logic Lens ---
+    # After the deep report is written, extract a structured digest from it so
+    # the run view can offer the same structured/Markdown toggle as Snap and
+    # Sphere. One extra LLM call per run; off means markdown-only, as before.
+    lens_digest_enabled: bool = Field(default=True, alias="LENS_DIGEST_ENABLED")
+
+    # --- GROBID (structured header extraction fallback) ---
+    # Base URL of a GROBID server, e.g. http://localhost:8070. Empty disables it;
+    # the regex DOI/arXiv scan over the first pages remains the primary path.
+    grobid_url: str = Field(default="", alias="GROBID_URL")
+    grobid_timeout_seconds: int = Field(default=60, alias="GROBID_TIMEOUT_SECONDS")
+
     # --- Research Sphere ---
     sphere_radius: int = Field(default=1, alias="SPHERE_RADIUS")
     sphere_candidate_cap: int = Field(default=200, alias="SPHERE_CANDIDATE_CAP")

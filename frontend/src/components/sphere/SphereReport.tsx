@@ -1,8 +1,9 @@
 "use client";
 
-import { Fragment, useEffect, useMemo, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import ComparisonMatrix from "@/components/sphere/ComparisonMatrix";
 import PaperCard, { PaperChip } from "@/components/sphere/PaperCard";
+import { SectionNav, StatTiles } from "@/components/report/primitives";
 import { useTranslation } from "@/lib/i18n";
 import {
   CLUSTER_ACCENT,
@@ -53,7 +54,6 @@ export default function SphereReport({ data }: { data: SphereData }) {
   const out = data.sphere_output;
   const nodes = data.nodes;
   const [activePartition, setActivePartition] = useState<string | null>(null);
-  const [activeSection, setActiveSection] = useState<SectionId | null>(null);
 
   const partitions = useMemo(() => {
     const present = data.partitions.filter((p) => p.node_ids.length > 0);
@@ -89,28 +89,6 @@ export default function SphereReport({ data }: { data: SphereData }) {
     return list;
   }, [out, partitions.length, data.library_matches.length, t]);
 
-  // Highlight the section currently occupying the top of the reading pane.
-  useEffect(() => {
-    const observed = sections
-      .map((s) => document.getElementById(`sphere-sec-${s.id}`))
-      .filter((el): el is HTMLElement => el !== null);
-    if (observed.length === 0) return;
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        const visible = entries
-          .filter((e) => e.isIntersecting)
-          .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top);
-        if (visible.length > 0) {
-          setActiveSection(visible[0].target.id.replace("sphere-sec-", "") as SectionId);
-        }
-      },
-      { rootMargin: "-64px 0px -65% 0px", threshold: 0 },
-    );
-    observed.forEach((el) => observer.observe(el));
-    return () => observer.disconnect();
-  }, [sections]);
-
   /** Cross-link: scroll to the paper's card, or open it externally if unlisted. */
   const selectNode = (nodeId: string) => {
     setActivePartition(null);
@@ -141,42 +119,18 @@ export default function SphereReport({ data }: { data: SphereData }) {
   return (
     <div className="pb-16">
       {/* Section navigation — sticks to the top of the reading pane */}
-      {sections.length > 1 && (
-        <nav className="no-scrollbar sticky top-0 z-20 -mx-1 mb-1 flex gap-1 overflow-x-auto border-b border-border bg-background/85 px-1 py-2 backdrop-blur">
-          {sections.map((s) => (
-            <button
-              key={s.id}
-              type="button"
-              onClick={() =>
-                document
-                  .getElementById(`sphere-sec-${s.id}`)
-                  ?.scrollIntoView({ behavior: "smooth", block: "start" })
-              }
-              className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-medium transition-colors ${
-                activeSection === s.id
-                  ? "bg-accent text-accent-foreground"
-                  : "text-muted-foreground hover:bg-muted hover:text-foreground"
-              }`}
-            >
-              {s.label}
-            </button>
-          ))}
-        </nav>
-      )}
+      <SectionNav sections={sections} idPrefix="sphere" />
 
       {/* ── Stats ── */}
-      <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
-        {[
-          { label: t("sphere.stat.core"), value: String(coreCount) },
-          { label: t("sphere.stat.candidates"), value: String(data.num_nodes) },
-          { label: t("sphere.stat.themes"), value: String(out.themes.length) },
-          { label: t("sphere.stat.span"), value: yearSpan || "—" },
-        ].map((s) => (
-          <div key={s.label} className="rounded-xl border border-border bg-card px-3 py-2.5">
-            <p className="font-display text-xl font-semibold tabular-nums leading-none">{s.value}</p>
-            <p className="mt-1.5 text-xs text-muted-foreground">{s.label}</p>
-          </div>
-        ))}
+      <div className="mt-4">
+        <StatTiles
+          stats={[
+            { label: t("sphere.stat.core"), value: String(coreCount) },
+            { label: t("sphere.stat.candidates"), value: String(data.num_nodes) },
+            { label: t("sphere.stat.themes"), value: String(out.themes.length) },
+            { label: t("sphere.stat.span"), value: yearSpan || "—" },
+          ]}
+        />
       </div>
 
       {/* ── Overview ── */}

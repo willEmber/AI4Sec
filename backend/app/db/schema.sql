@@ -106,6 +106,17 @@ CREATE TABLE IF NOT EXISTS run_outputs (
     json_data TEXT DEFAULT '{}'
 );
 
+-- Cached external triage evidence per paper (Insight Snap). Keyed by paper,
+-- not by run, so re-analysing the same PDF costs no extra API calls. Rows carry
+-- a fetch timestamp because citation counts drift; see SNAP_SIGNALS_TTL_HOURS.
+CREATE TABLE IF NOT EXISTS paper_signals (
+    paper_id       TEXT PRIMARY KEY REFERENCES papers(paper_id),
+    signals_json   TEXT NOT NULL DEFAULT '{}',   -- serialized TriageSignals
+    cited_by_count INTEGER DEFAULT 0,            -- denormalized for list views
+    is_retracted   INTEGER DEFAULT 0,            -- denormalized red flag
+    fetched_at     TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 CREATE TABLE IF NOT EXISTS sphere_nodes (
     node_id TEXT NOT NULL,
     run_id  TEXT NOT NULL REFERENCES runs(run_id),

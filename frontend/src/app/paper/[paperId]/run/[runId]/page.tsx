@@ -10,8 +10,12 @@ import PdfViewer from "@/components/PdfViewer";
 import SplitPane from "@/components/SplitPane";
 import RankBadges from "@/components/RankBadges";
 import SphereReport from "@/components/sphere/SphereReport";
+import SnapReport from "@/components/snap/SnapReport";
+import LensReport from "@/components/lens/LensReport";
 import { IconCards, IconCheck, IconDocument, IconDownload } from "@/components/icons";
 import { parseSphereData } from "@/lib/sphere";
+import { parseSnapData } from "@/lib/snap";
+import { parseLensData } from "@/lib/lens";
 import type { RunResponse, PaperResponse, SSEEvent, ProgressEntry } from "@/lib/types";
 
 export default function RunPage() {
@@ -24,7 +28,9 @@ export default function RunPage() {
   const [paper, setPaper] = useState<PaperResponse | null>(null);
   const [markdown, setMarkdown] = useState<string>("");
   const [jsonData, setJsonData] = useState<string>("");
-  const [sphereView, setSphereView] = useState<"structured" | "markdown">("structured");
+  // Shared by all three structured modes (Sphere, Snap, Lens) — the toggle
+  // looks and behaves the same, only one of them is mounted per run.
+  const [structuredView, setStructuredView] = useState<"structured" | "markdown">("structured");
   const [targetPage, setTargetPage] = useState<number | undefined>(undefined);
   const [pdfCollapsed, setPdfCollapsed] = useState(false);
   const [pageLoadTime] = useState(() => performance.now());
@@ -167,10 +173,15 @@ export default function RunPage() {
     ? progressSteps[progressSteps.length - 1]
     : null;
 
-  // Research Sphere ships a structured twin of the report next to the markdown;
-  // when it is present the report renders as cards instead of raw markdown.
+  // All three modes ship a structured twin of the report next to the markdown;
+  // when one is present the report renders as cards instead of raw markdown.
+  // Each parser keys on the payload's `mode`, so at most one matches; runs whose
+  // structured pass degraded (or predate it) match none and keep the markdown.
   const sphereData = useMemo(() => parseSphereData(jsonData), [jsonData]);
-  const showSphereReport = sphereData !== null && sphereView === "structured";
+  const snapData = useMemo(() => parseSnapData(jsonData), [jsonData]);
+  const lensData = useMemo(() => parseLensData(jsonData), [jsonData]);
+  const structuredData = sphereData ?? snapData ?? lensData;
+  const showStructured = structuredData !== null && structuredView === "structured";
 
   const isComplete = run?.status === "done" || (isDone && markdown);
   const isFailed = (run?.status === "failed" || !!error) && !isComplete;
@@ -194,21 +205,21 @@ export default function RunPage() {
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-3">
-          {sphereData && (
+          {structuredData && (
             <div className="flex items-center rounded-lg border border-border p-0.5">
               {(
                 [
-                  ["structured", IconCards, t("sphere.view.structured")],
-                  ["markdown", IconDocument, t("sphere.view.markdown")],
+                  ["structured", IconCards, t("report.view.structured")],
+                  ["markdown", IconDocument, t("report.view.markdown")],
                 ] as const
               ).map(([key, Icon, label]) => (
                 <button
                   key={key}
-                  onClick={() => setSphereView(key)}
+                  onClick={() => setStructuredView(key)}
                   title={label}
-                  aria-pressed={sphereView === key}
+                  aria-pressed={structuredView === key}
                   className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-sm transition-colors ${
-                    sphereView === key
+                    structuredView === key
                       ? "bg-accent text-accent-foreground"
                       : "text-muted-foreground hover:text-foreground"
                   }`}
@@ -284,10 +295,22 @@ export default function RunPage() {
           collapseTitle={t("pdf.collapse")}
           expandTitle={t("pdf.expand")}
           left={
-            showSphereReport && sphereData ? (
+            showStructured && sphereData ? (
               <div className="px-6 pb-8 pt-2 sm:px-8">
                 <div className="mx-auto max-w-4xl">
                   <SphereReport data={sphereData} />
+                </div>
+              </div>
+            ) : showStructured && snapData ? (
+              <div className="px-6 pb-8 pt-2 sm:px-8">
+                <div className="mx-auto max-w-3xl">
+                  <SnapReport data={snapData} onCitationClick={handleCitationClick} />
+                </div>
+              </div>
+            ) : showStructured && lensData ? (
+              <div className="px-6 pb-8 pt-2 sm:px-8">
+                <div className="mx-auto max-w-3xl">
+                  <LensReport data={lensData} onCitationClick={handleCitationClick} />
                 </div>
               </div>
             ) : markdown ? (
