@@ -11,12 +11,14 @@ class AppSettings(BaseSettings):
     # --- paths ---
     data_dir: Path = Path("data")
 
-    # --- LLM (Qwen Responses API) ---
+    # --- LLM (Qwen / DashScope MaaS Responses API) ---
+    # Compatible-mode base URL ending in /v1; client POSTs to {base}/responses
+    # with enable_thinking=true for every thinking model.
     llm_base_url: str = Field(default="", alias="LLM_BASEURL")
     llm_api_key: str = Field(default="", alias="LLM_APIKEY")
     # May hold a comma-separated list of selectable models, e.g.
-    # "qwen3.6-plus,qwen3.7-max". The first entry is the default; the full list
-    # is offered to the frontend as a dropdown (see `thinking_models`).
+    # "qwen3.8-max,qwen3.7-plus,qwen3.7-max". The first entry is the default;
+    # the full list is offered to the frontend as a dropdown (see `thinking_models`).
     thinking_model: str = Field(default="", alias="THINKING_MODELNAME")
     embed_model: str = Field(default="", alias="EMBED_MODELNAME")
     rerank_model: str = Field(default="", alias="RERANK_MODELNAME")
