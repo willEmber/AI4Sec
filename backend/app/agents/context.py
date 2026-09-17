@@ -23,17 +23,17 @@ from typing import Any
 class RunBudget:
     """Ceilings enforced by the executor, not by the model.
 
-    Defaults are first-pass numbers for the reading modes P2 delivers; the real
-    values come out of measured latency and cost in P2–P3 and are configurable
-    server-side. Reaching a ceiling ends the run with whatever was found, which
-    is reported rather than hidden (acceptance case A18).
+    The dataclass defaults are a floor; the operative values come from settings
+    (`AGENT_MAX_*`), because what a run may spend is a deployment decision, not
+    a code constant. Reaching a ceiling ends the run with whatever was found,
+    which is reported rather than hidden (acceptance case A18).
     """
 
     max_tool_calls: int = 40
     max_downloads: int = 5
-    max_parses: int = 5
+    max_parses: int = 3
     max_tokens: int = 400_000
-    max_wall_seconds: int = 900
+    max_wall_seconds: int = 1800
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -49,6 +49,29 @@ class RunBudget:
         data = data or {}
         known = {f: data[f] for f in cls.__dataclass_fields__ if f in data}
         return cls(**known)
+
+    @classmethod
+    def from_settings(cls, overrides: dict[str, Any] | None = None) -> RunBudget:
+        """Deployment ceilings, with any per-run override applied on top.
+
+        A run stores its own budget so an answer can be audited against the
+        limits it actually ran under, rather than against whatever the settings
+        say later.
+        """
+        from app.config import get_settings
+
+        settings = get_settings()
+        values: dict[str, Any] = {
+            "max_tool_calls": settings.agent_max_tool_calls,
+            "max_downloads": settings.agent_max_downloads,
+            "max_parses": settings.agent_max_parses,
+            "max_tokens": settings.agent_max_tokens,
+            "max_wall_seconds": settings.agent_max_wall_seconds,
+        }
+        values.update(
+            {k: v for k, v in (overrides or {}).items() if k in cls.__dataclass_fields__}
+        )
+        return cls(**values)
 
 
 @dataclass

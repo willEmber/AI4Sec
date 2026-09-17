@@ -25,6 +25,12 @@ interface UseAgentStreamReturn {
   finishedRunId: string | null;
   /** Evidence ids the tools produced this turn, in order. */
   evidenceIds: string[];
+  /**
+   * Increments when the agent attached a paper to the session mid-turn. The
+   * agent can now go and fetch a paper the reader never uploaded, so the paper
+   * list has to refresh during the turn rather than after it.
+   */
+  papersChanged: number;
   start: (runId: string) => void;
   stop: () => void;
 }
@@ -44,6 +50,7 @@ export function useAgentStream(): UseAgentStreamReturn {
   const [error, setError] = useState<string | null>(null);
   const [finishedRunId, setFinishedRunId] = useState<string | null>(null);
   const [evidenceIds, setEvidenceIds] = useState<string[]>([]);
+  const [papersChanged, setPapersChanged] = useState(0);
 
   const sourceRef = useRef<EventSource | null>(null);
   const seqRef = useRef(0);
@@ -107,6 +114,10 @@ export function useAgentStream(): UseAgentStreamReturn {
         });
         break;
       }
+
+      case "paper.added":
+        setPapersChanged((n) => n + 1);
+        break;
 
       case "run.completed":
         setEvidenceIds((payload.citations as string[]) || []);
@@ -201,6 +212,7 @@ export function useAgentStream(): UseAgentStreamReturn {
     error,
     finishedRunId,
     evidenceIds,
+    papersChanged,
     start,
     stop,
   };

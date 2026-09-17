@@ -476,6 +476,76 @@ async def download_via_wiley_tdm(
 
 
 # ─────────────────────────────────────────────────────────────────────
+# Strategy 4 — arXiv and plain OA URLs (papers with no DOI)
+# ─────────────────────────────────────────────────────────────────────
+
+ARXIV_PDF_URL = "https://arxiv.org/pdf/{arxiv_id}"
+
+
+async def download_via_arxiv(
+    client: httpx.AsyncClient,
+    arxiv_id: str,
+    dest_path: Path,
+    *,
+    timeout: float = 60.0,
+    retries: int = 3,
+) -> DownloadResult | None:
+    """Fetch a preprint straight from arXiv.
+
+    A large share of the papers worth reading here are arXiv-only and have no
+    DOI at all, so the DOI-keyed chain above cannot reach them. arXiv serves
+    the PDF at a predictable URL, which makes this the cheapest path when an
+    arXiv id is known — and the only one when it is the sole identifier.
+    """
+    arxiv_id = (arxiv_id or "").strip()
+    if not arxiv_id:
+        return None
+
+    url = ARXIV_PDF_URL.format(arxiv_id=quote(arxiv_id, safe="./"))
+    ok, detail = await _stream_pdf_to_path(
+        client, url, dest_path, timeout=timeout, retries=retries
+    )
+    return DownloadResult(
+        doi="",
+        ok=ok,
+        source="arxiv",
+        pdf_path=str(dest_path) if ok else None,
+        detail=detail if not ok else f"arXiv:{arxiv_id}",
+    )
+
+
+async def download_via_direct_url(
+    client: httpx.AsyncClient,
+    url: str,
+    dest_path: Path,
+    *,
+    timeout: float = 60.0,
+    retries: int = 3,
+) -> DownloadResult | None:
+    """Fetch a PDF from an open-access URL a metadata provider already gave us.
+
+    Search and citation-graph results often carry an OA link. Following it
+    directly avoids a second Unpaywall round-trip; the SSRF guard inside
+    :func:`_stream_pdf_to_path` re-checks every redirect hop, which matters
+    because this URL came from a third party.
+    """
+    url = (url or "").strip()
+    if not url:
+        return None
+
+    ok, detail = await _stream_pdf_to_path(
+        client, url, dest_path, timeout=timeout, retries=retries
+    )
+    return DownloadResult(
+        doi="",
+        ok=ok,
+        source="oa_url",
+        pdf_path=str(dest_path) if ok else None,
+        detail=detail if not ok else url,
+    )
+
+
+# ─────────────────────────────────────────────────────────────────────
 # Top-level orchestrator
 # ─────────────────────────────────────────────────────────────────────
 

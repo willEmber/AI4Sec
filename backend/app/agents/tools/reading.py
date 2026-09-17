@@ -78,6 +78,39 @@ async def _authorize(
     return paper_id, None
 
 
+async def _authorize_many(
+    ctx: AgentContext, paper_ids: list[str] | None
+) -> tuple[list[str], ToolResult | None]:
+    """Resolve a set of papers the session may read.
+
+    An omitted list means every readable paper in the session — which is what
+    makes a comparison question work without the model first having to list
+    them. Each id is still checked individually; a set is not a way around the
+    per-paper check.
+    """
+    papers = await repo.list_session_papers(ctx.session_id)
+    readable = [p.paper_id for p in papers if p.paper_id]
+
+    if not paper_ids:
+        if not readable:
+            return [], ToolResult.unavailable(
+                ErrorCode.PAPER_NOT_FOUND,
+                "This session has no readable paper yet.",
+            )
+        return readable, None
+
+    allowed = [pid for pid in paper_ids if pid in readable]
+    rejected = [pid for pid in paper_ids if pid not in readable]
+    if not allowed:
+        return [], ToolResult.unavailable(
+            ErrorCode.PAPER_NOT_FOUND,
+            f"None of those papers are in this session: {', '.join(paper_ids)}",
+        )
+    if rejected:
+        logger.info("Dropping papers outside session %s: %s", ctx.session_id, rejected)
+    return allowed, None
+
+
 def _node_payload(node: PaperNode, *, evidence_id: str = "") -> dict[str, Any]:
     text = node.text.strip()
     if node.block_type == "table":
@@ -140,41 +173,13 @@ async def get_paper_outline(
     ).to_json()
 
 
-@tool(parse_docstring=False)
-async def search_paper_content(
-    question: str,
-    runtime: ToolRuntime[AgentContext],
-    paper_id: str = "",
-    limit: int = 6,
-) -> str:
-    """Find passages in a parsed paper that bear on a question.
-
-    Returns short excerpts with page numbers and an evidence_id for each, which
-    you cite in your answer. Good for locating where something is discussed;
-    when an excerpt is too thin to settle the question, follow it with
-    read_paper_section. Omit paper_id when the session holds a single paper.
-    """
-    ctx = runtime.context
-    paper_id, denial = await _authorize(ctx, paper_id)
-    if denial is not None:
-        return denial.to_json()
-
-    question = (question or "").strip()
-    if not question:
-        return ToolResult.failed(
-            ErrorCode.INVALID_ARGUMENT, "question must not be empty."
-        ).to_json()
-
-    limit = max(1, min(int(limit or 6), 12))
+async def _search_one(
+    ctx: AgentContext, paper_id: str, question: str, limit: int
+) -> tuple[list[dict[str, Any]], list[str]]:
+    """Rank one paper's passages and register each as evidence."""
     ranked = await rank_paper_chunks(paper_id, question, limit=limit)
     if not ranked:
-        # Not an error: "the paper does not discuss this" is a real finding, and
-        # reporting it as a failure would invite a pointless retry.
-        return ToolResult.ok(
-            {"paper_id": paper_id, "question": question, "hits": []},
-            note="No passage matched. The paper may not discuss this; consider "
-            "the outline to check which sections exist.",
-        ).to_json()
+        return [], []
 
     literature_id = await paper_catalog.literature_for_paper(paper_id)
     hits: list[dict[str, Any]] = []
@@ -199,11 +204,113 @@ async def search_paper_content(
         )
         evidence_ids.append(evidence.evidence_id)
         hits.append(_node_payload(node, evidence_id=evidence.evidence_id))
+    return hits, evidence_ids
+
+
+@tool(parse_docstring=False)
+async def search_paper_content(
+    question: str,
+    runtime: ToolRuntime[AgentContext],
+    paper_id: str = "",
+    paper_ids: list[str] | None = None,
+    limit: int = 6,
+) -> str:
+    """Find passages bearing on a question, in one paper or across several.
+
+    Returns short excerpts with page numbers and an evidence_id for each, which
+    you cite in your answer. Good for locating where something is discussed;
+    when an excerpt is too thin to settle the question, follow it with
+    read_paper_section. Omit paper_id when the session holds a single paper.
+    To compare papers, pass paper_ids — the same question is run against each
+    and the results come back grouped by paper, so differences in setup and
+    results line up.
+    """
+    ctx = runtime.context
+
+    question = (question or "").strip()
+    if not question:
+        return ToolResult.failed(
+            ErrorCode.INVALID_ARGUMENT, "question must not be empty."
+        ).to_json()
+
+    limit = max(1, min(int(limit or 6), 12))
+
+    if paper_ids:
+        return await _search_across(ctx, paper_ids, question, limit)
+
+    paper_id, denial = await _authorize(ctx, paper_id)
+    if denial is not None:
+        return denial.to_json()
+
+    hits, evidence_ids = await _search_one(ctx, paper_id, question, limit)
+    if not hits:
+        # Not an error: "the paper does not discuss this" is a real finding, and
+        # reporting it as a failure would invite a pointless retry.
+        return ToolResult.ok(
+            {"paper_id": paper_id, "question": question, "hits": []},
+            note="No passage matched. The paper may not discuss this; consider "
+            "the outline to check which sections exist.",
+        ).to_json()
 
     return ToolResult.ok(
         {"paper_id": paper_id, "question": question, "hits": hits},
         evidence_ids=evidence_ids,
     ).to_json()
+
+
+async def _search_across(
+    ctx: AgentContext, paper_ids: list[str], question: str, limit: int
+) -> str:
+    """Run one question against several papers and group the answers by paper.
+
+    Grouped rather than merged into one ranked list: a comparison needs to know
+    which paper each passage came from, and a global ranking would quietly let
+    the paper with the better-matching wording supply most of the evidence.
+    """
+    allowed, denial = await _authorize_many(ctx, paper_ids)
+    if denial is not None:
+        return denial.to_json()
+
+    # Per paper, so one verbose paper cannot crowd the others out of the answer.
+    per_paper = max(2, min(limit, 6))
+    groups: list[dict[str, Any]] = []
+    evidence_ids: list[str] = []
+    silent: list[str] = []
+
+    for pid in allowed:
+        hits, ids = await _search_one(ctx, pid, question, per_paper)
+        title = await _paper_title(pid)
+        groups.append(
+            {"paper_id": pid, "title": title, "hits": hits}
+        )
+        evidence_ids.extend(ids)
+        if not hits:
+            silent.append(title or pid)
+
+    data = {"question": question, "papers": groups}
+    if not evidence_ids:
+        return ToolResult.ok(
+            data,
+            note="None of these papers discuss this. Check their outlines, or say "
+            "the comparison cannot be made on this point.",
+        ).to_json()
+    if silent:
+        return ToolResult.partial(
+            data,
+            note=(
+                "No passage matched in: "
+                + "; ".join(silent)
+                + ". Do not treat silence as disagreement — say which papers the "
+                "comparison could not cover."
+            ),
+            evidence_ids=evidence_ids,
+        ).to_json()
+    return ToolResult.ok(data, evidence_ids=evidence_ids).to_json()
+
+
+async def _paper_title(paper_id: str) -> str:
+    row = await db.fetch_one("SELECT title FROM papers WHERE paper_id = ?", (paper_id,))
+    return (row or {}).get("title") or ""
 
 
 @tool(parse_docstring=False)

@@ -73,12 +73,20 @@ class PublicationRankResult:
     """期刊等级查询结果"""
 
     def __init__(self, name: str, sci: Optional[str] = None, ccf: Optional[str] = None,
-                 success: bool = True, error: Optional[str] = None):
+                 success: bool = True, error: Optional[str] = None,
+                 extra: Optional[dict] = None, source: str = ""):
         self.name = name
         self.sci = sci
         self.ccf = ccf
         self.success = success
         self.error = error
+        # Every ranking EasyScholar returned, not just the two this class names.
+        # JCR quartiles, 中科院 divisions and CCF tiers are different systems and
+        # must not be collapsed into one "rank"; callers that need the others
+        # (sciUp, sciUpSmall, sciif, …) read them from here.
+        self.extra = extra or {}
+        # Which source produced this: easyscholar | llm_websearch | cache | ""
+        self.source = source
 
     def __repr__(self):
         if not self.success:
@@ -94,6 +102,8 @@ class PublicationRankResult:
             "success": True,
             "sci": self.sci,
             "ccf": self.ccf,
+            "extra": self.extra,
+            "source": self.source,
         }
 
 
@@ -196,11 +206,14 @@ class EasyScholarClient:
                     )
 
                 sci, ccf = self._extract_sci_ccf(data)
+                official_all = (data.get("officialRank") or {}).get("all") or {}
                 return PublicationRankResult(
                     name=publication_name,
                     sci=sci,
                     ccf=ccf,
                     success=True,
+                    extra=dict(official_all),
+                    source="easyscholar",
                 )
 
             except requests.exceptions.Timeout:

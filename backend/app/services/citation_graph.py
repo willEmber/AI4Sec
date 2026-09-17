@@ -307,6 +307,17 @@ async def openalex_get_work(
     )
 
 
+async def openalex_get_metadata(
+    client: httpx.AsyncClient,
+    openalex_id: str,
+) -> PaperMetadata | None:
+    """Fetch one work as normalised metadata rather than a raw record."""
+    work = await openalex_get_work(client, openalex_id)
+    if not work:
+        return None
+    return _oa_work_to_metadata(work)
+
+
 async def openalex_get_referenced_works(
     client: httpx.AsyncClient,
     openalex_id: str,

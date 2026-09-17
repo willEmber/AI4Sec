@@ -135,7 +135,9 @@ def _parse_llm_response(text: str, publication_name: str) -> PublicationRankResu
         if ccf_upper in _VALID_CCF:
             ccf = ccf_upper
 
-    return PublicationRankResult(name=publication_name, sci=sci, ccf=ccf, success=True)
+    return PublicationRankResult(
+        name=publication_name, sci=sci, ccf=ccf, success=True, source="llm_websearch"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -357,6 +359,8 @@ class UnifiedRankClient:
         if cached is not None:
             if not _is_transient_failure(cached):
                 logger.debug("cache hit for %s", publication_name)
+                if not cached.source:
+                    cached.source = "cache"
                 return cached
             logger.info(
                 "ignoring transient publication_rank cache failure for %s: %s",

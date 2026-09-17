@@ -33,6 +33,10 @@ async def init_db() -> None:
     path = _get_db_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     async with aiosqlite.connect(path) as db:
+        # Set once, here: WAL is stored in the database header and persists.
+        # Every other connection only sets busy_timeout (see the helpers below).
+        await db.execute("PRAGMA journal_mode=WAL")
+        await db.execute("PRAGMA busy_timeout=5000")
         schema = _SCHEMA_PATH.read_text(encoding="utf-8")
         await db.executescript(schema)
         await db.commit()
@@ -144,14 +148,32 @@ async def init_db() -> None:
 
 async def execute(sql: str, params: tuple[Any, ...] = ()) -> None:
     async with aiosqlite.connect(_get_db_path()) as db:
-        await db.execute("PRAGMA journal_mode=WAL")
+        await db.execute("PRAGMA busy_timeout=5000")
         await db.execute(sql, params)
         await db.commit()
 
 
+async def execute_returning(sql: str, params: tuple[Any, ...] = ()) -> dict[str, Any] | None:
+    """Run a write with a RETURNING clause and commit it.
+
+    `fetch_one` deliberately does not commit, so a write routed through it is
+    rolled back when its connection closes — silently, since the RETURNING row
+    still comes back. Writes that need to see their own outcome (an
+    `INSERT OR IGNORE` that reports whether it inserted, a conditional UPDATE
+    that reports whether it matched) belong here instead.
+    """
+    async with aiosqlite.connect(_get_db_path()) as db:
+        db.row_factory = aiosqlite.Row
+        await db.execute("PRAGMA busy_timeout=5000")
+        cursor = await db.execute(sql, params)
+        row = await cursor.fetchone()
+        await db.commit()
+        return dict(row) if row is not None else None
+
+
 async def execute_many(sql: str, params_seq: list[tuple[Any, ...]]) -> None:
     async with aiosqlite.connect(_get_db_path()) as db:
-        await db.execute("PRAGMA journal_mode=WAL")
+        await db.execute("PRAGMA busy_timeout=5000")
         await db.executemany(sql, params_seq)
         await db.commit()
 
@@ -159,7 +181,7 @@ async def execute_many(sql: str, params_seq: list[tuple[Any, ...]]) -> None:
 async def fetch_one(sql: str, params: tuple[Any, ...] = ()) -> dict[str, Any] | None:
     async with aiosqlite.connect(_get_db_path()) as db:
         db.row_factory = aiosqlite.Row
-        await db.execute("PRAGMA journal_mode=WAL")
+        await db.execute("PRAGMA busy_timeout=5000")
         cursor = await db.execute(sql, params)
         row = await cursor.fetchone()
         if row is None:
@@ -170,7 +192,7 @@ async def fetch_one(sql: str, params: tuple[Any, ...] = ()) -> dict[str, Any] | 
 async def fetch_all(sql: str, params: tuple[Any, ...] = ()) -> list[dict[str, Any]]:
     async with aiosqlite.connect(_get_db_path()) as db:
         db.row_factory = aiosqlite.Row
-        await db.execute("PRAGMA journal_mode=WAL")
+        await db.execute("PRAGMA busy_timeout=5000")
         cursor = await db.execute(sql, params)
         rows = await cursor.fetchall()
         return [dict(r) for r in rows]
@@ -179,7 +201,7 @@ async def fetch_all(sql: str, params: tuple[Any, ...] = ()) -> list[dict[str, An
 async def record_traffic_visit(visitor_hash: str, path: str) -> dict[str, Any]:
     """Upsert one anonymous visit and return the current traffic totals."""
     async with aiosqlite.connect(_get_db_path()) as db:
-        await db.execute("PRAGMA journal_mode=WAL")
+        await db.execute("PRAGMA busy_timeout=5000")
         await db.execute(
             "INSERT INTO traffic_visitors "
             "(visitor_hash, first_seen_at, last_seen_at, visit_count, last_path) "

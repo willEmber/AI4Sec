@@ -168,6 +168,9 @@ async def post_message(
             client_request_id=body.client_request_id,
             llm_model=session.llm_model,
             prompt_version=_prompt_version(),
+            # Stored on the run, so an answer can later be audited against the
+            # limits it actually ran under rather than today's settings.
+            budget=_run_budget(),
         )
     except repo.ActiveRunConflict:
         raise HTTPException(
@@ -298,6 +301,12 @@ async def get_evidence(
     except repo.EvidenceNotFound:
         raise HTTPException(status_code=404, detail="No such evidence.") from None
     return await evidence_service.evidence_to_api(evidence)
+
+
+def _run_budget() -> dict[str, object]:
+    from app.agents.context import RunBudget
+
+    return RunBudget.from_settings().as_dict()
 
 
 def _prompt_version() -> str:

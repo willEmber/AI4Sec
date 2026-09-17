@@ -93,6 +93,18 @@ class AppSettings(BaseSettings):
     # `agent_checkpoints.db`; kept separate so pruning checkpoints can never
     # touch the papers/runs tables.
     agent_checkpoint_db: str = Field(default="", alias="AGENT_CHECKPOINT_DB")
+    # Per-run ceilings, enforced by the executor rather than asked of the model.
+    # Reaching one ends the turn with whatever was found, reported as such.
+    agent_max_tool_calls: int = Field(default=40, alias="AGENT_MAX_TOOL_CALLS")
+    # Each download is a PDF fetch; each parse is a MinerU job costing minutes
+    # and quota. These are the two that cost real money, so they are the two
+    # most worth tuning per deployment.
+    agent_max_downloads: int = Field(default=5, alias="AGENT_MAX_DOWNLOADS")
+    agent_max_parses: int = Field(default=3, alias="AGENT_MAX_PARSES")
+    agent_max_tokens: int = Field(default=400_000, alias="AGENT_MAX_TOKENS")
+    # Generous because one turn may now download and parse a paper it just
+    # found, which a pure reading turn never did.
+    agent_max_wall_seconds: int = Field(default=1800, alias="AGENT_MAX_WALL_SECONDS")
 
     # --- GROBID (structured header extraction fallback) ---
     # Base URL of a GROBID server, e.g. http://localhost:8070. Empty disables it;

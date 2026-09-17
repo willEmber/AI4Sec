@@ -33,7 +33,7 @@ from app.agents.context import AgentContext, BudgetUsage, RunBudget
 from app.agents.harness import create_paper_agent
 from app.agents.model_factory import build_chat_model
 from app.agents.prompts import PROMPT_VERSION, build_system_prompt
-from app.agents.tools import READING_TOOLS
+from app.agents.tools import RESEARCH_TOOLS
 from app.db import agent_repository as repo
 from app.models.agent_models import (
     AgentEvent,
@@ -150,7 +150,7 @@ async def _execute_turn(
     """Run one turn to completion, emitting events as it goes."""
     started = time.perf_counter()
     usage = BudgetUsage()
-    budget = RunBudget.from_dict(run.budget)
+    budget = RunBudget.from_settings(run.budget)
     collected_evidence: list[str] = []
     answer_parts: list[str] = []
     seen_calls: set[str] = set()
@@ -175,7 +175,7 @@ async def _execute_turn(
             usage=usage,
         )
         agent = create_paper_agent(
-            tools=READING_TOOLS,
+            tools=RESEARCH_TOOLS,
             system_prompt=build_system_prompt(language=session.language, papers=papers),
             model=build_chat_model(run.llm_model),
             context_schema=AgentContext,
@@ -200,6 +200,7 @@ async def _execute_turn(
                 usage.tool_calls += 1
                 payload = _tool_completion_payload(message)
                 collected_evidence.extend(payload.pop("_evidence_ids", []))
+                attached = payload.pop("_attached_paper", None)
                 await _emit(
                     session_id=session.session_id,
                     run_id=run.run_id,
@@ -208,6 +209,16 @@ async def _execute_turn(
                     else EventType.TOOL_COMPLETED,
                     payload=payload,
                 )
+                if attached:
+                    # The session gained a paper mid-turn. The client shows the
+                    # paper list beside the conversation, so it has to hear about
+                    # it now rather than on the next reload.
+                    await _emit(
+                        session_id=session.session_id,
+                        run_id=run.run_id,
+                        type=EventType.PAPER_ADDED,
+                        payload=attached,
+                    )
                 continue
 
             if isinstance(message, (AIMessage, AIMessageChunk)):
@@ -228,6 +239,10 @@ async def _execute_turn(
                         payload={"text": text},
                     )
 
+            # Refreshed every step: the wall-clock ceiling is the only one that
+            # keeps rising while nothing else happens, so a slow parse or a
+            # stalled provider has to be able to end the turn.
+            usage.wall_seconds = time.perf_counter() - started
             exceeded = usage.exceeded(budget)
             if exceeded:
                 logger.warning("Run %s hit budget ceiling %s", run.run_id, exceeded)
@@ -338,6 +353,13 @@ def _tool_completion_payload(message: ToolMessage) -> dict[str, Any]:
         data = parsed.get("data")
         if isinstance(data, dict):
             payload["summary"] = _summarise(data)
+            if data.get("paper_id") and data.get("literature_id"):
+                payload["_attached_paper"] = {
+                    "literature_id": data["literature_id"],
+                    "paper_id": data["paper_id"],
+                    "title": data.get("title", ""),
+                    "availability": data.get("availability", ""),
+                }
     payload["_evidence_ids"] = evidence_ids
     return payload
 
@@ -345,10 +367,13 @@ def _tool_completion_payload(message: ToolMessage) -> dict[str, Any]:
 def _summarise(data: dict[str, Any]) -> dict[str, Any]:
     """A few scalars a UI can show without carrying the whole result."""
     summary: dict[str, Any] = {}
-    for key in ("paper_id", "section", "question", "title", "page"):
+    for key in (
+        "paper_id", "section", "question", "title", "page",
+        "query", "venue", "relation", "of_paper", "source", "availability",
+    ):
         if key in data:
             summary[key] = data[key]
-    for key in ("sections", "hits", "blocks"):
+    for key in ("sections", "hits", "blocks", "results", "papers", "rankings", "unknown_year"):
         if isinstance(data.get(key), list):
             summary[f"{key}_count"] = len(data[key])
     return summary

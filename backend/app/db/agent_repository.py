@@ -315,6 +315,9 @@ async def append_message(
     message_id = f"am_{uuid.uuid4().hex[:24]}"
     async with aiosqlite.connect(db.get_db_path()) as conn:
         conn.row_factory = aiosqlite.Row
+        # Seq allocation is a contended write; wait for the lock rather than
+        # failing the turn.
+        await conn.execute("PRAGMA busy_timeout=5000")
         cursor = await conn.execute(
             """INSERT INTO agent_messages
                    (message_id, session_id, run_id, role, content, citations_json, seq)
@@ -383,6 +386,9 @@ async def append_event(
     """
     async with aiosqlite.connect(db.get_db_path()) as conn:
         conn.row_factory = aiosqlite.Row
+        # Seq allocation is a contended write; wait for the lock rather than
+        # failing the turn.
+        await conn.execute("PRAGMA busy_timeout=5000")
         cursor = await conn.execute(
             """INSERT INTO agent_events (session_id, seq, run_id, type, payload_json)
                VALUES (?,

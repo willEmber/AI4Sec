@@ -40,14 +40,27 @@ export default function ChatPage() {
   const [activePaperId, setActivePaperId] = useState<string>("");
   const [targetPage, setTargetPage] = useState<number | undefined>(undefined);
   const [pdfCollapsed, setPdfCollapsed] = useState(false);
+  const [knownPaperIds, setKnownPaperIds] = useState<Set<string>>(new Set());
 
   const stream = useAgentStream();
-  const { start: startStream, stop: stopStream, finishedRunId } = stream;
+  const { start: startStream, stop: stopStream, finishedRunId, papersChanged } = stream;
   const bottomRef = useRef<HTMLDivElement>(null);
 
   const reload = useCallback(async () => {
     const data = await getSession(sessionId);
     setDetail(data);
+    // Bring a paper the agent fetched itself into view: the reader never chose
+    // it, so nothing else would.
+    setKnownPaperIds((known) => {
+      const arrivals = data.papers.filter(
+        (p) => p.paper_id && p.availability === "parsed" && !known.has(p.paper_id),
+      );
+      if (arrivals.length > 0 && known.size > 0) {
+        setActivePaperId(arrivals[0].paper_id);
+        setTargetPage(undefined);
+      }
+      return new Set(data.papers.map((p) => p.paper_id).filter(Boolean));
+    });
     return data;
   }, [sessionId]);
 
@@ -90,6 +103,13 @@ export default function ChatPage() {
       .then((data) => setSessions(data.sessions))
       .catch(() => {});
   }, [finishedRunId, reload]);
+
+  // The agent can add a paper part-way through a turn, so the sidebar has to
+  // pick it up now rather than when the turn ends.
+  useEffect(() => {
+    if (!papersChanged) return;
+    reload().catch(() => {});
+  }, [papersChanged, reload]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
