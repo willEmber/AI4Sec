@@ -2,7 +2,7 @@
 name = "scholar-backend"
 version = "0.1.0"
 description = "Academic paper reading platform backend"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.115",
     "uvicorn[standard]>=0.30",
@@ -17,6 +17,8 @@ dependencies = [
     "slowapi>=0.1.9",
     "requests>=2.31",
     "markdown>=3.5",
+    "deepagents>=0.7.15",
+    "langchain-openai>=1.6.2",
 ]
 
 [build-system]

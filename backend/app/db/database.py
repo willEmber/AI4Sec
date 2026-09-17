@@ -6,6 +6,8 @@ from typing import Any
 
 import aiosqlite
 
+from app.db.migrations import apply_migrations
+
 logger = logging.getLogger("scholar.db")
 
 _SCHEMA_PATH = Path(__file__).parent / "schema.sql"
@@ -130,6 +132,14 @@ async def init_db() -> None:
             await db.commit()
         except Exception:
             pass
+        # Everything added after the agent work ships as a numbered migration
+        # instead of another best-effort ALTER above: migrations run in a
+        # transaction and are recorded, so a failure is visible rather than
+        # swallowed. Not wrapped in try/except on purpose — a database that
+        # failed to migrate must not serve requests.
+        applied = await apply_migrations(db)
+        if applied:
+            logger.info("Applied %d schema migration(s): %s", len(applied), ", ".join(applied))
 
 
 async def execute(sql: str, params: tuple[Any, ...] = ()) -> None:

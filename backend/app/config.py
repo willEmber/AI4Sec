@@ -74,6 +74,26 @@ class AppSettings(BaseSettings):
     # Sphere. One extra LLM call per run; off means markdown-only, as before.
     lens_digest_enabled: bool = Field(default=True, alias="LENS_DIGEST_ENABLED")
 
+    # --- Paper agent (Deep Agents Smart Q&A) ---
+    # Model for the conversational agent. Empty falls back to the first entry of
+    # THINKING_MODELNAME. The gateway serves /responses only (no
+    # /chat/completions), which app/agents/model_factory.py accounts for.
+    agent_model: str = Field(default="", alias="AGENT_MODELNAME")
+    # Per-request timeout handed to the model client. Agent turns carry long
+    # tool transcripts, so this sits well above a plain chat call.
+    agent_request_timeout_seconds: int = Field(default=300, alias="AGENT_REQUEST_TIMEOUT_SECONDS")
+    # Transport-level retries inside the OpenAI SDK (connection resets, 5xx).
+    agent_max_retries: int = Field(default=3, alias="AGENT_MAX_RETRIES")
+    # HMAC secret signing anonymous agent credentials. Empty generates one and
+    # persists it under the data dir, so local dev needs no configuration;
+    # set it explicitly in production, and across every instance, or a restart
+    # invalidates every issued credential.
+    agent_identity_secret: str = Field(default="", alias="AGENT_IDENTITY_SECRET")
+    # LangGraph checkpoint database. Empty puts it next to app.db as
+    # `agent_checkpoints.db`; kept separate so pruning checkpoints can never
+    # touch the papers/runs tables.
+    agent_checkpoint_db: str = Field(default="", alias="AGENT_CHECKPOINT_DB")
+
     # --- GROBID (structured header extraction fallback) ---
     # Base URL of a GROBID server, e.g. http://localhost:8070. Empty disables it;
     # the regex DOI/arXiv scan over the first pages remains the primary path.

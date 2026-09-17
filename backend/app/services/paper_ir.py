@@ -1,12 +1,16 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 from pathlib import Path
 
 from app.db import database as db
 from app.models.paper_ir import Block, PaperIR, Section
+from app.services import paper_catalog
 from app.services.qa_retrieval import store_paper_nodes
+
+logger = logging.getLogger("scholar.paper_ir")
 
 
 def _coerce_caption(value: object) -> str:
@@ -208,8 +212,21 @@ def parse_content_list(output_dir: Path, paper_id: str) -> PaperIR:
     )
 
 
-async def build_and_store_paper_ir(output_dir: Path, paper_id: str) -> PaperIR:
-    """Parse content_list.json, build PaperIR, and store blocks in DB."""
+async def build_and_store_paper_ir(
+    output_dir: Path,
+    paper_id: str,
+    *,
+    parse_id: str = "",
+    parser: str = "mineru",
+    parser_config: dict | None = None,
+) -> PaperIR:
+    """Parse content_list.json, build PaperIR, and store blocks in DB.
+
+    Also registers a `paper_versions` row. Blocks are wiped and reinserted just
+    below, so `blocks.block_id` changes on every re-parse and cannot anchor a
+    citation; the version id can, which is what evidence records instead
+    (see `app/services/evidence_service.py`).
+    """
     paper_ir = parse_content_list(output_dir, paper_id)
 
     # Update paper title if found
@@ -249,6 +266,25 @@ async def build_and_store_paper_ir(output_dir: Path, paper_id: str) -> PaperIR:
     normalized_dir = Path(output_dir).parent / "normalized"
     normalized_dir.mkdir(parents=True, exist_ok=True)
     ir_path = normalized_dir / "paper_ir.json"
-    ir_path.write_text(paper_ir.model_dump_json(indent=2), encoding="utf-8")
+    normalized_json = paper_ir.model_dump_json(indent=2)
+    ir_path.write_text(normalized_json, encoding="utf-8")
+
+    # Register the parse as a version. Best effort: a failure here must not lose
+    # a parse that already succeeded, it only costs later answers their version
+    # pin, and the next parse of the same paper will register one.
+    try:
+        await paper_catalog.register_paper_version(
+            paper_id=paper_id,
+            parse_id=parse_id,
+            parser=parser,
+            parser_config=parser_config or {},
+            output_dir=str(output_dir),
+            content_hash=paper_catalog.compute_parse_content_hash(normalized_json),
+            block_count=len(paper_ir.blocks),
+            page_count=(max((b.page_idx for b in paper_ir.blocks), default=-1) + 1),
+        )
+        await paper_catalog.ensure_literature_for_local_paper(paper_id)
+    except Exception:
+        logger.exception("Failed to register parse version for %s", paper_id)
 
     return paper_ir

@@ -1,0 +1,301 @@
+"""Session, run, message, event, tool-result and error contracts for the agent.
+
+Frozen in P1 so the frontend and the P4 recovery work can be built against a
+stable shape. Everything a client sees carries a `schema_version`; everything
+the model sees goes through `ToolResult`, whose four states are the only way a
+tool may report an outcome.
+"""
+
+from __future__ import annotations
+
+import json
+from enum import Enum
+from typing import Any, Literal
+
+from pydantic import BaseModel, Field
+
+# Bumped when an event or tool-result payload changes shape incompatibly.
+SCHEMA_VERSION = 1
+
+
+# ── Tool results ────────────────────────────────────────────────────────────
+
+
+class ToolStatus(str, Enum):
+    """The four outcomes a domain tool may report.
+
+    `partial` and `unavailable` exist so the model is told the difference
+    between "here is some of it", "this cannot be had at all" and "something
+    broke, maybe retry" — which is what lets it change strategy rather than
+    keep calling the same tool (acceptance cases A08, A11).
+    """
+
+    OK = "ok"
+    PARTIAL = "partial"
+    UNAVAILABLE = "unavailable"
+    ERROR = "error"
+
+
+class ErrorCode(str, Enum):
+    """Stable error codes. Tools map provider failures onto these."""
+
+    PAPER_NOT_FOUND = "paper_not_found"
+    SECTION_NOT_FOUND = "section_not_found"
+    EVIDENCE_NOT_FOUND = "evidence_not_found"
+    NOT_PARSED = "not_parsed"
+    PARSE_FAILED = "parse_failed"
+    DOWNLOAD_FAILED = "download_failed"
+    FULLTEXT_UNAVAILABLE = "fulltext_unavailable"
+    METADATA_INCOMPLETE = "metadata_incomplete"
+    RATE_LIMITED = "rate_limited"
+    UPSTREAM_ERROR = "upstream_error"
+    TIMEOUT = "timeout"
+    INVALID_ARGUMENT = "invalid_argument"
+    FORBIDDEN = "forbidden"
+    BUDGET_EXCEEDED = "budget_exceeded"
+    CANCELLED = "cancelled"
+
+
+# Codes where trying again may plausibly help. Anything else should make the
+# agent change approach instead of burning budget on retries.
+RETRYABLE_CODES = frozenset(
+    {
+        ErrorCode.RATE_LIMITED,
+        ErrorCode.UPSTREAM_ERROR,
+        ErrorCode.TIMEOUT,
+    }
+)
+
+
+class ToolError(BaseModel):
+    code: ErrorCode
+    message: str = ""
+    retryable: bool = False
+
+    @classmethod
+    def of(cls, code: ErrorCode, message: str = "", retryable: bool | None = None) -> ToolError:
+        return cls(
+            code=code,
+            message=message,
+            retryable=RETRYABLE_CODES.__contains__(code) if retryable is None else retryable,
+        )
+
+
+class ToolResult(BaseModel):
+    """The single envelope every domain tool returns.
+
+    Tools hand this to the model as JSON. `evidence_ids` is what an answer may
+    cite; a tool that returns prose without registering evidence gives the model
+    nothing citable, which is deliberate.
+    """
+
+    status: ToolStatus = ToolStatus.OK
+    data: Any = None
+    evidence_ids: list[str] = Field(default_factory=list)
+    error: ToolError | None = None
+    # Free-form, model-facing note: why a result is partial, what was dropped,
+    # what to try instead. Not a substitute for `error`.
+    note: str = ""
+
+    @classmethod
+    def ok(cls, data: Any = None, *, evidence_ids: list[str] | None = None, note: str = "") -> ToolResult:
+        return cls(status=ToolStatus.OK, data=data, evidence_ids=evidence_ids or [], note=note)
+
+    @classmethod
+    def partial(cls, data: Any, *, note: str, evidence_ids: list[str] | None = None) -> ToolResult:
+        return cls(
+            status=ToolStatus.PARTIAL, data=data, evidence_ids=evidence_ids or [], note=note
+        )
+
+    @classmethod
+    def unavailable(cls, code: ErrorCode, message: str, *, data: Any = None) -> ToolResult:
+        return cls(
+            status=ToolStatus.UNAVAILABLE,
+            data=data,
+            error=ToolError.of(code, message, retryable=False),
+        )
+
+    @classmethod
+    def failed(cls, code: ErrorCode, message: str, *, retryable: bool | None = None) -> ToolResult:
+        return cls(status=ToolStatus.ERROR, error=ToolError.of(code, message, retryable))
+
+    def to_json(self) -> str:
+        """Serialize for the model. Compact, stable key order, unicode intact."""
+        return json.dumps(self.model_dump(mode="json"), ensure_ascii=False, sort_keys=True)
+
+
+# ── Sessions, runs, messages ────────────────────────────────────────────────
+
+
+class RunStatus(str, Enum):
+    PENDING = "pending"
+    RUNNING = "running"
+    DONE = "done"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+
+
+ACTIVE_RUN_STATUSES = (RunStatus.PENDING.value, RunStatus.RUNNING.value)
+
+
+class Availability(str, Enum):
+    """How much of a session paper is actually in hand."""
+
+    CANDIDATE = "candidate"       # metadata only
+    DOWNLOADING = "downloading"
+    PDF_READY = "pdf_ready"
+    PARSED = "parsed"
+    UNAVAILABLE = "unavailable"   # full text could not be obtained
+
+
+class MessageRole(str, Enum):
+    USER = "user"
+    ASSISTANT = "assistant"
+    SYSTEM = "system"
+
+
+class AgentSession(BaseModel):
+    session_id: str
+    owner_id: str = ""
+    thread_id: str = ""
+    title: str = ""
+    language: str = "zh"
+    llm_model: str = ""
+    config: dict[str, Any] = Field(default_factory=dict)
+    status: str = "active"
+    created_at: str = ""
+    updated_at: str = ""
+
+
+class AgentRun(BaseModel):
+    run_id: str
+    session_id: str
+    owner_id: str = ""
+    client_request_id: str = ""
+    status: RunStatus = RunStatus.PENDING
+    cancel_requested: bool = False
+    error_code: str = ""
+    error_msg: str = ""
+    budget: dict[str, Any] = Field(default_factory=dict)
+    usage: dict[str, Any] = Field(default_factory=dict)
+    llm_model: str = ""
+    prompt_version: str = ""
+    started_at: str = ""
+    finished_at: str | None = None
+
+
+class AgentMessage(BaseModel):
+    message_id: str
+    session_id: str
+    run_id: str = ""
+    role: MessageRole
+    content: str = ""
+    citations: list[str] = Field(default_factory=list)
+    seq: int = 0
+    created_at: str = ""
+
+
+class SessionPaper(BaseModel):
+    """A paper attached to a session, downloaded or not."""
+
+    session_id: str
+    literature_id: str
+    paper_id: str = ""
+    availability: Availability = Availability.CANDIDATE
+    added_by: str = "agent"
+    note: str = ""
+    title: str = ""
+    year: int = 0
+    year_known: bool = False
+    venue: str = ""
+    doi: str = ""
+    arxiv_id: str = ""
+    updated_at: str = ""
+
+
+# ── Events ──────────────────────────────────────────────────────────────────
+
+
+class EventType(str, Enum):
+    """Business events. Deep Agents' own stream is translated into these so the
+    frontend never depends on framework internals (development plan §3 rule 7)."""
+
+    RUN_STARTED = "run.started"
+    MESSAGE_DELTA = "message.delta"
+    TOOL_STARTED = "tool.started"
+    TOOL_COMPLETED = "tool.completed"
+    TOOL_FAILED = "tool.failed"
+    PAPER_ADDED = "paper.added"
+    RUN_COMPLETED = "run.completed"
+    RUN_FAILED = "run.failed"
+    RUN_CANCELLED = "run.cancelled"
+
+
+TERMINAL_EVENTS = frozenset(
+    {EventType.RUN_COMPLETED, EventType.RUN_FAILED, EventType.RUN_CANCELLED}
+)
+
+
+class AgentEvent(BaseModel):
+    """One entry in a session's durable event log.
+
+    `seq` is monotonic per session, assigned when the event is persisted, and
+    is what a reconnecting client resumes from.
+    """
+
+    schema_version: int = SCHEMA_VERSION
+    session_id: str
+    run_id: str = ""
+    seq: int = 0
+    type: EventType
+    timestamp: str = ""
+    payload: dict[str, Any] = Field(default_factory=dict)
+
+    def to_sse(self) -> dict[str, str]:
+        """Render as SSE fields; `id` carries `seq` for `Last-Event-ID` resume."""
+        return {
+            "id": str(self.seq),
+            "event": self.type.value,
+            "data": json.dumps(self.model_dump(mode="json"), ensure_ascii=False),
+        }
+
+
+# ── API request / response shapes ───────────────────────────────────────────
+
+
+class CreateSessionRequest(BaseModel):
+    title: str = ""
+    language: Literal["zh", "en"] = "zh"
+    llm_model: str = ""
+    # Local papers to attach up front. A session may also start empty.
+    paper_ids: list[str] = Field(default_factory=list)
+
+
+class CreateSessionResponse(BaseModel):
+    session_id: str
+    thread_id: str
+    created_at: str
+
+
+class PostMessageRequest(BaseModel):
+    content: str
+    # Idempotency key. Resubmitting the same key returns the original run
+    # instead of starting a second one (acceptance case A12).
+    client_request_id: str = ""
+    paper_ids: list[str] = Field(default_factory=list)
+
+
+class PostMessageResponse(BaseModel):
+    run_id: str
+    session_id: str
+    status: RunStatus
+    # True when this request matched an existing `client_request_id`.
+    deduplicated: bool = False
+
+
+class SessionDetailResponse(BaseModel):
+    session: AgentSession
+    messages: list[AgentMessage] = Field(default_factory=list)
+    papers: list[SessionPaper] = Field(default_factory=list)
+    runs: list[AgentRun] = Field(default_factory=list)
+    last_event_seq: int = 0

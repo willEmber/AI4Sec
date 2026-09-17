@@ -11,6 +11,7 @@ from slowapi.errors import RateLimitExceeded
 from app.config import get_settings
 from app.db.database import init_db, set_db_path
 from app.rate_limit import limiter
+from app.services.identity import AGENT_TOKEN_HEADER
 
 
 def _rate_limit_exceeded_handler(request: Request, exc: RateLimitExceeded) -> Response:
@@ -89,12 +90,16 @@ def create_app() -> FastAPI:
     # combination should cors_origins ever be set to ["*"]. In practice only the
     # cross-origin SSE stream (a plain GET straight to the backend) relies on
     # CORS — every other /api call is same-origin through the Next.js proxy.
+    # `expose_headers` is what lets a cross-origin client read the agent
+    # credential the server mints on a first request; without it the browser
+    # hides the header and the client would ask for a new principal every call.
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origins,
         allow_credentials=False,
         allow_methods=["GET", "POST", "OPTIONS"],
         allow_headers=["*"],
+        expose_headers=[AGENT_TOKEN_HEADER],
     )
 
     from app.api.admin import router as admin_router

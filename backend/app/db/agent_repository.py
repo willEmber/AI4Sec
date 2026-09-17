@@ -1,0 +1,605 @@
+"""Persistence for agent sessions, literature identity, versions and evidence.
+
+Everything the agent layer reads or writes goes through here, so ownership
+checks and idempotency rules live in one place rather than being restated in
+each API handler.
+
+Two invariants are enforced by the schema rather than by code, because a
+process restart or a second worker must not be able to violate them:
+
+* one in-flight run per session (partial unique index on `agent_runs`), and
+* one run per `(session_id, client_request_id)`.
+
+`sqlite3.IntegrityError` from those indexes is translated into the exceptions
+below.
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+import sqlite3
+import uuid
+from typing import Any
+
+import aiosqlite
+
+from app.db import database as db
+from app.models.agent_models import (
+    ACTIVE_RUN_STATUSES,
+    AgentEvent,
+    AgentMessage,
+    AgentRun,
+    AgentSession,
+    Availability,
+    EventType,
+    MessageRole,
+    RunStatus,
+    SessionPaper,
+)
+from app.models.evidence_models import Evidence, Locator, SourceLevel
+
+logger = logging.getLogger("scholar.agent.repo")
+
+
+class AgentRepositoryError(Exception):
+    """Base class for repository-level failures the API maps to HTTP codes."""
+
+
+class SessionNotFound(AgentRepositoryError):
+    """No such session, or it belongs to someone else.
+
+    One exception for both on purpose: telling an unauthorized caller that a
+    session exists is itself a leak.
+    """
+
+
+class ActiveRunConflict(AgentRepositoryError):
+    """The session already has a pending or running run (HTTP 409)."""
+
+
+class EvidenceNotFound(AgentRepositoryError):
+    """No such evidence, or the caller may not read it."""
+
+
+def _json_loads(value: Any, default: Any) -> Any:
+    if not value:
+        return default
+    try:
+        return json.loads(value)
+    except (TypeError, ValueError):
+        return default
+
+
+# ── Sessions ────────────────────────────────────────────────────────────────
+
+
+def _row_to_session(row: dict[str, Any]) -> AgentSession:
+    return AgentSession(
+        session_id=row["session_id"],
+        owner_id=row["owner_id"],
+        thread_id=row["thread_id"],
+        title=row["title"],
+        language=row["language"],
+        llm_model=row["llm_model"],
+        config=_json_loads(row["config_json"], {}),
+        status=row["status"],
+        created_at=row["created_at"],
+        updated_at=row["updated_at"],
+    )
+
+
+async def create_session(
+    *,
+    owner_id: str,
+    title: str = "",
+    language: str = "zh",
+    llm_model: str = "",
+    config: dict[str, Any] | None = None,
+) -> AgentSession:
+    """Create a session. Its LangGraph thread id is fixed at creation."""
+    session_id = f"as_{uuid.uuid4().hex[:24]}"
+    thread_id = f"th_{uuid.uuid4().hex}"
+    await db.execute(
+        """INSERT INTO agent_sessions
+               (session_id, owner_id, thread_id, title, language, llm_model, config_json)
+           VALUES (?, ?, ?, ?, ?, ?, ?)""",
+        (
+            session_id,
+            owner_id,
+            thread_id,
+            title,
+            language,
+            llm_model,
+            json.dumps(config or {}, ensure_ascii=False),
+        ),
+    )
+    session = await get_session(session_id, owner_id=owner_id)
+    logger.info("Created agent session %s for %s", session_id, owner_id)
+    return session
+
+
+async def get_session(session_id: str, *, owner_id: str) -> AgentSession:
+    """Fetch a session, checking ownership. Raises `SessionNotFound` otherwise."""
+    row = await db.fetch_one(
+        "SELECT * FROM agent_sessions WHERE session_id = ?", (session_id,)
+    )
+    if row is None or row["owner_id"] != owner_id:
+        raise SessionNotFound(session_id)
+    return _row_to_session(row)
+
+
+async def list_sessions(owner_id: str, *, limit: int = 50) -> list[AgentSession]:
+    rows = await db.fetch_all(
+        "SELECT * FROM agent_sessions WHERE owner_id = ? AND status = 'active' "
+        "ORDER BY updated_at DESC LIMIT ?",
+        (owner_id, limit),
+    )
+    return [_row_to_session(r) for r in rows]
+
+
+async def touch_session(session_id: str) -> None:
+    await db.execute(
+        "UPDATE agent_sessions SET updated_at = datetime('now') WHERE session_id = ?",
+        (session_id,),
+    )
+
+
+async def set_session_title(session_id: str, title: str) -> None:
+    await db.execute(
+        "UPDATE agent_sessions SET title = ?, updated_at = datetime('now') "
+        "WHERE session_id = ? AND title = ''",
+        (title, session_id),
+    )
+
+
+# ── Runs ────────────────────────────────────────────────────────────────────
+
+
+def _row_to_run(row: dict[str, Any]) -> AgentRun:
+    return AgentRun(
+        run_id=row["run_id"],
+        session_id=row["session_id"],
+        owner_id=row["owner_id"],
+        client_request_id=row["client_request_id"],
+        status=RunStatus(row["status"]),
+        cancel_requested=bool(row["cancel_requested"]),
+        error_code=row["error_code"],
+        error_msg=row["error_msg"],
+        budget=_json_loads(row["budget_json"], {}),
+        usage=_json_loads(row["usage_json"], {}),
+        llm_model=row["llm_model"],
+        prompt_version=row["prompt_version"],
+        started_at=row["started_at"],
+        finished_at=row["finished_at"],
+    )
+
+
+async def create_run(
+    *,
+    session_id: str,
+    owner_id: str,
+    client_request_id: str = "",
+    budget: dict[str, Any] | None = None,
+    llm_model: str = "",
+    prompt_version: str = "",
+) -> tuple[AgentRun, bool]:
+    """Create a run for a session. Returns `(run, deduplicated)`.
+
+    A repeat of a `client_request_id` returns the original run rather than
+    starting another (acceptance case A12). A different request while one is
+    still in flight raises `ActiveRunConflict`, which the API turns into a 409.
+    """
+    if client_request_id:
+        existing = await db.fetch_one(
+            "SELECT * FROM agent_runs WHERE session_id = ? AND client_request_id = ?",
+            (session_id, client_request_id),
+        )
+        if existing is not None:
+            return _row_to_run(existing), True
+
+    run_id = f"ar_{uuid.uuid4().hex[:24]}"
+    try:
+        await db.execute(
+            """INSERT INTO agent_runs
+                   (run_id, session_id, owner_id, client_request_id, status,
+                    budget_json, llm_model, prompt_version)
+               VALUES (?, ?, ?, ?, 'pending', ?, ?, ?)""",
+            (
+                run_id,
+                session_id,
+                owner_id,
+                client_request_id,
+                json.dumps(budget or {}, ensure_ascii=False),
+                llm_model,
+                prompt_version,
+            ),
+        )
+    except sqlite3.IntegrityError as exc:
+        # Either the active-run index or the idempotency index fired. Re-read to
+        # tell which: a concurrent identical submit should still be a dedupe.
+        if client_request_id:
+            existing = await db.fetch_one(
+                "SELECT * FROM agent_runs WHERE session_id = ? AND client_request_id = ?",
+                (session_id, client_request_id),
+            )
+            if existing is not None:
+                return _row_to_run(existing), True
+        raise ActiveRunConflict(session_id) from exc
+
+    row = await db.fetch_one("SELECT * FROM agent_runs WHERE run_id = ?", (run_id,))
+    return _row_to_run(row), False
+
+
+async def get_run(run_id: str, *, owner_id: str) -> AgentRun:
+    row = await db.fetch_one("SELECT * FROM agent_runs WHERE run_id = ?", (run_id,))
+    if row is None or row["owner_id"] != owner_id:
+        raise SessionNotFound(run_id)
+    return _row_to_run(row)
+
+
+async def list_runs(session_id: str, *, limit: int = 50) -> list[AgentRun]:
+    rows = await db.fetch_all(
+        "SELECT * FROM agent_runs WHERE session_id = ? ORDER BY started_at DESC LIMIT ?",
+        (session_id, limit),
+    )
+    return [_row_to_run(r) for r in rows]
+
+
+async def mark_run_running(run_id: str) -> None:
+    await db.execute(
+        "UPDATE agent_runs SET status = 'running' WHERE run_id = ? AND status = 'pending'",
+        (run_id,),
+    )
+
+
+async def finish_run(
+    run_id: str,
+    *,
+    status: RunStatus,
+    error_code: str = "",
+    error_msg: str = "",
+    usage: dict[str, Any] | None = None,
+) -> None:
+    """Close out a run. Terminal statuses only."""
+    if status in (RunStatus.PENDING, RunStatus.RUNNING):
+        raise ValueError(f"finish_run needs a terminal status, got {status}")
+    await db.execute(
+        """UPDATE agent_runs
+              SET status = ?, error_code = ?, error_msg = ?, usage_json = ?,
+                  finished_at = datetime('now')
+            WHERE run_id = ?""",
+        (
+            status.value,
+            error_code,
+            error_msg,
+            json.dumps(usage or {}, ensure_ascii=False),
+            run_id,
+        ),
+    )
+
+
+async def request_cancel(run_id: str, *, owner_id: str) -> AgentRun:
+    """Flag a run for cancellation. Idempotent — repeat calls are a no-op.
+
+    Only the flag is set here. Stopping the work is the executor's job, which
+    checks the flag before each scheduling step (development plan §7.2).
+    """
+    run = await get_run(run_id, owner_id=owner_id)
+    if run.status in (RunStatus.PENDING, RunStatus.RUNNING):
+        await db.execute(
+            "UPDATE agent_runs SET cancel_requested = 1 WHERE run_id = ?", (run_id,)
+        )
+        run = await get_run(run_id, owner_id=owner_id)
+    return run
+
+
+async def is_cancel_requested(run_id: str) -> bool:
+    row = await db.fetch_one(
+        "SELECT cancel_requested FROM agent_runs WHERE run_id = ?", (run_id,)
+    )
+    return bool(row and row["cancel_requested"])
+
+
+# ── Messages ────────────────────────────────────────────────────────────────
+
+
+async def append_message(
+    *,
+    session_id: str,
+    role: MessageRole,
+    content: str,
+    run_id: str = "",
+    citations: list[str] | None = None,
+) -> AgentMessage:
+    message_id = f"am_{uuid.uuid4().hex[:24]}"
+    async with aiosqlite.connect(db.get_db_path()) as conn:
+        conn.row_factory = aiosqlite.Row
+        cursor = await conn.execute(
+            """INSERT INTO agent_messages
+                   (message_id, session_id, run_id, role, content, citations_json, seq)
+               VALUES (?, ?, ?, ?, ?, ?,
+                       (SELECT COALESCE(MAX(seq), 0) + 1 FROM agent_messages WHERE session_id = ?))
+               RETURNING seq, created_at""",
+            (
+                message_id,
+                session_id,
+                run_id,
+                role.value,
+                content,
+                json.dumps(citations or [], ensure_ascii=False),
+                session_id,
+            ),
+        )
+        row = await cursor.fetchone()
+        await conn.commit()
+    return AgentMessage(
+        message_id=message_id,
+        session_id=session_id,
+        run_id=run_id,
+        role=role,
+        content=content,
+        citations=citations or [],
+        seq=row["seq"],
+        created_at=row["created_at"],
+    )
+
+
+async def list_messages(session_id: str, *, limit: int = 500) -> list[AgentMessage]:
+    rows = await db.fetch_all(
+        "SELECT * FROM agent_messages WHERE session_id = ? ORDER BY seq LIMIT ?",
+        (session_id, limit),
+    )
+    return [
+        AgentMessage(
+            message_id=r["message_id"],
+            session_id=r["session_id"],
+            run_id=r["run_id"],
+            role=MessageRole(r["role"]),
+            content=r["content"],
+            citations=_json_loads(r["citations_json"], []),
+            seq=r["seq"],
+            created_at=r["created_at"],
+        )
+        for r in rows
+    ]
+
+
+# ── Events ──────────────────────────────────────────────────────────────────
+
+
+async def append_event(
+    *,
+    session_id: str,
+    type: EventType,
+    payload: dict[str, Any] | None = None,
+    run_id: str = "",
+) -> AgentEvent:
+    """Persist an event and return it with its assigned `seq`.
+
+    The sequence number is allocated inside the insert so two concurrent
+    appends cannot collide, and the event is durable *before* anyone publishes
+    it — a client that reconnects must be able to replay what it missed.
+    """
+    async with aiosqlite.connect(db.get_db_path()) as conn:
+        conn.row_factory = aiosqlite.Row
+        cursor = await conn.execute(
+            """INSERT INTO agent_events (session_id, seq, run_id, type, payload_json)
+               VALUES (?,
+                       (SELECT COALESCE(MAX(seq), 0) + 1 FROM agent_events WHERE session_id = ?),
+                       ?, ?, ?)
+               RETURNING seq, schema_version, created_at""",
+            (
+                session_id,
+                session_id,
+                run_id,
+                type.value,
+                json.dumps(payload or {}, ensure_ascii=False),
+            ),
+        )
+        row = await cursor.fetchone()
+        await conn.commit()
+    return AgentEvent(
+        schema_version=row["schema_version"],
+        session_id=session_id,
+        run_id=run_id,
+        seq=row["seq"],
+        type=type,
+        timestamp=row["created_at"],
+        payload=payload or {},
+    )
+
+
+async def list_events(
+    session_id: str, *, after_seq: int = 0, limit: int = 500
+) -> list[AgentEvent]:
+    """Events after `after_seq`, oldest first — the SSE resume query."""
+    rows = await db.fetch_all(
+        "SELECT * FROM agent_events WHERE session_id = ? AND seq > ? ORDER BY seq LIMIT ?",
+        (session_id, after_seq, limit),
+    )
+    return [
+        AgentEvent(
+            schema_version=r["schema_version"],
+            session_id=r["session_id"],
+            run_id=r["run_id"],
+            seq=r["seq"],
+            type=EventType(r["type"]),
+            timestamp=r["created_at"],
+            payload=_json_loads(r["payload_json"], {}),
+        )
+        for r in rows
+    ]
+
+
+async def last_event_seq(session_id: str) -> int:
+    row = await db.fetch_one(
+        "SELECT COALESCE(MAX(seq), 0) AS seq FROM agent_events WHERE session_id = ?",
+        (session_id,),
+    )
+    return int(row["seq"]) if row else 0
+
+
+# ── Session papers ──────────────────────────────────────────────────────────
+
+
+async def attach_session_paper(
+    *,
+    session_id: str,
+    literature_id: str,
+    paper_id: str = "",
+    availability: Availability = Availability.CANDIDATE,
+    added_by: str = "agent",
+    note: str = "",
+) -> None:
+    """Attach a paper to a session, or update what is known about it."""
+    await db.execute(
+        """INSERT INTO session_papers
+               (session_id, literature_id, paper_id, availability, added_by, note)
+           VALUES (?, ?, ?, ?, ?, ?)
+           ON CONFLICT(session_id, literature_id) DO UPDATE SET
+               paper_id = CASE WHEN excluded.paper_id <> '' THEN excluded.paper_id
+                               ELSE session_papers.paper_id END,
+               availability = excluded.availability,
+               note = excluded.note,
+               updated_at = datetime('now')""",
+        (session_id, literature_id, paper_id, availability.value, added_by, note),
+    )
+
+
+async def set_session_paper_availability(
+    *, session_id: str, literature_id: str, availability: Availability, note: str = ""
+) -> None:
+    await db.execute(
+        """UPDATE session_papers
+              SET availability = ?, note = ?, updated_at = datetime('now')
+            WHERE session_id = ? AND literature_id = ?""",
+        (availability.value, note, session_id, literature_id),
+    )
+
+
+async def list_session_papers(session_id: str) -> list[SessionPaper]:
+    """Session papers joined with their bibliographic record."""
+    rows = await db.fetch_all(
+        """SELECT sp.*, li.title, li.year, li.year_known, li.venue, li.doi, li.arxiv_id
+             FROM session_papers sp
+             JOIN literature_items li ON li.literature_id = sp.literature_id
+            WHERE sp.session_id = ?
+            ORDER BY sp.created_at""",
+        (session_id,),
+    )
+    return [
+        SessionPaper(
+            session_id=r["session_id"],
+            literature_id=r["literature_id"],
+            paper_id=r["paper_id"],
+            availability=Availability(r["availability"]),
+            added_by=r["added_by"],
+            note=r["note"],
+            title=r["title"],
+            year=r["year"],
+            year_known=bool(r["year_known"]),
+            venue=r["venue"],
+            doi=r["doi"],
+            arxiv_id=r["arxiv_id"],
+            updated_at=r["updated_at"],
+        )
+        for r in rows
+    ]
+
+
+async def session_owns_paper(session_id: str, paper_id: str) -> bool:
+    """Whether a local PDF is attached to this session — the evidence ACL."""
+    row = await db.fetch_one(
+        "SELECT 1 AS hit FROM session_papers WHERE session_id = ? AND paper_id = ? LIMIT 1",
+        (session_id, paper_id),
+    )
+    return row is not None
+
+
+# ── Evidence ────────────────────────────────────────────────────────────────
+
+
+def _row_to_evidence(row: dict[str, Any]) -> Evidence:
+    return Evidence(
+        evidence_id=row["evidence_id"],
+        owner_id=row["owner_id"],
+        session_id=row["session_id"],
+        literature_id=row["literature_id"],
+        paper_id=row["paper_id"],
+        parse_version=row["parse_version"],
+        source_level=SourceLevel(row["source_level"]),
+        locator=Locator(**_json_loads(row["locator_json"], {})),
+        quote=row["quote"],
+        content_hash=row["content_hash"],
+        source_url=row["source_url"],
+        provider=row["provider"],
+        retrieved_at=row["retrieved_at"],
+    )
+
+
+async def insert_evidence(evidence: Evidence) -> Evidence:
+    """Store evidence. Idempotent: re-reading a passage reuses the existing row.
+
+    `INSERT OR IGNORE` rather than an upsert, because evidence is immutable —
+    if the id is already present, the stored row is by definition the same
+    content, and overwriting it would defeat the point.
+    """
+    await db.execute(
+        """INSERT OR IGNORE INTO evidence
+               (evidence_id, owner_id, session_id, literature_id, paper_id, parse_version,
+                source_level, locator_json, quote, content_hash, source_url, provider)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (
+            evidence.evidence_id,
+            evidence.owner_id,
+            evidence.session_id,
+            evidence.literature_id,
+            evidence.paper_id,
+            evidence.parse_version,
+            evidence.source_level.value,
+            json.dumps(evidence.locator.model_dump(), ensure_ascii=False),
+            evidence.quote,
+            evidence.content_hash,
+            evidence.source_url,
+            evidence.provider,
+        ),
+    )
+    row = await db.fetch_one(
+        "SELECT * FROM evidence WHERE evidence_id = ?", (evidence.evidence_id,)
+    )
+    return _row_to_evidence(row)
+
+
+async def get_evidence(evidence_id: str, *, owner_id: str = "") -> Evidence:
+    """Fetch evidence, checking ownership when an owner is supplied."""
+    row = await db.fetch_one("SELECT * FROM evidence WHERE evidence_id = ?", (evidence_id,))
+    if row is None:
+        raise EvidenceNotFound(evidence_id)
+    if owner_id and row["owner_id"] and row["owner_id"] != owner_id:
+        raise EvidenceNotFound(evidence_id)
+    return _row_to_evidence(row)
+
+
+async def get_evidence_many(evidence_ids: list[str], *, owner_id: str = "") -> list[Evidence]:
+    if not evidence_ids:
+        return []
+    placeholders = ",".join("?" for _ in evidence_ids)
+    rows = await db.fetch_all(
+        f"SELECT * FROM evidence WHERE evidence_id IN ({placeholders})",
+        tuple(evidence_ids),
+    )
+    out = []
+    for r in rows:
+        if owner_id and r["owner_id"] and r["owner_id"] != owner_id:
+            continue
+        out.append(_row_to_evidence(r))
+    return out
+
+
+async def list_session_evidence(session_id: str, *, limit: int = 200) -> list[Evidence]:
+    rows = await db.fetch_all(
+        "SELECT * FROM evidence WHERE session_id = ? ORDER BY retrieved_at DESC LIMIT ?",
+        (session_id, limit),
+    )
+    return [_row_to_evidence(r) for r in rows]

@@ -106,7 +106,12 @@ async def build_paper_ir(state: MainGraphState) -> dict[str, Any]:
 
     logger.info(f"[{paper_id}] build_paper_ir: Parsing content_list from {output_dir}...")
     try:
-        paper_ir = await build_and_store_paper_ir(output_dir, paper_id)
+        paper_ir = await build_and_store_paper_ir(
+            output_dir,
+            paper_id,
+            parse_id=state.get("parse_id", ""),
+            parser_config={"backend": get_settings().mineru_model_version},
+        )
         elapsed = time.perf_counter() - t0
         logger.info(
             f"[{paper_id}] build_paper_ir: DONE in {elapsed:.2f}s — "
