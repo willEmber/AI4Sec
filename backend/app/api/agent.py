@@ -212,7 +212,45 @@ async def cancel_run(
         run = await repo.request_cancel(run_id, owner_id=principal_id)
     except repo.SessionNotFound:
         raise HTTPException(status_code=404, detail="No such run.") from None
-    return {"run_id": run.run_id, "status": run.status.value, "cancel_requested": True}
+    # The flag alone is only read between streaming steps. A turn waiting on a
+    # download or a parse would otherwise ignore stop for minutes, so the task
+    # is interrupted as well when this process is the one running it.
+    interrupted = await agent_runner.request_stop(run_id)
+    return {
+        "run_id": run.run_id,
+        "status": run.status.value,
+        "cancel_requested": True,
+        "interrupted": interrupted,
+    }
+
+
+@router.get("/runs/{run_id}/activity")
+async def run_activity(
+    run_id: str,
+    x_agent_token: str = Header(default="", alias=AGENT_TOKEN_HEADER),
+) -> dict[str, Any]:
+    """What a past turn did, replayed from the durable event log.
+
+    A finished turn's tool activity exists only in the stream that carried it,
+    so reopening a session would otherwise show answers with no record of what
+    was read to produce them. The client folds these events with the same
+    reducer it applies live, which is the only way the restored view and the
+    live view can be guaranteed to agree.
+
+    `message.delta` is left out: the answer is already stored as a message.
+    """
+    principal_id = await require_principal(x_agent_token)
+    try:
+        run = await repo.get_run(run_id, owner_id=principal_id)
+    except repo.SessionNotFound:
+        raise HTTPException(status_code=404, detail="No such run.") from None
+    events = await repo.list_run_events(run_id, exclude_types=("message.delta",))
+    return {
+        "run_id": run.run_id,
+        "status": run.status.value,
+        "error_code": run.error_code,
+        "events": [e.model_dump(mode="json") for e in events],
+    }
 
 
 @router.get("/runs/{run_id}/events")

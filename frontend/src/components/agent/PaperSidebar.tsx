@@ -4,11 +4,14 @@ import Link from "next/link";
 import { useTranslation } from "@/lib/i18n";
 import type { AgentSession, SessionPaper } from "@/lib/agent";
 
+// Readable and not-yet-readable must be distinguishable at a glance, not only
+// by reading the label: which papers an answer could actually have drawn on is
+// the first thing to check when several are attached.
 const AVAILABILITY_CLASS: Record<SessionPaper["availability"], string> = {
   candidate: "bg-muted text-muted-foreground",
   downloading: "bg-accent text-accent-foreground",
   pdf_ready: "bg-accent text-accent-foreground",
-  parsed: "bg-accent text-accent-foreground",
+  parsed: "bg-muted text-success",
   unavailable: "bg-muted text-destructive",
 };
 

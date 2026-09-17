@@ -76,6 +76,42 @@ def register_scholar_harness_profile() -> None:
         )
 
 
+def warm_up(
+    *,
+    context_schema: type | None = None,
+    checkpointer: Any = None,
+    model: BaseChatModel | None = None,
+) -> None:
+    """Build one throwaway agent so no request has to be the first.
+
+    Two costs hide behind `create_paper_agent`, and both used to land on whoever
+    asked the first question after a restart: importing the deepagents stack,
+    and compiling the graph, which builds a great deal of pydantic machinery. On
+    a cold filesystem that measured ~28s of a completely unresponsive server,
+    and the request it would not answer was the cancel for the very turn causing
+    it.
+
+    Everything that changes what gets compiled is a parameter, because warming a
+    different shape warms nothing. That was learned twice, measured each time:
+    omitting `context_schema` and `checkpointer` left the first real turn paying
+    9.0s, and warming with the probe model still left it paying 8.3s — binding
+    the tool schemas to a real chat model is most of the cost, and the probe
+    does not do it. With the real model passed, a second build costs 0.01s.
+
+    The model is never called: the agent is constructed and discarded.
+    """
+    from app.agents.tools import RESEARCH_TOOLS
+
+    register_scholar_harness_profile()
+    create_paper_agent(
+        tools=RESEARCH_TOOLS,
+        system_prompt="warm-up",
+        model=model if model is not None else _ToolSurfaceProbe(),
+        context_schema=context_schema,
+        checkpointer=checkpointer,
+    )
+
+
 def create_paper_agent(
     *,
     tools: Sequence[BaseTool | Callable[..., Any] | dict[str, Any]],

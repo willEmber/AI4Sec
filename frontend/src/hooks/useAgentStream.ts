@@ -3,18 +3,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getEventStreamUrl } from "@/lib/agent";
 import type { AgentEvent, EventType } from "@/lib/agent";
+import { applyToolEvent } from "@/lib/agentEvents";
+import type { ToolActivity } from "@/lib/agentEvents";
 
 const TERMINAL: EventType[] = ["run.completed", "run.failed", "run.cancelled"];
 
-export interface ToolActivity {
-  callId: string;
-  tool: string;
-  status: "running" | "ok" | "partial" | "unavailable" | "error";
-  evidenceCount: number;
-  note?: string;
-  error?: { code: string; message: string };
-  summary?: Record<string, unknown>;
-}
+export type { ToolActivity };
 
 interface UseAgentStreamReturn {
   /** Answer text assembled from message.delta events. */
@@ -22,6 +16,8 @@ interface UseAgentStreamReturn {
   tools: ToolActivity[];
   isStreaming: boolean;
   error: string | null;
+  /** Stable code behind `error`, e.g. `interrupted` when a restart ended the turn. */
+  errorCode: string;
   finishedRunId: string | null;
   /** Evidence ids the tools produced this turn, in order. */
   evidenceIds: string[];
@@ -48,6 +44,7 @@ export function useAgentStream(): UseAgentStreamReturn {
   const [tools, setTools] = useState<ToolActivity[]>([]);
   const [isStreaming, setIsStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [errorCode, setErrorCode] = useState("");
   const [finishedRunId, setFinishedRunId] = useState<string | null>(null);
   const [evidenceIds, setEvidenceIds] = useState<string[]>([]);
   const [papersChanged, setPapersChanged] = useState(0);
@@ -77,43 +74,12 @@ export function useAgentStream(): UseAgentStreamReturn {
         break;
 
       case "tool.started":
-        setTools((prev) => [
-          ...prev,
-          {
-            callId: String(payload.call_id || `${payload.tool}-${event.seq}`),
-            tool: String(payload.tool || ""),
-            status: "running",
-            evidenceCount: 0,
-          },
-        ]);
-        break;
-
       case "tool.completed":
-      case "tool.failed": {
-        const toolName = String(payload.tool || "");
-        setTools((prev) => {
-          // Match the most recent still-running call of this tool: the backend
-          // does not correlate a result back to its call id, and a tool can be
-          // called more than once in a turn.
-          const index = prev.findLastIndex(
-            (t) => t.tool === toolName && t.status === "running",
-          );
-          const entry: ToolActivity = {
-            callId: index >= 0 ? prev[index].callId : `${toolName}-${event.seq}`,
-            tool: toolName,
-            status: (payload.status as ToolActivity["status"]) || "ok",
-            evidenceCount: Number(payload.evidence_count || 0),
-            note: payload.note ? String(payload.note) : undefined,
-            error: payload.error as ToolActivity["error"],
-            summary: payload.summary as Record<string, unknown> | undefined,
-          };
-          if (index < 0) return [...prev, entry];
-          const next = [...prev];
-          next[index] = entry;
-          return next;
-        });
+      case "tool.failed":
+        // Same reducer the restored view uses, so a turn looks the same while
+        // it runs and after it is reopened.
+        setTools((prev) => applyToolEvent(prev, event));
         break;
-      }
 
       case "paper.added":
         setPapersChanged((n) => n + 1);
@@ -127,6 +93,7 @@ export function useAgentStream(): UseAgentStreamReturn {
 
       case "run.failed":
         setError(String(payload.error || "The run failed."));
+        setErrorCode(String(payload.code || ""));
         setIsStreaming(false);
         setFinishedRunId(event.run_id);
         break;
@@ -191,6 +158,7 @@ export function useAgentStream(): UseAgentStreamReturn {
       setTools([]);
       setEvidenceIds([]);
       setError(null);
+      setErrorCode("");
       setFinishedRunId(null);
       setIsStreaming(true);
       connect(runId);
@@ -210,6 +178,7 @@ export function useAgentStream(): UseAgentStreamReturn {
     tools,
     isStreaming,
     error,
+    errorCode,
     finishedRunId,
     evidenceIds,
     papersChanged,

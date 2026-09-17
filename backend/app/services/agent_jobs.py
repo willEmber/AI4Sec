@@ -99,6 +99,47 @@ async def get_job(idempotency_key: str) -> dict[str, Any] | None:
     )
 
 
+async def get_job_by_id(job_id: str) -> dict[str, Any] | None:
+    return await db.fetch_one("SELECT * FROM agent_jobs WHERE job_id = ?", (job_id,))
+
+
+async def list_stale_jobs(*, kind: str = "") -> list[dict[str, Any]]:
+    """Jobs still marked `running` whose lease has lapsed.
+
+    These are the ones a crash left behind: nobody is executing them, and
+    without the sweep they would sit `running` until some caller happened to ask
+    for the same work again. Ordered oldest first so the longest-abandoned work
+    is recovered first.
+    """
+    sql = (
+        "SELECT * FROM agent_jobs WHERE status = 'running' "
+        "AND (lease_expires_at IS NULL OR lease_expires_at < ?)"
+    )
+    params: list[Any] = [_now().isoformat()]
+    if kind:
+        sql += " AND kind = ?"
+        params.append(kind)
+    sql += " ORDER BY updated_at"
+    return await db.fetch_all(sql, tuple(params))
+
+
+async def release_lease(job_id: str) -> None:
+    """Hand an abandoned job back to whoever asks for it next.
+
+    `_claim` would already take a job whose lease has lapsed, so this changes no
+    permission. What it changes is legibility: a job sitting in `running` with
+    nobody running it reads as work in progress, both to an operator and to the
+    `status == "running"` branch a tool reports to the model.
+    """
+    await db.execute(
+        """UPDATE agent_jobs
+              SET status = 'pending', lease_owner = '', lease_expires_at = NULL,
+                  updated_at = datetime('now')
+            WHERE job_id = ? AND status = 'running'""",
+        (job_id,),
+    )
+
+
 async def set_remote_id(job_id: str, remote_id: str) -> None:
     """Record the external task id, so a restart can query it instead of resubmitting."""
     await db.execute(
@@ -350,6 +391,14 @@ async def run_once(
     async def _run() -> dict[str, Any]:
         try:
             result = await work(job_id)
+        except asyncio.CancelledError:
+            # The turn was stopped, so this work has no waiter — but it did not
+            # fail, and an external service may well have finished it. Hand the
+            # lease back with `remote_id` intact: the next attempt rejoins that
+            # submission instead of paying for it again. Marking it `failed`
+            # here would spend an attempt on something that never went wrong.
+            await release_lease(job_id)
+            raise
         except Exception as exc:  # noqa: BLE001 — recorded, then re-raised
             await _finish(
                 job_id, status="failed",

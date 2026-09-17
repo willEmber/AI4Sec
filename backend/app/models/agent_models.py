@@ -54,6 +54,11 @@ class ErrorCode(str, Enum):
     FORBIDDEN = "forbidden"
     BUDGET_EXCEEDED = "budget_exceeded"
     CANCELLED = "cancelled"
+    # The worker executing this turn stopped existing. Distinct from
+    # `upstream_error`: nothing failed, the answer simply has no author any
+    # more, and asking again is cheap because the expensive work it had
+    # already done is keyed and reused.
+    INTERRUPTED = "interrupted"
 
 
 # Codes where trying again may plausibly help. Anything else should make the
@@ -182,6 +187,11 @@ class AgentRun(BaseModel):
     prompt_version: str = ""
     started_at: str = ""
     finished_at: str | None = None
+    # Which worker is executing this turn, and when it last said so. An active
+    # run with a stale heartbeat has no executor: that is what recovery looks
+    # for, rather than assuming every run alive at startup is dead.
+    worker_id: str = ""
+    heartbeat_at: str | None = None
 
 
 class AgentMessage(BaseModel):

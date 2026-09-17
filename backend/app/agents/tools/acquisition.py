@@ -22,9 +22,7 @@ from __future__ import annotations
 
 import json
 import logging
-import uuid
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Any
 
 from langchain.tools import ToolRuntime, tool
@@ -34,8 +32,7 @@ from app.config import get_settings
 from app.db import agent_repository as repo
 from app.db import database as db
 from app.models.agent_models import Availability, ErrorCode, ToolResult
-from app.services import agent_jobs, mineru_adapter, paper_acquisition, paper_catalog
-from app.services.paper_ir import build_and_store_paper_ir
+from app.services import agent_jobs, paper_acquisition, paper_catalog, parse_service
 
 logger = logging.getLogger("scholar.agents.tools.acquisition")
 
@@ -327,37 +324,16 @@ async def ensure_paper_parsed(runtime: ToolRuntime[AgentContext], paper_id: str)
     if stop is not None:
         return stop.to_json()
 
-    settings = get_settings()
-
     async def _work(job_id: str) -> dict[str, Any]:
-        parse_id = uuid.uuid4().hex[:16]
-        await db.execute(
-            "INSERT INTO mineru_parses (parse_id, paper_id, status) VALUES (?, ?, 'pending')",
-            (parse_id, paper_id),
-        )
-        # Recorded before the call returns, so a restart can look up the parse
-        # rather than submitting a second one.
-        await agent_jobs.set_remote_id(job_id, parse_id)
-        output_dir = await mineru_adapter.parse_pdf(paper_id, parse_id)
-        ir = await build_and_store_paper_ir(
-            Path(output_dir),
-            paper_id,
-            parse_id=parse_id,
-            parser_config={"backend": settings.mineru_model_version},
-        )
-        version = await paper_catalog.get_current_version(paper_id)
-        return {
-            "parse_id": parse_id,
-            "version_id": (version or {}).get("version_id", ""),
-            "sections": len(getattr(ir, "sections", []) or []),
-        }
+        # The body lives in parse_service because the recovery sweep runs the
+        # same one: "resume this parse" has to mean one thing, or a restart
+        # would resubmit work a tool call would have rejoined.
+        return await parse_service.run_parse_job(job_id=job_id, paper_id=paper_id)
 
     try:
         handle = await agent_jobs.run_once(
             kind="parse",
-            # The parser configuration is part of the key: re-parsing the same
-            # file with a different backend is different work.
-            idempotency_key=f"parse:{paper_id}:{settings.mineru_model_version}",
+            idempotency_key=parse_service.parse_idempotency_key(paper_id),
             work=_work,
             session_id=ctx.session_id,
             run_id=ctx.run_id,

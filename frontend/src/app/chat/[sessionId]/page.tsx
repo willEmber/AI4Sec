@@ -10,6 +10,7 @@ import {
 } from "@/lib/agent";
 import type {
   AgentMessage,
+  AgentRun,
   AgentSession,
   SessionDetail,
   SessionPaper,
@@ -19,6 +20,7 @@ import { useAgentStream } from "@/hooks/useAgentStream";
 import { useTranslation } from "@/lib/i18n";
 import ChatMessage from "@/components/agent/ChatMessage";
 import PaperSidebar from "@/components/agent/PaperSidebar";
+import PastTurnActivity from "@/components/agent/PastTurnActivity";
 import ToolActivityList from "@/components/agent/ToolActivityList";
 import PdfViewer from "@/components/PdfViewer";
 import SplitPane from "@/components/SplitPane";
@@ -39,6 +41,9 @@ export default function ChatPage() {
   const [activeRunId, setActiveRunId] = useState<string>("");
   const [activePaperId, setActivePaperId] = useState<string>("");
   const [targetPage, setTargetPage] = useState<number | undefined>(undefined);
+  // Bumped on every citation click. Two papers can both be cited at page 3, and
+  // without this the second click would change nothing the reader can see.
+  const [jumpToken, setJumpToken] = useState(0);
   const [pdfCollapsed, setPdfCollapsed] = useState(false);
   const [knownPaperIds, setKnownPaperIds] = useState<Set<string>>(new Set());
 
@@ -171,12 +176,27 @@ export default function ChatPage() {
     setActivePaperId(paperId);
     setPdfCollapsed(false);
     setTargetPage(page);
+    setJumpToken((n) => n + 1);
   }, []);
 
   const papers: SessionPaper[] = detail?.papers ?? [];
+  const runs: AgentRun[] = detail?.runs ?? [];
   const pdfUrl = useMemo(
     () => (activePaperId ? getPaperPdfUrl(activePaperId) : ""),
     [activePaperId],
+  );
+
+  // Runs that produced an assistant message spoke for themselves. Any other
+  // terminal run ended without an answer, and saying why is the difference
+  // between a conversation that stops and one that looks broken.
+  const answeredRunIds = useMemo(
+    () =>
+      new Set(
+        (detail?.messages ?? [])
+          .filter((m) => m.role === "assistant" && m.run_id)
+          .map((m) => m.run_id),
+      ),
+    [detail?.messages],
   );
 
   const conversation = (
@@ -196,12 +216,19 @@ export default function ChatPage() {
         )}
 
         {detail?.messages.map((message) => (
-          <ChatMessage
-            key={message.message_id}
-            role={message.role}
-            content={message.content}
-            onJumpToPage={jumpToPage}
-          />
+          <div key={message.message_id} className="space-y-0">
+            <ChatMessage
+              role={message.role}
+              content={message.content}
+              onJumpToPage={jumpToPage}
+            />
+            {message.role === "assistant" && message.run_id && (
+              <PastTurnActivity runId={message.run_id} />
+            )}
+            {message.role === "user" && (
+              <RunOutcome run={unansweredRun(message, runs, answeredRunIds)} />
+            )}
+          </div>
         ))}
 
         {(stream.isStreaming || stream.tools.length > 0) && (
@@ -218,7 +245,11 @@ export default function ChatPage() {
 
         {(stream.error || loadError) && (
           <p className="rounded-lg border border-border bg-muted px-3 py-2 text-xs text-destructive">
-            {stream.error || loadError}
+            {/* The server's prose is English. When it sent a code we recognise,
+                say it in the reader's language instead. */}
+            {stream.errorCode === "interrupted"
+              ? t("chat.run.interrupted")
+              : stream.error || loadError}
           </p>
         )}
 
@@ -288,12 +319,51 @@ export default function ChatPage() {
             collapseTitle={t("pdf.collapse")}
             expandTitle={t("pdf.expand")}
             left={conversation}
-            right={<PdfViewer url={pdfUrl} targetPage={targetPage} />}
+            right={
+              <PdfViewer url={pdfUrl} targetPage={targetPage} jumpToken={jumpToken} />
+            }
           />
         ) : (
           conversation
         )}
       </div>
     </div>
+  );
+}
+
+/** The run a question started, when it ended without producing an answer. */
+function unansweredRun(
+  message: AgentMessage,
+  runs: AgentRun[],
+  answered: Set<string>,
+): AgentRun | null {
+  if (!message.run_id || answered.has(message.run_id)) return null;
+  const run = runs.find((r) => r.run_id === message.run_id);
+  if (!run) return null;
+  return run.status === "failed" || run.status === "cancelled" ? run : null;
+}
+
+/**
+ * Why a turn produced nothing.
+ *
+ * An interrupted run is called out separately because the useful thing to say
+ * about it is not "it failed" but "ask again, it will not cost what it already
+ * did" — the download and parse it got through are keyed and reused.
+ */
+function RunOutcome({ run }: { run: AgentRun | null }) {
+  const { t } = useTranslation();
+  if (!run) return null;
+
+  const key =
+    run.status === "cancelled"
+      ? "chat.run.cancelled"
+      : run.error_code === "interrupted"
+        ? "chat.run.interrupted"
+        : "chat.run.failed";
+
+  return (
+    <p className="mt-1.5 rounded-lg border border-border bg-muted px-3 py-2 text-xs text-muted-foreground">
+      {t(key, { error: run.error_msg || "" })}
+    </p>
   );
 }

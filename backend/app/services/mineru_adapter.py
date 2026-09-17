@@ -226,7 +226,12 @@ def _update_parse_poll_sync(
     conn: sqlite3.Connection | None = None
     try:
         conn = sqlite3.connect(db.get_db_path(), timeout=10)
-        conn.execute("PRAGMA journal_mode=WAL")
+        # busy_timeout, not journal_mode: this connection is opened once per
+        # poll on the shared database, and `PRAGMA journal_mode=WAL` takes a
+        # brief exclusive lock that does *not* honour busy_timeout — so the
+        # pragma itself becomes the statement that raises "database is locked".
+        # WAL is already set once, in `init_db`.
+        conn.execute("PRAGMA busy_timeout=10000")
         conn.execute(
             f"UPDATE mineru_parses SET {', '.join(assignments)} WHERE parse_id = ?",
             params,
@@ -359,7 +364,28 @@ def _parse_pdf_sync(pdf_path: Path, output_dir: Path, paper_id: str, parse_id: s
     _put_upload_sync(upload_urls[0], pdf_path)
     logger.info(f"[{paper_id}] MinerU upload: {time.perf_counter()-t0:.2f}s ({size_mb:.1f} MB)")
 
-    # Step 3: Poll until done
+    result_dir = _collect_batch_sync(client, batch_id, output_dir, paper_id, parse_id)
+    logger.info(f"[{paper_id}] MinerU TOTAL: {time.perf_counter()-t_total:.1f}s")
+    return result_dir
+
+
+def _collect_batch_sync(
+    client: MinerUClient,
+    batch_id: str,
+    output_dir: Path,
+    paper_id: str,
+    parse_id: str,
+) -> Path:
+    """Wait for an already-submitted batch and turn it into a local directory.
+
+    Split out from the submit path because this half is the resumable one: the
+    upload has been paid for and the batch id is recorded, so a worker that
+    restarts mid-parse rejoins here rather than uploading the same PDF again
+    (acceptance case A13).
+    """
+    settings = get_settings()
+    data_id = paper_id[:20]
+
     t0 = time.perf_counter()
     results = _poll_until_done_sync(
         client,
@@ -383,14 +409,13 @@ def _parse_pdf_sync(pdf_path: Path, output_dir: Path, paper_id: str, parse_id: s
         if not zip_url:
             raise RuntimeError("No zip URL in MinerU response")
 
-        # Step 4: Download zip
+        # Fetch the finished artefact.
         t0 = time.perf_counter()
         zip_path = output_dir / f"{data_id}.zip"
         _download_file_sync(zip_url, zip_path)
         zip_mb = zip_path.stat().st_size / 1024 / 1024
         logger.info(f"[{paper_id}] MinerU download: {time.perf_counter()-t0:.2f}s ({zip_mb:.1f} MB)")
 
-        # Step 5: Extract zip
         t0 = time.perf_counter()
         extract_dir = output_dir / data_id
         if extract_dir.exists():
@@ -399,11 +424,46 @@ def _parse_pdf_sync(pdf_path: Path, output_dir: Path, paper_id: str, parse_id: s
             _safe_zip_extract(zf, extract_dir)
         n_files = sum(1 for _ in extract_dir.rglob("*") if _.is_file())
         logger.info(f"[{paper_id}] MinerU extract: {time.perf_counter()-t0:.2f}s ({n_files} files)")
-
-        logger.info(f"[{paper_id}] MinerU TOTAL: {time.perf_counter()-t_total:.1f}s")
         return extract_dir
 
     raise RuntimeError("No results from MinerU batch")
+
+
+async def resume_parse(paper_id: str, parse_id: str, batch_id: str) -> Path:
+    """Collect a batch that was submitted before this process existed.
+
+    The submission is the part that costs: MinerU has the file and is working on
+    it (or has finished), so resuming means waiting for that batch rather than
+    starting a second one. If the batch has since expired the poll raises, and
+    the caller falls back to a fresh submission — one wasted poll, not one
+    wasted parse.
+    """
+    settings = get_settings()
+    output_dir = settings.data_dir / "papers" / paper_id / "mineru" / "raw"
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    await db.execute(
+        "UPDATE mineru_parses SET status = 'running', updated_at = datetime('now') "
+        "WHERE parse_id = ?",
+        (parse_id,),
+    )
+    try:
+        result_dir = await asyncio.to_thread(
+            _collect_batch_sync, _get_client(), batch_id, output_dir, paper_id, parse_id
+        )
+    except Exception as exc:
+        await db.execute(
+            "UPDATE mineru_parses SET status = 'failed', error_msg = ?, "
+            "updated_at = datetime('now') WHERE parse_id = ?",
+            (str(exc), parse_id),
+        )
+        raise
+    await db.execute(
+        "UPDATE mineru_parses SET status = 'done', output_dir = ?, "
+        "updated_at = datetime('now') WHERE parse_id = ?",
+        (str(result_dir), parse_id),
+    )
+    return result_dir
 
 
 async def parse_pdf_batch(paper_ids: list[str], parse_ids: list[str]) -> list[Path]:

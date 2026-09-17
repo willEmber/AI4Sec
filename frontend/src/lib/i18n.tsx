@@ -141,6 +141,14 @@ const translations: Record<Locale, Record<string, string>> = {
     "chat.tool.n_hits": "{count} matches",
     "chat.tool.n_blocks": "{count} blocks",
     "chat.tool.n_evidence": "{count} citations",
+    "chat.history.show": "What this turn read",
+    "chat.history.hide": "Hide",
+    "chat.history.loading": "Loading…",
+    "chat.history.empty": "This turn answered without reading anything new.",
+    "chat.run.interrupted":
+      "This turn was interrupted by a restart. Ask again — anything it had already downloaded or parsed is reused, not repeated.",
+    "chat.run.cancelled": "You stopped this turn.",
+    "chat.run.failed": "This turn failed. {error}",
 
     // Intent labels (mirrors mode labels but used for detected_intent display)
     "intent.snap": "Insight Snap",
@@ -519,6 +527,14 @@ const translations: Record<Locale, Record<string, string>> = {
     "chat.tool.n_hits": "{count} 处匹配",
     "chat.tool.n_blocks": "{count} 段",
     "chat.tool.n_evidence": "{count} 条引用",
+    "chat.history.show": "这一轮读了什么",
+    "chat.history.hide": "收起",
+    "chat.history.loading": "加载中…",
+    "chat.history.empty": "这一轮没有再去读原文。",
+    "chat.run.interrupted":
+      "这一轮被服务重启打断了。重新问一次即可——它已经下载或解析过的内容会直接复用，不会重复花费。",
+    "chat.run.cancelled": "这一轮已被你停止。",
+    "chat.run.failed": "这一轮失败了。{error}",
 
     // 意图标签（对应模式名称，仅用于展示分类器识别结果）
     "intent.snap": "快速洞察",

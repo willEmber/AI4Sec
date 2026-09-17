@@ -81,6 +81,9 @@ export interface AgentRun {
   usage: Record<string, unknown>;
   started_at: string;
   finished_at: string | null;
+  /** The worker executing this turn, and when it last reported in. */
+  worker_id?: string;
+  heartbeat_at?: string | null;
 }
 
 export interface AgentSession {
@@ -237,6 +240,24 @@ export async function postMessage(
 
 export async function cancelRun(runId: string): Promise<void> {
   await agentRequest(`/agent/runs/${runId}/cancel`, { method: "POST" });
+}
+
+export interface RunActivity {
+  run_id: string;
+  status: AgentRun["status"];
+  error_code: string;
+  events: AgentEvent[];
+}
+
+/**
+ * A past turn's events, so reopening a session shows what it read.
+ *
+ * `message.delta` is excluded server-side — the answer is already a stored
+ * message, and replaying its fragments would just rebuild text that is on
+ * screen.
+ */
+export async function getRunActivity(runId: string): Promise<RunActivity> {
+  return agentRequest(`/agent/runs/${runId}/activity`);
 }
 
 export async function getEvidence(evidenceId: string): Promise<Evidence> {

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import logging
 import sys
 from contextlib import asynccontextmanager
@@ -70,7 +72,43 @@ async def lifespan(app: FastAPI):
     except Exception:
         logger.exception("Agent checkpointer unavailable; agent sessions will not persist")
 
+    # Importing the agent stack takes tens of seconds on a cold process. In a
+    # background thread it costs nothing anyone waits for; on the request path
+    # it costs every concurrent request.
+    async def _warm_agent() -> None:
+        try:
+            from app.services.agent_runner import warm_up_agent
+
+            await warm_up_agent()
+            logger.info("Agent stack warmed up")
+        except Exception:
+            logger.exception("Agent warm-up failed; the first turn will be slow")
+
+    warm_task = asyncio.create_task(_warm_agent())
+
+    # Whatever the previous process was doing when it stopped is still recorded
+    # as in progress. The sweep closes turns nobody is running any more and
+    # rejoins parses that outlived their worker, so a restart costs a repeated
+    # question rather than a repeated parse.
+    try:
+        from app.services import agent_worker
+
+        await agent_worker.start()
+    except Exception:
+        logger.exception("Agent recovery worker did not start; interrupted runs will linger")
+
     yield
+
+    warm_task.cancel()
+    with contextlib.suppress(asyncio.CancelledError, Exception):
+        await warm_task
+
+    try:
+        from app.services import agent_worker
+
+        await agent_worker.stop()
+    except Exception:
+        logger.exception("Failed to stop the agent recovery worker")
 
     try:
         from app.services.agent_runner import close_agent_checkpointer

@@ -18,12 +18,21 @@ pdfjs.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.mjs";
 interface PdfViewerProps {
   url: string;
   targetPage?: number;
+  /**
+   * Changes on every jump request, even one to the page already shown.
+   *
+   * Without it, "go to page 3 of this other paper" is invisible when page 3 of
+   * the previous paper is already open: the page number did not change, so
+   * nothing would re-run and the reader would be left looking at the wrong
+   * document (acceptance case A07).
+   */
+  jumpToken?: number;
 }
 
 const TOOLBAR_BTN =
   "inline-flex h-8 w-8 items-center justify-center rounded-lg border border-border text-foreground transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-35 disabled:hover:bg-transparent";
 
-export default function PdfViewer({ url, targetPage }: PdfViewerProps) {
+export default function PdfViewer({ url, targetPage, jumpToken }: PdfViewerProps) {
   const { t } = useTranslation();
   const [numPages, setNumPages] = useState<number>(0);
   const [currentPage, setCurrentPage] = useState(1);
@@ -34,15 +43,22 @@ export default function PdfViewer({ url, targetPage }: PdfViewerProps) {
     setNumPages(numPages);
   }, []);
 
-  // Jump to target page when it changes
+  // A different document is a different document: forget the old page count so
+  // the jump below waits for the new one to load before trying to scroll.
+  useEffect(() => {
+    setNumPages(0);
+    setCurrentPage(1);
+  }, [url]);
+
+  // Jump when the page changes, and when the same page is requested again for
+  // a different paper — hence jumpToken.
   useEffect(() => {
     if (targetPage && targetPage >= 1 && targetPage <= numPages) {
       setCurrentPage(targetPage);
-      // Scroll to page
       const pageEl = document.getElementById(`pdf-page-${targetPage}`);
       pageEl?.scrollIntoView({ behavior: "smooth", block: "start" });
     }
-  }, [targetPage, numPages]);
+  }, [targetPage, numPages, jumpToken]);
 
   return (
     <div className="flex h-full flex-col">

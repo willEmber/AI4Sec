@@ -172,6 +172,8 @@ def _row_to_run(row: dict[str, Any]) -> AgentRun:
         prompt_version=row["prompt_version"],
         started_at=row["started_at"],
         finished_at=row["finished_at"],
+        worker_id=row["worker_id"],
+        heartbeat_at=row["heartbeat_at"],
     )
 
 
@@ -246,11 +248,55 @@ async def list_runs(session_id: str, *, limit: int = 50) -> list[AgentRun]:
     return [_row_to_run(r) for r in rows]
 
 
-async def mark_run_running(run_id: str) -> None:
-    await db.execute(
-        "UPDATE agent_runs SET status = 'running' WHERE run_id = ? AND status = 'pending'",
-        (run_id,),
+async def claim_run(run_id: str, *, worker_id: str) -> bool:
+    """Take a pending run as `worker_id`, starting its heartbeat.
+
+    The status guard is the lock: two workers cannot both claim a pending run,
+    and a run already `running` is not re-claimable here — recovering one that
+    was abandoned goes through :func:`list_stale_runs` instead, which requires
+    evidence that its worker stopped reporting.
+    """
+    claimed = await db.execute_returning(
+        """UPDATE agent_runs
+              SET status = 'running', worker_id = ?, heartbeat_at = datetime('now')
+            WHERE run_id = ? AND status = 'pending'
+           RETURNING run_id""",
+        (worker_id, run_id),
     )
+    return claimed is not None
+
+
+async def heartbeat_run(run_id: str, *, worker_id: str) -> None:
+    """Say this worker is still executing the run.
+
+    Scoped to the owning worker so a process that lost its lease cannot keep a
+    run looking alive after someone else has recovered it.
+    """
+    await db.execute(
+        """UPDATE agent_runs SET heartbeat_at = datetime('now')
+            WHERE run_id = ? AND worker_id = ? AND status = 'running'""",
+        (run_id, worker_id),
+    )
+
+
+async def list_stale_runs(*, stale_after_seconds: int) -> list[AgentRun]:
+    """Active runs whose worker has not checked in recently.
+
+    A `pending` run counts once it has waited that long without being claimed:
+    a crash between "persist the run" and "schedule it" leaves exactly that, and
+    nothing else would ever pick it up.
+
+    Times are compared in SQLite rather than in Python because `datetime('now')`
+    is what wrote them; parsing them here would mean reproducing its format.
+    """
+    rows = await db.fetch_all(
+        """SELECT * FROM agent_runs
+            WHERE status IN ('pending', 'running')
+              AND COALESCE(heartbeat_at, started_at) < datetime('now', ?)
+            ORDER BY started_at""",
+        (f"-{int(stale_after_seconds)} seconds",),
+    )
+    return [_row_to_run(r) for r in rows]
 
 
 async def finish_run(
@@ -424,6 +470,38 @@ async def list_events(
         "SELECT * FROM agent_events WHERE session_id = ? AND seq > ? ORDER BY seq LIMIT ?",
         (session_id, after_seq, limit),
     )
+    return [
+        AgentEvent(
+            schema_version=r["schema_version"],
+            session_id=r["session_id"],
+            run_id=r["run_id"],
+            seq=r["seq"],
+            type=EventType(r["type"]),
+            timestamp=r["created_at"],
+            payload=_json_loads(r["payload_json"], {}),
+        )
+        for r in rows
+    ]
+
+
+async def list_run_events(
+    run_id: str, *, limit: int = 500, exclude_types: tuple[str, ...] = ()
+) -> list[AgentEvent]:
+    """One run's events, oldest first — what a finished turn actually did.
+
+    `exclude_types` exists for `message.delta`: a turn emits one per streamed
+    fragment, and the answer they compose is already stored as a message. A
+    client restoring history wants the tool activity, not a second copy of the
+    text it is already rendering.
+    """
+    sql = "SELECT * FROM agent_events WHERE run_id = ?"
+    params: list[Any] = [run_id]
+    if exclude_types:
+        sql += f" AND type NOT IN ({','.join('?' * len(exclude_types))})"
+        params.extend(exclude_types)
+    sql += " ORDER BY seq LIMIT ?"
+    params.append(limit)
+    rows = await db.fetch_all(sql, tuple(params))
     return [
         AgentEvent(
             schema_version=r["schema_version"],

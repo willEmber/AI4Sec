@@ -14,9 +14,12 @@ in-memory fan-out exists only to avoid polling for live listeners.
 external service may still finish and land in a cache, but a cancelled run is
 never resumed from it (development plan §7.2).
 
-Scheduling in this version is an in-process task, which is enough for a single
-reading session. P4 replaces it with a leased worker; the seam is
-`start_turn`, and nothing above it assumes the work happens in this process.
+*Ownership.* A turn is executed by a task in this process, and says so: the run
+carries this worker's id and a heartbeat. That is what makes "nobody is running
+this" an observable fact rather than an assumption, and it is what
+`agent_worker` acts on. The seam is still `start_turn` — nothing above it
+assumes the work happens here — but the recovery story no longer depends on
+moving it elsewhere.
 """
 
 from __future__ import annotations
@@ -44,6 +47,7 @@ from app.models.agent_models import (
     MessageRole,
     RunStatus,
 )
+from app.services.agent_worker import HEARTBEAT_SECONDS, WORKER_ID
 
 logger = logging.getLogger("scholar.agent.runner")
 
@@ -69,20 +73,47 @@ def unsubscribe(session_id: str, queue: asyncio.Queue[AgentEvent]) -> None:
         _subscribers.pop(session_id, None)
 
 
-async def _emit(
+async def emit(
     *,
     session_id: str,
     run_id: str,
     type: EventType,
     payload: dict[str, Any] | None = None,
 ) -> AgentEvent:
-    """Persist an event, then hand it to any live listener."""
+    """Persist an event, then hand it to any live listener.
+
+    Public because recovery writes events too: a run this process never
+    executed still has to reach a terminal event, and it has to reach the
+    browser watching it now rather than on the next reload.
+    """
     event = await repo.append_event(
         session_id=session_id, run_id=run_id, type=type, payload=payload or {}
     )
     for queue in list(_subscribers.get(session_id, set())):
         queue.put_nowait(event)
     return event
+
+
+def is_executing(run_id: str) -> bool:
+    """Whether this process is running that turn right now."""
+    task = _tasks.get(run_id)
+    return task is not None and not task.done()
+
+
+async def request_stop(run_id: str) -> bool:
+    """Interrupt a turn this process is executing.
+
+    The cancel flag alone only takes effect between streaming steps, so a turn
+    blocked inside a tool — a download, a parse, a slow provider — would keep
+    going for minutes after the reader pressed stop. Cancelling the task ends
+    the wait; the executor's `CancelledError` path closes the run and writes the
+    terminal event (acceptance case A15).
+    """
+    task = _tasks.get(run_id)
+    if task is None or task.done():
+        return False
+    task.cancel()
+    return True
 
 
 def _announced_calls(
@@ -135,6 +166,20 @@ def _citations_in(text: str, known: list[str]) -> list[str]:
     return [eid for eid in dict.fromkeys(known) if eid in text]
 
 
+async def _heartbeat(run_id: str) -> None:
+    """Say this worker is still on the run, until the turn stops it.
+
+    Without this the only signal of life is the run's status, which says
+    "running" just as loudly after the process holding it is gone. Scoped to
+    this worker, so a stamp from a process that has already been recovered does
+    not resurrect the run.
+    """
+    while True:
+        await asyncio.sleep(HEARTBEAT_SECONDS)
+        with contextlib.suppress(Exception):
+            await repo.heartbeat_run(run_id, worker_id=WORKER_ID)
+
+
 async def start_turn(
     *, session: AgentSession, run: AgentRun, question: str
 ) -> None:
@@ -154,10 +199,12 @@ async def _execute_turn(
     collected_evidence: list[str] = []
     answer_parts: list[str] = []
     seen_calls: set[str] = set()
+    heartbeat: asyncio.Task[None] | None = None
 
     try:
-        await repo.mark_run_running(run.run_id)
-        await _emit(
+        await repo.claim_run(run.run_id, worker_id=WORKER_ID)
+        heartbeat = asyncio.create_task(_heartbeat(run.run_id))
+        await emit(
             session_id=session.session_id,
             run_id=run.run_id,
             type=EventType.RUN_STARTED,
@@ -174,7 +221,12 @@ async def _execute_turn(
             budget=budget,
             usage=usage,
         )
-        agent = create_paper_agent(
+        # Off the loop: building the graph is synchronous work, and on a cold
+        # process it also triggers the deepagents import. Neither should stop
+        # the server answering anything else — a cancel for this very turn
+        # included.
+        agent = await asyncio.to_thread(
+            create_paper_agent,
             tools=RESEARCH_TOOLS,
             system_prompt=build_system_prompt(language=session.language, papers=papers),
             model=build_chat_model(run.llm_model),
@@ -201,7 +253,7 @@ async def _execute_turn(
                 payload = _tool_completion_payload(message)
                 collected_evidence.extend(payload.pop("_evidence_ids", []))
                 attached = payload.pop("_attached_paper", None)
-                await _emit(
+                await emit(
                     session_id=session.session_id,
                     run_id=run.run_id,
                     type=EventType.TOOL_FAILED
@@ -213,7 +265,7 @@ async def _execute_turn(
                     # The session gained a paper mid-turn. The client shows the
                     # paper list beside the conversation, so it has to hear about
                     # it now rather than on the next reload.
-                    await _emit(
+                    await emit(
                         session_id=session.session_id,
                         run_id=run.run_id,
                         type=EventType.PAPER_ADDED,
@@ -223,7 +275,7 @@ async def _execute_turn(
 
             if isinstance(message, (AIMessage, AIMessageChunk)):
                 for name, call_id in _announced_calls(message, seen_calls):
-                    await _emit(
+                    await emit(
                         session_id=session.session_id,
                         run_id=run.run_id,
                         type=EventType.TOOL_STARTED,
@@ -232,7 +284,7 @@ async def _execute_turn(
                 text = _text_of(message.content)
                 if text:
                     answer_parts.append(text)
-                    await _emit(
+                    await emit(
                         session_id=session.session_id,
                         run_id=run.run_id,
                         type=EventType.MESSAGE_DELTA,
@@ -262,7 +314,7 @@ async def _execute_turn(
                 error_code=ErrorCode.CANCELLED.value,
                 usage=usage.as_dict(),
             )
-            await _emit(
+            await emit(
                 session_id=session.session_id,
                 run_id=run.run_id,
                 type=EventType.RUN_CANCELLED,
@@ -282,7 +334,7 @@ async def _execute_turn(
 
         await repo.finish_run(run.run_id, status=RunStatus.DONE, usage=usage.as_dict())
         await repo.touch_session(session.session_id)
-        await _emit(
+        await emit(
             session_id=session.session_id,
             run_id=run.run_id,
             type=EventType.RUN_COMPLETED,
@@ -294,7 +346,7 @@ async def _execute_turn(
             run.run_id, status=RunStatus.CANCELLED, error_code=ErrorCode.CANCELLED.value
         )
         with contextlib.suppress(Exception):
-            await _emit(
+            await emit(
                 session_id=session.session_id,
                 run_id=run.run_id,
                 type=EventType.RUN_CANCELLED,
@@ -314,12 +366,20 @@ async def _execute_turn(
             usage=usage.as_dict(),
         )
         with contextlib.suppress(Exception):
-            await _emit(
+            await emit(
                 session_id=session.session_id,
                 run_id=run.run_id,
                 type=EventType.RUN_FAILED,
-                payload={"error": str(exc)[:500], "usage": usage.as_dict()},
+                payload={
+                    "code": ErrorCode.UPSTREAM_ERROR.value,
+                    "error": str(exc)[:500],
+                    "usage": usage.as_dict(),
+                },
             )
+
+    finally:
+        if heartbeat is not None:
+            heartbeat.cancel()
 
 
 def _tool_completion_payload(message: ToolMessage) -> dict[str, Any]:
@@ -389,6 +449,39 @@ _checkpointer_instance = None
 
 def _checkpointer():
     return _checkpointer_instance
+
+
+async def warm_up_agent() -> None:
+    """Compile the agent graph before a reader's question has to wait for it.
+
+    Built with the same tools, context schema, checkpointer *and chat model* a
+    turn uses, because the graph compiled depends on all of them — warming a
+    different shape warms nothing. Off the event loop, since compilation is
+    CPU-bound Python.
+
+    This also matters for stopping: `asyncio.to_thread` cannot be cancelled once
+    the thread is running, so a turn interrupted during its own first build
+    finishes that build before it can unwind. Paying the cost here is what keeps
+    stop responsive.
+
+    A model that cannot be constructed — no gateway configured — still leaves
+    most of the machinery worth warming, so the build goes ahead without one
+    rather than skipping the warm-up entirely.
+    """
+    from app.agents.harness import warm_up
+
+    try:
+        model = build_chat_model("")
+    except Exception:  # noqa: BLE001
+        logger.warning("Warming up without a chat model; the first turn will be slower")
+        model = None
+
+    await asyncio.to_thread(
+        warm_up,
+        context_schema=AgentContext,
+        checkpointer=_checkpointer(),
+        model=model,
+    )
 
 
 async def open_agent_checkpointer() -> None:
