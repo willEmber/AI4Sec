@@ -515,6 +515,48 @@ async def _search_fts_node_ids(paper_id: str, question: str) -> set[str]:
     return {row["node_id"] for row in rows}
 
 
+async def rank_paper_chunks(
+    paper_id: str,
+    question: str,
+    *,
+    limit: int = 8,
+) -> list[tuple[int, PaperNode]]:
+    """Ranked evidence chunks for a question, best first, with their scores.
+
+    `retrieve_qa_context_for_paper` returns one formatted blob, which suits a
+    single-shot prompt but gives an agent nothing to cite. This returns the
+    discrete hits instead, so each one can become a piece of evidence with its
+    own locator. Scoring and the FTS boost are shared with the context path, so
+    the two never disagree about what is relevant.
+    """
+    nodes = await load_paper_nodes(paper_id)
+    if not nodes:
+        return []
+
+    boosted_ids = await _search_fts_node_ids(paper_id, question)
+    tokens = _tokenize(question)
+    intent = _detect_intent(question, tokens)
+    chunks = [
+        node
+        for node in nodes
+        if node.node_type == "chunk"
+        and node.block_type in _SEARCHABLE_BLOCK_TYPES
+        and node.text.strip()
+    ]
+    scored = [
+        (_score_node(node, tokens, intent, boosted_ids), node) for node in chunks
+    ]
+    scored = [(score, node) for score, node in scored if score > 0]
+    scored.sort(key=lambda item: (-item[0], item[1].page_start, item[1].order_idx))
+    return scored[:limit]
+
+
+async def load_section_nodes(paper_id: str) -> list[PaperNode]:
+    """Section nodes only — the outline, without the chunk level under it."""
+    nodes = await load_paper_nodes(paper_id)
+    return [node for node in nodes if node.node_type in {"paper", "section"}]
+
+
 async def retrieve_qa_context_for_paper(
     paper_id: str,
     paper_ir: PaperIR,

@@ -59,7 +59,25 @@ async def lifespan(app: FastAPI):
         f"models={settings.thinking_models}"
     )
 
+    # The agent checkpointer holds one SQLite connection for the process: a
+    # per-turn connection would serialise behind the previous turn's WAL
+    # checkpoint. Failing to open it must not stop the rest of the app, which
+    # does not depend on it — the agent routes report the failure instead.
+    try:
+        from app.services.agent_runner import open_agent_checkpointer
+
+        await open_agent_checkpointer()
+    except Exception:
+        logger.exception("Agent checkpointer unavailable; agent sessions will not persist")
+
     yield
+
+    try:
+        from app.services.agent_runner import close_agent_checkpointer
+
+        await close_agent_checkpointer()
+    except Exception:
+        logger.exception("Failed to close the agent checkpointer")
     logger.info("Scholar Platform shutting down.")
 
 
@@ -103,6 +121,7 @@ def create_app() -> FastAPI:
     )
 
     from app.api.admin import router as admin_router
+    from app.api.agent import router as agent_router
     from app.api.library import router as library_router
     from app.api.papers import router as papers_router
     from app.api.runs import router as runs_router
@@ -113,6 +132,7 @@ def create_app() -> FastAPI:
     app.include_router(admin_router, prefix="/api")
     app.include_router(system_router, prefix="/api")
     app.include_router(library_router, prefix="/api")
+    app.include_router(agent_router, prefix="/api")
 
     return app
 

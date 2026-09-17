@@ -42,6 +42,7 @@ function NavBar() {
         </a>
         <div className="mx-1 hidden h-5 w-px bg-border sm:block" />
         <NavLink href="/upload" label={t("nav.upload")} />
+        <NavLink href="/chat" label={t("nav.chat")} />
         <NavLink href="/compare" label={t("nav.compare")} />
         <NavLink href="/library" label={t("nav.library")} />
         <div className="flex-1" />
