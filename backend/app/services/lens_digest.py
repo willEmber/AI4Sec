@@ -332,20 +332,25 @@ async def generate_lens_digest(
     *,
     markdown: str,
     model: str = "",
-    max_tokens: int = 6000,
+    max_tokens: int = 12288,
     log_label: str = "lens",
 ) -> LensDigest:
     """Best-effort digest of a finished report; never raises.
 
     Retries once with the repair directive, because a model that ignores the
     JSON contract on the first attempt usually complies when told exactly what
-    broke — and unescaped LaTeX backslashes are the failure it makes most.
+    broke — and unescaped LaTeX backslashes are the failure it makes most. The
+    retry also widens the budget, since the other failure mode — reasoning
+    consuming the whole ceiling and leaving no text — is indistinguishable here
+    and a repair prompt does nothing for it.
 
     Args:
         llm: the shared LLM service (must expose ``async chat``).
         markdown: the Lens report as generated, in its final language.
         model: optional model override.
         max_tokens: response budget; formulas and symbol tables are the bulk.
+            It must also cover reasoning, which the gateway bills against the
+            same ceiling for every thinking model.
         log_label: prefix for log lines.
     """
     report = (markdown or "").strip()
@@ -363,7 +368,7 @@ async def generate_lens_digest(
                 ],
                 model=model,
                 temperature=0.0,
-                max_tokens=max_tokens,
+                max_tokens=max_tokens if attempt == 1 else int(max_tokens * 1.5),
             )
         except Exception as exc:
             logger.warning("%s: digest call attempt %d failed: %s", log_label, attempt, exc)

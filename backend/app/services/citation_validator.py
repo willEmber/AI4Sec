@@ -143,4 +143,8 @@ def format_coverage_summary(audit: dict[str, Any]) -> str:
     total = audit.get("claims_total", 0)
     uncited = audit.get("claims_uncited", 0)
     coverage = audit.get("coverage", 0.0)
+    if not total:
+        # An empty report scores a vacuous 1.0. Printing "100%" there reads as a
+        # perfectly cited run when in fact nothing was produced to cite.
+        return "citation_coverage=n/a (no claims to cite)"
     return f"citation_coverage={coverage:.2%} ({total - uncited}/{total} cited)"

@@ -22,6 +22,22 @@ WEB_EXTRACTOR_TOOL: dict[str, str] = {"type": "web_extractor"}
 CODE_INTERPRETER_TOOL: dict[str, str] = {"type": "code_interpreter"}
 
 
+class LLMEmptyResponseError(RuntimeError):
+    """The gateway accepted the request but returned no assistant text.
+
+    ``reason`` carries the truncation cause when there is one. The common case
+    is ``max_output_tokens``: on the Responses API that budget covers reasoning
+    *and* visible output, so a thinking model can spend the whole allowance
+    before emitting a single token. Callers must not retry at the same size —
+    the failure is deterministic. Raising beats returning ``""`` because an
+    empty string reaches JSON parsers as "unparseable", which hides the cause.
+    """
+
+    def __init__(self, message: str, *, reason: str = "") -> None:
+        super().__init__(message)
+        self.reason = reason
+
+
 class LLMService:
     """Async Qwen / DashScope MaaS Responses API client with retry and backoff.
 
@@ -134,6 +150,36 @@ class LLMService:
         return ""
 
     @staticmethod
+    def _truncation_reason(data: dict[str, Any], *, max_tokens: int) -> str:
+        """Return why generation stopped early, or ``""`` if it ended normally.
+
+        The Responses API marks a budget-exhausted answer with
+        ``status=incomplete`` plus ``incomplete_details.reason``; some gateways
+        only set a per-item ``finish_reason``. When neither is present, output
+        tokens landing exactly on the ceiling means the same thing, so that is
+        the last check rather than the first.
+        """
+        details = data.get("incomplete_details")
+        if isinstance(details, dict):
+            reason = str(details.get("reason") or "").strip()
+            if reason:
+                return reason
+        if str(data.get("status") or "").strip() == "incomplete":
+            return "incomplete"
+        for item in data.get("output", []) or []:
+            if not isinstance(item, dict):
+                continue
+            finish = str(item.get("finish_reason") or "").strip()
+            if finish and finish != "stop":
+                return finish
+        if max_tokens > 0:
+            usage = data.get("usage", {}) or {}
+            produced = usage.get("output_tokens", usage.get("completion_tokens"))
+            if isinstance(produced, int) and produced >= max_tokens:
+                return "max_output_tokens"
+        return ""
+
+    @staticmethod
     def _is_retryable(status_code: int) -> bool:
         return status_code in {408, 429, 500, 502, 503, 504}
 
@@ -147,8 +193,12 @@ class LLMService:
         """Compute read timeout that accounts for prompt size and expected output."""
         # Thinking models spend extra time on hidden reasoning tokens; tool-using
         # calls (web_search) add another network round-trip on the provider side.
+        # The per-token term is 0.03s (~33 tok/s) against ~43 tok/s measured on
+        # qwen3.8-max: enough headroom to absorb a slow hour, while keeping the
+        # large budgets these calls now pass off the _TIMEOUT_CAP ceiling — a
+        # request that caps out waits 15 minutes per attempt before failing.
         base = 150.0 if tools else 120.0
-        timeout = base + (prompt_chars / 4) * 0.02 + max_tokens * 0.05
+        timeout = base + (prompt_chars / 4) * 0.02 + max_tokens * 0.03
         return min(max(180.0, timeout), _TIMEOUT_CAP)
 
     async def chat(
@@ -249,6 +299,7 @@ class LLMService:
                 resp.raise_for_status()
                 data = resp.json()
                 content = self._extract_output_text(data)
+                truncated = self._truncation_reason(data, max_tokens=max_tokens)
                 total_elapsed = time.perf_counter() - t0
 
                 usage = data.get("usage", {}) or {}
@@ -259,7 +310,25 @@ class LLMService:
                 logger.info(
                     f"LLM chat: DONE in {total_elapsed:.1f}s (http={req_elapsed:.1f}s) — "
                     f"tokens={prompt_tokens}+{completion_tokens} response={len(content)} chars"
+                    + (f" truncated={truncated}" if truncated else "")
                 )
+
+                if not content:
+                    # Retrying at the same budget would fail identically, so this
+                    # leaves the retry loop instead of burning another attempt.
+                    raise LLMEmptyResponseError(
+                        f"LLM returned no text (reason={truncated or 'unknown'}); "
+                        f"model={model} max_tokens={max_tokens} "
+                        f"output_tokens={completion_tokens} thinking={enable_thinking}. "
+                        "On the Responses API max_output_tokens covers reasoning as "
+                        "well, so raise the budget for this call.",
+                        reason=truncated,
+                    )
+                if truncated:
+                    logger.warning(
+                        f"LLM chat: output truncated ({truncated}) at "
+                        f"max_tokens={max_tokens} — answer may be cut off"
+                    )
                 return content
 
             except httpx.ReadTimeout as e:
@@ -394,6 +463,13 @@ class LLMService:
                         break
 
         logger.info(f"LLM stream: DONE in {time.perf_counter()-t0:.1f}s — {token_count} chunks")
+        if token_count == 0:
+            # Same failure `chat` raises on: reasoning can spend the whole
+            # max_output_tokens budget and the text deltas never arrive.
+            logger.error(
+                f"LLM stream: no text deltas — model={model} max_tokens={max_tokens} "
+                f"thinking={enable_thinking}; the budget covers reasoning too"
+            )
 
 
 def get_llm_service() -> LLMService:

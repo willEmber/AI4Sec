@@ -110,7 +110,10 @@ async def classify_intent(state: MainGraphState) -> dict[str, Any]:
             ],
             model=model,
             temperature=0.0,
-            max_tokens=120,
+            # The answer is a two-field JSON object, but the gateway requires
+            # enable_thinking on thinking models and reasoning is billed against
+            # the same ceiling — at 120 the model never reached the visible text.
+            max_tokens=2048,
         )
         cleaned = _strip_json_fences(raw)
         parsed = json.loads(cleaned)

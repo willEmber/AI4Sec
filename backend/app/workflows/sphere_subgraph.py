@@ -550,7 +550,9 @@ async def _extract_search_queries(
             {"role": "system", "content": _QUERY_EXTRACTION_SYSTEM},
             {"role": "user", "content": context},
         ]
-        response = await llm.chat(messages, model=model, temperature=0.3, max_tokens=512)
+        # Short JSON answer, but reasoning shares this ceiling — see the budget
+        # note in snap_subgraph; 512 leaves no room for the visible list.
+        response = await llm.chat(messages, model=model, temperature=0.3, max_tokens=4096)
         response = _strip_json_fences(response)
         queries = json.loads(response)
         if isinstance(queries, list) and all(isinstance(q, str) for q in queries):
@@ -2226,7 +2228,7 @@ async def step_synthesize_landscape(
                         {"role": "system", "content": _localize(_CLUSTER_NAMER_SYSTEM)},
                         {"role": "user", "content": "\n\n".join(lines)},
                     ],
-                    model=model, temperature=0.2, max_tokens=2048,
+                    model=model, temperature=0.2, max_tokens=8192,
                 )
                 data = json.loads(_strip_json_fences(resp))
                 themes: list[ThemeCluster] = []

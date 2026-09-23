@@ -200,7 +200,9 @@ class LLMRankClient:
                 ],
                 model=self.model,
                 temperature=0.1,
-                max_tokens=512,
+                # Reasoning plus the search round-trip share this ceiling, so it
+                # has to exceed the size of the JSON answer by a wide margin.
+                max_tokens=4096,
                 enable_thinking=True,
                 tools=[WEB_SEARCH_TOOL],
             )
@@ -259,7 +261,7 @@ class LLMRankClient:
                 ],
                 model=self.model,
                 temperature=0.1,
-                max_tokens=256,
+                max_tokens=4096,
                 enable_thinking=True,
                 tools=None,
             )
