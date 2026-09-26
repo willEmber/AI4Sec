@@ -752,27 +752,12 @@ async def step_expand_graph_candidates(
     # keywords with the center paper but have no citation-graph link; they must
     # clear the quality + relevance gates later before they can be reported.
     try:
-        from app.services.paper_search import (
-            Settings as PSSettings,
-            load_env_file,
-            search_papers,
-        )
+        from app.services.paper_search import search_papers
+        from app.services.search_settings import backend_search_settings
 
-        # Ensure .env is loaded so PAPERSEARCH_* vars are available.
-        load_env_file(str(Path(__file__).resolve().parents[3] / ".env"))
-
-        # Load full settings from env (API keys, emails, etc.),
-        # then override LLM fields from backend config.
-        _cfg = get_settings()
-        _ps_base = PSSettings.from_env()
-        _ps_settings = PSSettings(
-            **{
-                **{f.name: getattr(_ps_base, f.name) for f in _ps_base.__dataclass_fields__.values()},
-                "llm_base_url": _cfg.llm_base_url,
-                "llm_api_key": _cfg.llm_api_key,
-                "rerank_model": _cfg.rerank_model,
-            }
-        )
+        # API keys and emails from the environment, rerank model from the
+        # backend config — the same settings the agent's search tool uses.
+        _ps_settings = backend_search_settings()
 
         per_query_limit = 15
         _search_sem = asyncio.Semaphore(2)  # max 2 concurrent searches

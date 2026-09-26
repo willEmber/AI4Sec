@@ -20,9 +20,12 @@ from app.agents.tools.acquisition import (
 )
 from app.agents.tools.discovery import (
     DISCOVERY_TOOLS,
+    get_paper_metadata,
+    get_peer_reviews,
     get_related_papers,
     query_publication_rank,
     resolve_paper,
+    search_paper_snippets,
     search_papers,
 )
 from app.agents.tools.memory import (
@@ -44,7 +47,8 @@ from app.agents.tools.reading import (
     search_paper_content,
 )
 
-# The nine tools of the development plan's §4 contract.
+# The nine tools of the development plan's §4 contract, plus the P6 discovery
+# additions (bulk metadata, cross-paper passages, peer review).
 RESEARCH_TOOLS = [*DISCOVERY_TOOLS, *ACQUISITION_TOOLS, *READING_TOOLS]
 
 # Everything the unified agent sees (P5).
@@ -61,7 +65,9 @@ __all__ = [
     "download_paper",
     "ensure_paper_parsed",
     "forget_memory",
+    "get_paper_metadata",
     "get_paper_outline",
+    "get_peer_reviews",
     "get_related_papers",
     "list_memories",
     "query_publication_rank",
@@ -72,5 +78,6 @@ __all__ = [
     "run_research_sphere",
     "save_memory",
     "search_paper_content",
+    "search_paper_snippets",
     "search_papers",
 ]

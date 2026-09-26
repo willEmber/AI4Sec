@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import re
 from datetime import datetime, timezone
 from dataclasses import dataclass
 from email.utils import parsedate_to_datetime
@@ -20,13 +21,23 @@ class HTTPStatusError(RuntimeError):
         body: str,
         *,
         retry_after: float | None = None,
+        headers: Mapping[str, str] | None = None,
     ) -> None:
-        super().__init__(f"{method} {url} -> HTTP {status_code}: {body[:500]}")
+        super().__init__(f"{method} {_redact(url)} -> HTTP {status_code}: {body[:500]}")
         self.method = method
-        self.url = url
+        self.url = _redact(url)
         self.status_code = status_code
         self.body = body
         self.retry_after = retry_after
+        self.headers = dict(headers or {})
+
+
+def _redact(url: str) -> str:
+    """Keep API keys out of exception text, which reaches logs and tool results."""
+    return _KEY_PARAM_RE.sub(r"\1=***", url or "")
+
+
+_KEY_PARAM_RE = re.compile(r"\b(api_key|apikey|key|token)=[^&\s]+", re.IGNORECASE)
 
 
 @dataclass
@@ -38,6 +49,12 @@ class HTTPClient:
         self, url: str, *, params: Mapping[str, str] | None = None, headers: Mapping[str, str] | None = None
     ) -> Any:
         return await asyncio.to_thread(self._get_json_sync, url, params, headers)
+
+    async def get_json_with_headers(
+        self, url: str, *, params: Mapping[str, str] | None = None, headers: Mapping[str, str] | None = None
+    ) -> tuple[Any, dict[str, str]]:
+        """Like `get_json`, but also returns the response headers (rate-limit budgets live there)."""
+        return await asyncio.to_thread(self._get_json_with_headers_sync, url, params, headers)
 
     async def get_text(
         self, url: str, *, params: Mapping[str, str] | None = None, headers: Mapping[str, str] | None = None
@@ -109,18 +126,27 @@ class HTTPClient:
     def _get_json_sync(
         self, url: str, params: Mapping[str, str] | None, headers: Mapping[str, str] | None
     ) -> Any:
+        return self._get_json_with_headers_sync(url, params, headers)[0]
+
+    def _get_json_with_headers_sync(
+        self, url: str, params: Mapping[str, str] | None, headers: Mapping[str, str] | None
+    ) -> tuple[Any, dict[str, str]]:
         resp = requests.get(
             url, params=params, headers=self._merged_headers(headers), timeout=self.timeout, allow_redirects=True
         )
         if not resp.ok:
-            raise HTTPStatusError(
-                "GET",
-                url,
-                resp.status_code,
-                resp.text,
-                retry_after=self._retry_after_seconds(resp),
-            )
-        return resp.json()
+            raise self._status_error("GET", resp)
+        return resp.json(), dict(resp.headers)
+
+    def _status_error(self, method: str, resp: requests.Response) -> HTTPStatusError:
+        return HTTPStatusError(
+            method,
+            resp.url,
+            resp.status_code,
+            resp.text,
+            retry_after=self._retry_after_seconds(resp),
+            headers=dict(resp.headers),
+        )
 
     def _get_text_sync(
         self, url: str, params: Mapping[str, str] | None, headers: Mapping[str, str] | None
@@ -129,13 +155,7 @@ class HTTPClient:
             url, params=params, headers=self._merged_headers(headers), timeout=self.timeout, allow_redirects=True
         )
         if not resp.ok:
-            raise HTTPStatusError(
-                "GET",
-                url,
-                resp.status_code,
-                resp.text,
-                retry_after=self._retry_after_seconds(resp),
-            )
+            raise self._status_error("GET", resp)
         resp.encoding = resp.encoding or "utf-8"
         return resp.text
 
@@ -150,13 +170,7 @@ class HTTPClient:
             allow_redirects=True,
         )
         if not resp.ok:
-            raise HTTPStatusError(
-                "POST",
-                url,
-                resp.status_code,
-                resp.text,
-                retry_after=self._retry_after_seconds(resp),
-            )
+            raise self._status_error("POST", resp)
         return resp.json()
 
     def _download_to_file_sync(

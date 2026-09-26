@@ -37,12 +37,23 @@ def _metadata(**kw: Any):
     return PaperMetadata(**kw)
 
 
+def _outcome(rows: list[dict[str, Any]]):
+    """What `search_papers_detailed` returns, built from plain rows."""
+    from app.services.paper_search import Paper, PlatformStatus, SearchOutcome
+
+    papers = [Paper(**row) for row in rows]
+    return SearchOutcome(
+        papers=papers,
+        platforms=[PlatformStatus(platform="OpenAlex", status="ok", count=len(papers))],
+    )
+
+
 class SearchToolTests(AgentP2TestCase):
     async def test_year_filter_excludes_out_of_range_and_isolates_unknown_years(self) -> None:
         """A date filter must not silently swallow papers whose year is unknown."""
         from app.agents.tools import search_papers
 
-        payload = json.dumps(
+        payload = _outcome(
             [
                 {"title": "In range", "abstract": "a", "year": 2023, "doi": "10.1/a",
                  "url": "http://x/a", "authors": "A", "source_platform": "OpenAlex"},
@@ -71,7 +82,7 @@ class SearchToolTests(AgentP2TestCase):
     async def test_year_is_null_not_zero_when_unknown(self) -> None:
         from app.agents.tools import search_papers
 
-        payload = json.dumps(
+        payload = _outcome(
             [{"title": "Undated work", "abstract": "x", "year": 0, "doi": "",
               "url": "", "authors": "", "source_platform": "arXiv"}]
         )
@@ -90,7 +101,7 @@ class SearchToolTests(AgentP2TestCase):
         from app.agents.tools import search_papers
         from app.services import evidence_service
 
-        payload = json.dumps(
+        payload = _outcome(
             [{"title": "Some paper", "abstract": "The abstract text.", "year": 2024,
               "doi": "10.1/z", "url": "http://x/z", "authors": "Z",
               "source_platform": "OpenAlex"}]

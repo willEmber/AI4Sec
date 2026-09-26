@@ -248,11 +248,11 @@ async def _openalex_triage_lookup(
     from app.services.citation_graph import (
         _OPENALEX_SEM,
         _get_json,
-        _oa_mailto_param,
+        _oa_auth_params,
     )
     from app.services.paper_search import jaccard_similarity, normalize_whitespace
 
-    base = {**_oa_mailto_param(), "select": _OA_TRIAGE_SELECT}
+    base = {**_oa_auth_params(), "select": _OA_TRIAGE_SELECT}
 
     if doi:
         data = await _get_json(

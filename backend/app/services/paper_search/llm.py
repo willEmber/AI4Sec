@@ -6,6 +6,7 @@ import asyncio
 import random
 from dataclasses import dataclass
 from typing import Any
+from urllib.parse import urlparse
 
 from .models import Paper
 from .utils import normalize_whitespace
@@ -21,6 +22,8 @@ class LLMConfig:
     max_retries: int = 5
     retry_base_delay: float = 1.0
     retry_max_delay: float = 30.0
+    # Full rerank URL when the provider does not serve it at `<base>/rerank`.
+    rerank_url: str = ""
 
 
 def _endpoint(base_url: str, path: str) -> str:
@@ -184,6 +187,23 @@ def _dashscope_rerank_url() -> str:
     return "https://dashscope.aliyuncs.com/api/v1/services/rerank/text-rerank/text-rerank"
 
 
+def rerank_endpoint(base_url: str, override: str = "") -> str:
+    """Where rerank requests go for a given chat base URL.
+
+    Alibaba's MaaS gateway serves chat under `/api/v2/apps/protocols/
+    compatible-mode/v1` but answers `/rerank` there with "not support"; its
+    rerank models live at `/compatible-api/v1/reranks` on the same host. Every
+    rerank through the gateway used to fail that way and fall back to lexical
+    order without saying so.
+    """
+    if override:
+        return override
+    parsed = urlparse(base_url or "")
+    if parsed.netloc.endswith("maas.aliyuncs.com") or "/api/v2/apps/protocols/" in (parsed.path or ""):
+        return f"{parsed.scheme or 'https'}://{parsed.netloc}/compatible-api/v1/reranks"
+    return _endpoint(base_url, "/rerank")
+
+
 async def rerank(
     client: HTTPClient,
     *,
@@ -215,7 +235,7 @@ async def rerank(
             },
         }
     else:
-        url = _endpoint(cfg.base_url, "/rerank")
+        url = rerank_endpoint(cfg.base_url, cfg.rerank_url)
         payload = {
             "model": model,
             "query": query,

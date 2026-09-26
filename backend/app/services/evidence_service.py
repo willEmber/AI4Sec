@@ -126,11 +126,15 @@ async def record_abstract_evidence(
     session_id: str,
     provider: str = "",
     source_url: str = "",
+    section_path: str = "",
 ) -> Evidence:
     """Record an abstract-level excerpt — used when the full text is unreachable.
 
     Kept as its own source level so an answer can say it is working from the
-    abstract rather than the paper (acceptance case A08).
+    abstract rather than the paper (acceptance case A08). Text snippets a
+    provider extracted from a paper we have not parsed are recorded here too,
+    with the section they came from: they are passages we did not read in
+    context and cannot place on a page, so they claim no more than an abstract.
     """
     return await _store(
         source_level=SourceLevel.ABSTRACT,
@@ -140,6 +144,7 @@ async def record_abstract_evidence(
         literature_id=literature_id,
         provider=provider,
         source_url=source_url,
+        locator=Locator(section_path=section_path) if section_path else None,
     )
 
 

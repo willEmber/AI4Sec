@@ -341,14 +341,16 @@ def _merge_meta(base: dict, extra: dict) -> dict:
 
 
 def _oa_params() -> dict:
-    """OpenAlex ``mailto`` for the polite pool, if an email is configured."""
+    """OpenAlex identification: the API key when set, else a ``mailto``."""
+    from app.services.paper_search.credentials import openalex_auth_params
+
     try:
         from app.services.paper_search.config import Settings
 
         email = Settings.from_env().pick_openalex_mailto()
     except Exception:
         email = ""
-    return {"mailto": email} if email else {}
+    return openalex_auth_params(email)
 
 
 async def _get_json(client: httpx.AsyncClient, url: str, params: dict | None = None):

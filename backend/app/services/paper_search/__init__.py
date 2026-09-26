@@ -6,8 +6,8 @@ directly into the backend to remove the cross-package ``sys.path`` hack.
 """
 
 from .config import Settings, load_env_file
-from .models import PUBLIC_FIELDS, Paper
-from .search import search_papers
+from .models import PUBLIC_FIELDS, Paper, PlatformStatus, SearchFilters, SearchOutcome
+from .search import search_papers, search_papers_detailed
 from .utils import (
     jaccard_similarity,
     normalize_doi,
@@ -19,6 +19,9 @@ from .utils import (
 __all__ = [
     "PUBLIC_FIELDS",
     "Paper",
+    "PlatformStatus",
+    "SearchFilters",
+    "SearchOutcome",
     "Settings",
     "jaccard_similarity",
     "load_env_file",
@@ -26,5 +29,6 @@ __all__ = [
     "normalize_whitespace",
     "openalex_abstract_from_inverted_index",
     "search_papers",
+    "search_papers_detailed",
     "title_fingerprint",
 ]

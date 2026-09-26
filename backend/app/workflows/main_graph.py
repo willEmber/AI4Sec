@@ -218,9 +218,13 @@ async def _s2_lookup(doi: str = "", arxiv_id: str = "", title: str = "") -> dict
     """Query Semantic Scholar for venue and year. Tries DOI -> arXiv -> title match."""
     fields = "venue,year,externalIds,publicationVenue"
 
-    async with httpx.AsyncClient(timeout=15.0) as client:
+    from app.services.paper_search.credentials import s2_headers
+    from app.services.paper_search.ratelimit import S2_LIMITER
+
+    async with httpx.AsyncClient(timeout=15.0, headers=s2_headers()) as client:
         if doi:
             try:
+                await S2_LIMITER.wait()
                 resp = await client.get(
                     f"https://api.semanticscholar.org/graph/v1/paper/DOI:{doi}",
                     params={"fields": fields},
@@ -232,6 +236,7 @@ async def _s2_lookup(doi: str = "", arxiv_id: str = "", title: str = "") -> dict
 
         if arxiv_id:
             try:
+                await S2_LIMITER.wait()
                 resp = await client.get(
                     f"https://api.semanticscholar.org/graph/v1/paper/ARXIV:{arxiv_id}",
                     params={"fields": fields},
@@ -243,6 +248,7 @@ async def _s2_lookup(doi: str = "", arxiv_id: str = "", title: str = "") -> dict
 
         if title:
             try:
+                await S2_LIMITER.wait()
                 resp = await client.get(
                     "https://api.semanticscholar.org/graph/v1/paper/search/match",
                     params={"query": title[:200], "fields": fields},
