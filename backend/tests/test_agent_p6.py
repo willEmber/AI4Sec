@@ -448,6 +448,75 @@ class OpenReviewTests(unittest.TestCase):
         self.assertFalse(known_venue("CVPR"))
 
 
+class OpenReviewAuthTests(_Reset):
+    def setUp(self) -> None:
+        super().setUp()
+        from app.services.paper_search.platforms import openreview
+
+        openreview.reset_auth()
+        self.addCleanup(openreview.reset_auth)
+        env = mock.patch.dict(os.environ, {"OPENREVIEW_USERNAME": "me@example.org", "OPENREVIEW_PASSWORD": "pw"})
+        env.start()
+        self.addCleanup(env.stop)
+
+    async def test_a_refused_login_falls_back_to_anonymous_search(self) -> None:
+        """Search works without an account, so a wrong password must only cost the reviews."""
+        from app.services.paper_search.platforms import openreview
+
+        refused = _http_error(400, body='{"name":"Error","message":"Invalid username or password (x)"}')
+        client = FakeClient(
+            {"/login": refused, "/notes/search": {"notes": [PeerReviewToolTests.SUBMISSION]}}
+        )
+        first = await openreview.search_submissions(client, "Drop-Upcycling", limit=5)
+        second = await openreview.search_submissions(client, "Drop-Upcycling", limit=5)
+
+        self.assertEqual(len(first), 1)
+        self.assertEqual(len(second), 1)
+        self.assertEqual([c[1].rsplit("/", 1)[-1] for c in client.calls].count("login"), 1,
+                         "a refused login is not retried on every call")
+        self.assertIn("Invalid username or password", openreview.login_error())
+
+    async def test_an_accepted_login_is_cached_and_sent(self) -> None:
+        from app.services.paper_search.platforms import openreview
+
+        seen: list[dict[str, str]] = []
+
+        class Recording(FakeClient):
+            async def get_json(self, url, *, params=None, headers=None):
+                seen.append(dict(headers or {}))
+                return await super().get_json(url, params=params, headers=headers)
+
+        client = Recording({"/login": {"token": "tok"}, "/notes/search": {"notes": []}})
+        await openreview.search_submissions(client, "x", limit=1)
+        await openreview.search_submissions(client, "y", limit=1)
+        self.assertEqual([h.get("Authorization") for h in seen], ["Bearer tok", "Bearer tok"])
+        self.assertEqual(openreview.login_error(), "")
+
+
+class IeeeAdapterTests(_Reset):
+    async def test_citations_and_access_are_read_from_the_record(self) -> None:
+        from app.services.paper_search import SearchFilters, Settings
+        from app.services.paper_search.platforms.ieeexplore import search_ieeexplore
+
+        def article(n, access):
+            return {"title": f"T{n}", "publication_year": "2024", "content_type": "Conferences",
+                    "publication_title": "ICASSP", "citing_paper_count": "12", "access_type": access,
+                    "doi": f"10.1109/x.{n}", "pdf_url": "https://ieeexplore.ieee.org/stamp/stamp.jsp?arnumber=1"}
+
+        client = FakeClient({"ieeexploreapi": {"articles": [article(1, "LOCKED"), article(2, "OPEN_ACCESS"), article(3, "EPHEMERA")]}})
+        papers = await search_ieeexplore(
+            client, query="q", limit=5, settings=Settings(ieee_api_key="k"),
+            filters=SearchFilters(year_from=2023, publication_types=("conference",)),
+        )
+        params = client.calls[0][2]
+        self.assertEqual(params["start_year"], "2023")
+        self.assertEqual(params["content_type"], "Conferences")
+        self.assertEqual([p.is_open_access for p in papers], [False, True, None])
+        self.assertEqual(papers[0].citation_counts, {"IEEE Xplore": 12})
+        self.assertEqual(papers[0].venue_type, "conference")
+        self.assertEqual(papers[0].oa_pdf_url, "", "stamp.jsp is an HTML frame, not a PDF")
+
+
 # ── orchestration ───────────────────────────────────────────────────────────
 
 
@@ -799,6 +868,20 @@ class PeerReviewToolTests(AgentP2TestCase):
         self.assertEqual(result["data"]["status"]["state"], "accepted")
         self.assertEqual(result["data"]["status"]["tier"], "poster")
         self.assertEqual(result["data"]["reviews"], [])
+
+    async def test_a_refused_account_is_named_in_the_note(self) -> None:
+        from app.agents.tools import get_peer_reviews
+        from app.services.paper_search.platforms import openreview
+
+        with mock.patch.object(openreview, "search_submissions", new=mock.AsyncMock(return_value=[self.SUBMISSION])), \
+             mock.patch.object(openreview, "get_forum_notes", new=mock.AsyncMock(side_effect=openreview.OpenReviewLoginRequired("x"))), \
+             mock.patch.object(openreview, "has_account", return_value=True), \
+             mock.patch.object(openreview, "login_error", return_value="HTTP 400: Invalid username or password"):
+            result = await self._call(get_peer_reviews, title="Drop-Upcycling: Training Sparse Mixture of Experts")
+
+        self.assertEqual(result["status"], "partial")
+        self.assertIn("refused the configured account", result["note"])
+        self.assertIn("Invalid username or password", result["note"])
 
     async def test_reviews_are_web_evidence_attributed_to_reviewers(self) -> None:
         from app.agents.tools import get_peer_reviews

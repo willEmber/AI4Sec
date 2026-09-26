@@ -1432,11 +1432,17 @@ async def get_peer_reviews(
         ),
     }
     if login_needed:
+        refused = openreview_api.login_error() if openreview_api.has_account() else ""
+        how = (
+            f"OpenReview refused the configured account ({refused}); check OPENREVIEW_USERNAME "
+            "and OPENREVIEW_PASSWORD, or whether the profile is activated"
+            if refused
+            else "Set OPENREVIEW_USERNAME and OPENREVIEW_PASSWORD to read them"
+        )
         return ToolResult.partial(
             data,
             note="The decision is known, but OpenReview only shows reviews to a logged-in "
-            "client. Set OPENREVIEW_USERNAME and OPENREVIEW_PASSWORD to read them; do not "
-            "describe the reviews.",
+            f"client. {how}; do not describe the reviews.",
             evidence_ids=evidence_ids,
         ).to_json()
     if not reviews:

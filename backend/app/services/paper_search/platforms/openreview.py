@@ -21,6 +21,7 @@ from typing import Any
 
 from ..config import Settings
 from ..credentials import openreview_credentials
+from ..logger import logger
 from ..http_client import HTTPClient, HTTPStatusError
 from ..models import FILTER_OPEN_ACCESS, FILTER_VENUES, FILTER_YEAR, Paper, SearchFilters
 from ..ratelimit import OPENREVIEW_LIMITER
@@ -142,28 +143,71 @@ def note_to_paper(note: dict[str, Any]) -> Paper:
 _TOKEN_LOCK = threading.Lock()
 _TOKEN: tuple[str, float] = ("", 0.0)
 _TOKEN_TTL_S = 45 * 60
+# A rejected login is remembered for a while: retrying it on every call would
+# spend the rate limit on a request that cannot succeed until someone edits
+# the credentials, and restarting the process clears it.
+_LOGIN_FAILURE: tuple[str, float] = ("", 0.0)
+_LOGIN_RETRY_S = 15 * 60
+
+
+def _login_detail(exc: Exception) -> str:
+    if isinstance(exc, HTTPStatusError):
+        m = re.search(r'"message"\s*:\s*"([^"]+)"', exc.body or "")
+        return f"HTTP {exc.status_code}: {m.group(1) if m else 'login refused'}"
+    return f"{type(exc).__name__}: {exc}"[:160]
 
 
 async def auth_headers(client: HTTPClient) -> dict[str, str]:
-    """Bearer token when an account is configured, else no auth at all."""
-    global _TOKEN
+    """Bearer token when an account is configured and accepted, else no auth.
+
+    A login that fails falls back to anonymous access instead of failing the
+    request: search works without an account, so a wrong password must only
+    cost the reviews, which `login_error()` then explains.
+    """
+    global _TOKEN, _LOGIN_FAILURE
     user, password = openreview_credentials()
     if not (user and password):
         return {}
     with _TOKEN_LOCK:
         token, expires = _TOKEN
-    if token and expires > time.monotonic():
+        failure, retry_at = _LOGIN_FAILURE
+    now = time.monotonic()
+    if token and expires > now:
         return {"Authorization": f"Bearer {token}"}
+    if failure and retry_at > now:
+        return {}
     await OPENREVIEW_LIMITER.wait()
-    data = await client.post_json(
-        f"{OPENREVIEW_API}/login", json_body={"id": user, "password": password}
-    )
-    token = (data or {}).get("token") or ""
-    if not token:
+    try:
+        data = await client.post_json(
+            f"{OPENREVIEW_API}/login", json_body={"id": user, "password": password}
+        )
+        token = (data or {}).get("token") or ""
+        if not token:
+            raise RuntimeError("login returned no token")
+    except Exception as exc:  # noqa: BLE001 — degrade to anonymous, remember why
+        detail = _login_detail(exc)
+        with _TOKEN_LOCK:
+            _LOGIN_FAILURE = (detail, now + _LOGIN_RETRY_S)
+        logger.warning(f"[paper_search] OpenReview login failed, continuing anonymously: {detail}")
         return {}
     with _TOKEN_LOCK:
         _TOKEN = (token, time.monotonic() + _TOKEN_TTL_S)
+        _LOGIN_FAILURE = ("", 0.0)
     return {"Authorization": f"Bearer {token}"}
+
+
+def login_error() -> str:
+    """Why the configured account was refused, while that is still current."""
+    with _TOKEN_LOCK:
+        failure, retry_at = _LOGIN_FAILURE
+    return failure if failure and retry_at > time.monotonic() else ""
+
+
+def reset_auth() -> None:
+    global _TOKEN, _LOGIN_FAILURE
+    with _TOKEN_LOCK:
+        _TOKEN = ("", 0.0)
+        _LOGIN_FAILURE = ("", 0.0)
 
 
 def has_account() -> bool:

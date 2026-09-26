@@ -172,6 +172,10 @@ async def search_ieeexplore(
         cites = item.get("citing_paper_count")
         if isinstance(cites, int) or (isinstance(cites, str) and cites.isdigit()):
             citation_counts["IEEE Xplore"] = int(cites)
+        # OPEN_ACCESS / LOCKED; anything else (e.g. EPHEMERA) says nothing.
+        # `pdf_url` is not kept: stamp.jsp serves an HTML frame, not the PDF.
+        access = (item.get("access_type") or "").upper()
+        is_open_access = True if access == "OPEN_ACCESS" else False if access == "LOCKED" else None
 
         papers.append(
             Paper(
@@ -185,6 +189,7 @@ async def search_ieeexplore(
                 venue=venue,
                 venue_type=venue_type,
                 citation_counts=citation_counts,
+                is_open_access=is_open_access,
             )
         )
     return papers
