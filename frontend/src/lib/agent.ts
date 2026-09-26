@@ -8,6 +8,8 @@
  * every later call sends it back.
  */
 
+import { getOwnerToken } from "./owner";
+
 const API_BASE = "/api";
 
 // EventSource must reach the backend directly — the Next.js rewrite proxy
@@ -22,12 +24,67 @@ export type EventType =
   | "run.started"
   | "message.delta"
   | "tool.started"
+  | "tool.progress"
   | "tool.completed"
   | "tool.failed"
   | "paper.added"
+  | "artifact.created"
+  | "context.compacted"
+  | "memory.saved"
   | "run.completed"
   | "run.failed"
   | "run.cancelled";
+
+/** Every named event the stream can carry; the hook subscribes to all of them. */
+export const ALL_EVENT_TYPES: EventType[] = [
+  "run.started",
+  "message.delta",
+  "tool.started",
+  "tool.progress",
+  "tool.completed",
+  "tool.failed",
+  "paper.added",
+  "artifact.created",
+  "context.compacted",
+  "memory.saved",
+  "run.completed",
+  "run.failed",
+  "run.cancelled",
+];
+
+/** What the reader can pick in the composer. `auto` leaves it to the agent. */
+export type AgentMode = "auto" | "snap" | "lens" | "sphere";
+export const AGENT_MODES: AgentMode[] = ["auto", "snap", "lens", "sphere"];
+
+/** A mode report produced inside a conversation — the same row the report page renders. */
+export interface SessionArtifact {
+  run_id: string;
+  agent_run_id: string;
+  paper_id: string;
+  paper_title: string;
+  mode: string;
+  language: string;
+  status: string;
+  created_at: string;
+}
+
+export type MemoryKind = "preference" | "fact" | "project" | "instruction";
+
+export interface AgentMemory {
+  memory_id: string;
+  kind: MemoryKind;
+  content: string;
+  source_session_id: string;
+  source_run_id: string;
+  active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SessionContextStats {
+  compactions: number;
+  last_turn_tokens: number | null;
+}
 
 export interface AgentEvent {
   schema_version: number;
@@ -92,6 +149,7 @@ export interface AgentSession {
   title: string;
   language: "zh" | "en";
   llm_model: string;
+  config?: Record<string, unknown>;
   status: string;
   created_at: string;
   updated_at: string;
@@ -102,6 +160,8 @@ export interface SessionDetail {
   messages: AgentMessage[];
   papers: SessionPaper[];
   runs: AgentRun[];
+  artifacts: SessionArtifact[];
+  context: SessionContextStats;
   last_event_seq: number;
 }
 
@@ -207,8 +267,39 @@ export async function createSession(input: {
       language: input.language || "zh",
       llm_model: input.llm_model || "",
       paper_ids: input.paper_ids || [],
+      // Lets mode reports made in this conversation appear in the compare
+      // matrix beside reports made from the classic upload page.
+      owner_token: getOwnerToken(),
     }),
   });
+}
+
+export async function attachPapers(
+  sessionId: string,
+  paperIds: string[],
+): Promise<{ session_id: string; attached: string[]; papers: SessionPaper[] }> {
+  return agentRequest(`/agent/sessions/${sessionId}/papers`, {
+    method: "POST",
+    body: JSON.stringify({ paper_ids: paperIds }),
+  });
+}
+
+export async function listMemories(): Promise<{ memories: AgentMemory[] }> {
+  return agentRequest("/agent/memories");
+}
+
+export async function createMemory(input: {
+  content: string;
+  kind?: MemoryKind;
+}): Promise<AgentMemory> {
+  return agentRequest("/agent/memories", {
+    method: "POST",
+    body: JSON.stringify({ content: input.content, kind: input.kind || "preference" }),
+  });
+}
+
+export async function deleteMemory(memoryId: string): Promise<void> {
+  await agentRequest(`/agent/memories/${memoryId}`, { method: "DELETE" });
 }
 
 export async function listSessions(): Promise<{ sessions: AgentSession[] }> {
@@ -221,7 +312,12 @@ export async function getSession(sessionId: string): Promise<SessionDetail> {
 
 export async function postMessage(
   sessionId: string,
-  input: { content: string; clientRequestId: string; paperIds?: string[] },
+  input: {
+    content: string;
+    clientRequestId: string;
+    paperIds?: string[];
+    mode?: AgentMode;
+  },
 ): Promise<{
   run_id: string;
   session_id: string;
@@ -234,6 +330,8 @@ export async function postMessage(
       content: input.content,
       client_request_id: input.clientRequestId,
       paper_ids: input.paperIds || [],
+      mode: input.mode || "auto",
+      owner_token: getOwnerToken(),
     }),
   });
 }

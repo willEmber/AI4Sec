@@ -1,12 +1,14 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { getEventStreamUrl } from "@/lib/agent";
-import type { AgentEvent, EventType } from "@/lib/agent";
-import { applyToolEvent } from "@/lib/agentEvents";
-import type { ToolActivity } from "@/lib/agentEvents";
-
-const TERMINAL: EventType[] = ["run.completed", "run.failed", "run.cancelled"];
+import { ALL_EVENT_TYPES, getEventStreamUrl } from "@/lib/agent";
+import type { AgentEvent, SessionArtifact } from "@/lib/agent";
+import {
+  applyToolEvent,
+  artifactFromEvent,
+  compactionFromEvent,
+} from "@/lib/agentEvents";
+import type { CompactionNotice, ToolActivity } from "@/lib/agentEvents";
 
 export type { ToolActivity };
 
@@ -14,6 +16,10 @@ interface UseAgentStreamReturn {
   /** Answer text assembled from message.delta events. */
   answer: string;
   tools: ToolActivity[];
+  /** Mode reports this turn produced, in order. */
+  artifacts: SessionArtifact[];
+  /** Compactions that happened during this turn. */
+  compactions: CompactionNotice[];
   isStreaming: boolean;
   error: string | null;
   /** Stable code behind `error`, e.g. `interrupted` when a restart ended the turn. */
@@ -27,6 +33,8 @@ interface UseAgentStreamReturn {
    * list has to refresh during the turn rather than after it.
    */
   papersChanged: number;
+  /** Increments when the agent saved a memory, so the memory panel refreshes. */
+  memoriesChanged: number;
   start: (runId: string) => void;
   stop: () => void;
 }
@@ -42,12 +50,15 @@ interface UseAgentStreamReturn {
 export function useAgentStream(): UseAgentStreamReturn {
   const [answer, setAnswer] = useState("");
   const [tools, setTools] = useState<ToolActivity[]>([]);
+  const [artifacts, setArtifacts] = useState<SessionArtifact[]>([]);
+  const [compactions, setCompactions] = useState<CompactionNotice[]>([]);
   const [isStreaming, setIsStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [errorCode, setErrorCode] = useState("");
   const [finishedRunId, setFinishedRunId] = useState<string | null>(null);
   const [evidenceIds, setEvidenceIds] = useState<string[]>([]);
   const [papersChanged, setPapersChanged] = useState(0);
+  const [memoriesChanged, setMemoriesChanged] = useState(0);
 
   const sourceRef = useRef<EventSource | null>(null);
   const seqRef = useRef(0);
@@ -74,6 +85,7 @@ export function useAgentStream(): UseAgentStreamReturn {
         break;
 
       case "tool.started":
+      case "tool.progress":
       case "tool.completed":
       case "tool.failed":
         // Same reducer the restored view uses, so a turn looks the same while
@@ -83,6 +95,22 @@ export function useAgentStream(): UseAgentStreamReturn {
 
       case "paper.added":
         setPapersChanged((n) => n + 1);
+        break;
+
+      case "artifact.created": {
+        const artifact = artifactFromEvent(event);
+        if (artifact) setArtifacts((prev) => [...prev, artifact]);
+        break;
+      }
+
+      case "context.compacted": {
+        const notice = compactionFromEvent(event);
+        if (notice) setCompactions((prev) => [...prev, notice]);
+        break;
+      }
+
+      case "memory.saved":
+        setMemoriesChanged((n) => n + 1);
         break;
 
       case "run.completed":
@@ -122,16 +150,7 @@ export function useAgentStream(): UseAgentStreamReturn {
         }
       };
       // Named events, so `onmessage` alone would never fire.
-      const types: EventType[] = [
-        "run.started",
-        "message.delta",
-        "tool.started",
-        "tool.completed",
-        "tool.failed",
-        "paper.added",
-        ...TERMINAL,
-      ];
-      types.forEach((t) => source.addEventListener(t, onEvent as EventListener));
+      ALL_EVENT_TYPES.forEach((t) => source.addEventListener(t, onEvent as EventListener));
 
       source.onerror = () => {
         source.close();
@@ -156,6 +175,8 @@ export function useAgentStream(): UseAgentStreamReturn {
       runIdRef.current = runId;
       setAnswer("");
       setTools([]);
+      setArtifacts([]);
+      setCompactions([]);
       setEvidenceIds([]);
       setError(null);
       setErrorCode("");
@@ -176,12 +197,15 @@ export function useAgentStream(): UseAgentStreamReturn {
   return {
     answer,
     tools,
+    artifacts,
+    compactions,
     isStreaming,
     error,
     errorCode,
     finishedRunId,
     evidenceIds,
     papersChanged,
+    memoriesChanged,
     start,
     stop,
   };

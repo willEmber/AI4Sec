@@ -1,4 +1,10 @@
-import type { AgentEvent } from "@/lib/agent";
+import type { AgentEvent, SessionArtifact } from "@/lib/agent";
+
+/** One intermediate step a long tool reported (a mode report, a parse). */
+export interface ToolStep {
+  step: string;
+  status: string;
+}
 
 /** One tool call as the reader sees it: what ran, how it ended, how much it found. */
 export interface ToolActivity {
@@ -9,6 +15,8 @@ export interface ToolActivity {
   note?: string;
   error?: { code: string; message: string };
   summary?: Record<string, unknown>;
+  /** Progress steps, latest status per step, in the order they first appeared. */
+  steps?: ToolStep[];
 }
 
 /**
@@ -38,6 +46,24 @@ export function applyToolEvent(
     ];
   }
 
+  if (event.type === "tool.progress") {
+    const toolName = String(payload.tool || "");
+    const index = prev.findLastIndex(
+      (t) => t.tool === toolName && t.status === "running",
+    );
+    if (index < 0) return prev;
+    const step = String(payload.step || "");
+    if (!step) return prev;
+    const status = String(payload.status || "running");
+    const steps = [...(prev[index].steps ?? [])];
+    const existing = steps.findIndex((s) => s.step === step);
+    if (existing >= 0) steps[existing] = { step, status };
+    else steps.push({ step, status });
+    const next = [...prev];
+    next[index] = { ...prev[index], steps };
+    return next;
+  }
+
   if (event.type !== "tool.completed" && event.type !== "tool.failed") {
     return prev;
   }
@@ -57,6 +83,9 @@ export function applyToolEvent(
     note: payload.note ? String(payload.note) : undefined,
     error: payload.error as ToolActivity["error"],
     summary: payload.summary as Record<string, unknown> | undefined,
+    // Steps are kept: once a report is done, the reader may still want to see
+    // what it went through.
+    steps: index >= 0 ? prev[index].steps : undefined,
   };
   if (index < 0) return [...prev, entry];
   const next = [...prev];
@@ -79,4 +108,40 @@ export function sealActivity(tools: ToolActivity[]): ToolActivity[] {
   return tools.map((t) =>
     t.status === "running" ? { ...t, status: "unavailable" as const } : t,
   );
+}
+
+/** The report a turn produced, as announced by its `artifact.created` event. */
+export function artifactFromEvent(event: AgentEvent): SessionArtifact | null {
+  if (event.type !== "artifact.created") return null;
+  const p = event.payload || {};
+  if (!p.run_id || !p.paper_id) return null;
+  return {
+    run_id: String(p.run_id),
+    agent_run_id: event.run_id,
+    paper_id: String(p.paper_id),
+    paper_title: String(p.title || ""),
+    mode: String(p.mode || ""),
+    language: String(p.language || "en"),
+    status: "done",
+    created_at: event.timestamp,
+  };
+}
+
+/** What a compaction event says, in the shape the divider renders. */
+export interface CompactionNotice {
+  seq: number;
+  summarizedMessages: number;
+  keptMessages: number;
+  tokensBefore: number;
+}
+
+export function compactionFromEvent(event: AgentEvent): CompactionNotice | null {
+  if (event.type !== "context.compacted") return null;
+  const p = event.payload || {};
+  return {
+    seq: event.seq,
+    summarizedMessages: Number(p.summarized_messages || 0),
+    keptMessages: Number(p.kept_messages || 0),
+    tokensBefore: Number(p.tokens_before || 0),
+  };
 }

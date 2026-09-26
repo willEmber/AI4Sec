@@ -5,10 +5,12 @@ parameters. Identity, session scope and budgets arrive through
 `ToolRuntime[AgentContext]`, so nothing the model writes — and nothing a paper
 says — can widen what a tool is allowed to touch.
 
-Three groups, in the order a research question tends to move through them:
+Five groups, in the order a research question tends to move through them:
 discovery finds candidates, acquisition turns a candidate into a readable file,
-reading extracts citable evidence from it. The agent is not made to follow that
-order; tools that happen to be useful early are simply listed first.
+reading extracts citable evidence from it, modes produce one of the three
+whole-paper reports, and memory keeps what the reader wants remembered. The
+agent is not made to follow that order; tools that happen to be useful early
+are simply listed first.
 """
 
 from app.agents.tools.acquisition import (
@@ -23,6 +25,18 @@ from app.agents.tools.discovery import (
     resolve_paper,
     search_papers,
 )
+from app.agents.tools.memory import (
+    MEMORY_TOOLS,
+    forget_memory,
+    list_memories,
+    save_memory,
+)
+from app.agents.tools.modes import (
+    MODE_TOOLS,
+    run_insight_snap,
+    run_logic_lens,
+    run_research_sphere,
+)
 from app.agents.tools.reading import (
     READING_TOOLS,
     get_paper_outline,
@@ -33,18 +47,30 @@ from app.agents.tools.reading import (
 # The nine tools of the development plan's §4 contract.
 RESEARCH_TOOLS = [*DISCOVERY_TOOLS, *ACQUISITION_TOOLS, *READING_TOOLS]
 
+# Everything the unified agent sees (P5).
+ALL_AGENT_TOOLS = [*RESEARCH_TOOLS, *MODE_TOOLS, *MEMORY_TOOLS]
+
 __all__ = [
     "ACQUISITION_TOOLS",
+    "ALL_AGENT_TOOLS",
     "DISCOVERY_TOOLS",
+    "MEMORY_TOOLS",
+    "MODE_TOOLS",
     "READING_TOOLS",
     "RESEARCH_TOOLS",
     "download_paper",
     "ensure_paper_parsed",
+    "forget_memory",
     "get_paper_outline",
     "get_related_papers",
+    "list_memories",
     "query_publication_rank",
     "read_paper_section",
     "resolve_paper",
+    "run_insight_snap",
+    "run_logic_lens",
+    "run_research_sphere",
+    "save_memory",
     "search_paper_content",
     "search_papers",
 ]

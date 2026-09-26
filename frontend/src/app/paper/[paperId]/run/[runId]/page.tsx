@@ -232,13 +232,14 @@ export default function RunPage() {
             </div>
           )}
           {/* The report answers what it was asked; the agent answers the rest,
-              reading the same paper. */}
+              reading the same paper. A report made inside a conversation
+              leads back to that conversation rather than starting another. */}
           <Link
-            href={`/chat?paper=${paperId}`}
+            href={run?.agent_session_id ? `/chat/${run.agent_session_id}` : `/chat?paper=${paperId}`}
             className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-sm transition-colors hover:bg-muted"
           >
             <IconSparkles className="text-[15px]" />
-            {t("run.ask_agent")}
+            {run?.agent_session_id ? t("run.back_to_chat") : t("run.ask_agent")}
           </Link>
           {markdown && (
             <button

@@ -131,6 +131,13 @@ class AgentContext:
     run_id: str = ""
     thread_id: str = ""
     language: str = "zh"
+    # The model this turn runs on; mode reports produced inside the turn use
+    # the same one, so a report and the answer summarising it agree.
+    llm_model: str = ""
+    # The browser's per-device token, copied onto mode reports so they appear
+    # in the compare matrix next to reports made from the upload page. Grants
+    # nothing; identity is `owner_id`.
+    owner_token: str = ""
     budget: RunBudget = field(default_factory=RunBudget)
     usage: BudgetUsage = field(default_factory=BudgetUsage)
 

@@ -32,6 +32,9 @@ export interface RunResponse {
   detected_intent?: string;
   current_step?: string;
   progress_json?: string;
+  /** Set when the report was produced inside a conversation. */
+  agent_session_id?: string;
+  agent_run_id?: string;
 }
 
 export interface RecentRunResponse {

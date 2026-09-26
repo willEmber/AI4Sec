@@ -233,9 +233,20 @@ class EventType(str, Enum):
     RUN_STARTED = "run.started"
     MESSAGE_DELTA = "message.delta"
     TOOL_STARTED = "tool.started"
+    # A long tool (a mode report, a parse) reporting an intermediate step. The
+    # step names are the legacy pipeline's, so the UI reuses its labels.
+    TOOL_PROGRESS = "tool.progress"
     TOOL_COMPLETED = "tool.completed"
     TOOL_FAILED = "tool.failed"
     PAPER_ADDED = "paper.added"
+    # A mode report (Snap / Lens / Sphere) was produced for this session. The
+    # payload names the legacy `runs` row, which the report page, the compare
+    # matrix and the exports already know how to show.
+    ARTIFACT_CREATED = "artifact.created"
+    # Older turns were summarised. Emitted so the reader can see why the agent
+    # may no longer quote something verbatim without re-reading it.
+    CONTEXT_COMPACTED = "context.compacted"
+    MEMORY_SAVED = "memory.saved"
     RUN_COMPLETED = "run.completed"
     RUN_FAILED = "run.failed"
     RUN_CANCELLED = "run.cancelled"
@@ -270,6 +281,54 @@ class AgentEvent(BaseModel):
         }
 
 
+# ── Modes, artifacts, memory ────────────────────────────────────────────────
+
+# What the reader can ask for in the composer. `auto` leaves the decision to
+# the agent; the other three make it call the matching mode tool.
+AgentMode = Literal["auto", "snap", "lens", "sphere"]
+MODE_TOOL_NAMES: dict[str, str] = {
+    "snap": "run_insight_snap",
+    "lens": "run_logic_lens",
+    "sphere": "run_research_sphere",
+}
+
+
+class SessionArtifact(BaseModel):
+    """A mode report produced inside a conversation.
+
+    This *is* a legacy `runs` row — the same one the report page renders —
+    projected to what the conversation needs to show a card for it.
+    """
+
+    run_id: str
+    agent_run_id: str = ""
+    paper_id: str
+    paper_title: str = ""
+    mode: str
+    language: str = "en"
+    status: str = "done"
+    created_at: str = ""
+
+
+class MemoryKind(str, Enum):
+    PREFERENCE = "preference"     # how the reader likes answers
+    FACT = "fact"                 # something stable about the reader / their work
+    PROJECT = "project"           # what they are working on
+    INSTRUCTION = "instruction"   # a standing request ("always ...")
+
+
+class AgentMemory(BaseModel):
+    memory_id: str
+    owner_id: str = ""
+    kind: MemoryKind = MemoryKind.PREFERENCE
+    content: str
+    source_session_id: str = ""
+    source_run_id: str = ""
+    active: bool = True
+    created_at: str = ""
+    updated_at: str = ""
+
+
 # ── API request / response shapes ───────────────────────────────────────────
 
 
@@ -279,6 +338,10 @@ class CreateSessionRequest(BaseModel):
     llm_model: str = ""
     # Local papers to attach up front. A session may also start empty.
     paper_ids: list[str] = Field(default_factory=list)
+    # The browser's per-device token. Only used to stamp mode reports so they
+    # show up in the compare matrix and the recent-runs list beside reports
+    # started from the classic upload page; it grants nothing.
+    owner_token: str = ""
 
 
 class CreateSessionResponse(BaseModel):
@@ -293,6 +356,20 @@ class PostMessageRequest(BaseModel):
     # instead of starting a second one (acceptance case A12).
     client_request_id: str = ""
     paper_ids: list[str] = Field(default_factory=list)
+    # Which mode the reader picked in the composer. Anything but `auto` makes
+    # the turn call the matching mode tool; the agent still does it through a
+    # tool call so the event stream has one shape.
+    mode: AgentMode = "auto"
+    owner_token: str = ""
+
+
+class AttachPapersRequest(BaseModel):
+    paper_ids: list[str] = Field(default_factory=list)
+
+
+class CreateMemoryRequest(BaseModel):
+    content: str
+    kind: MemoryKind = MemoryKind.PREFERENCE
 
 
 class PostMessageResponse(BaseModel):
@@ -303,9 +380,19 @@ class PostMessageResponse(BaseModel):
     deduplicated: bool = False
 
 
+class SessionContextStats(BaseModel):
+    """How much of the conversation the model still sees verbatim."""
+
+    compactions: int = 0
+    # Approximate tokens the last turn sent to the model, when it reported them.
+    last_turn_tokens: int | None = None
+
+
 class SessionDetailResponse(BaseModel):
     session: AgentSession
     messages: list[AgentMessage] = Field(default_factory=list)
     papers: list[SessionPaper] = Field(default_factory=list)
     runs: list[AgentRun] = Field(default_factory=list)
+    artifacts: list[SessionArtifact] = Field(default_factory=list)
+    context: SessionContextStats = Field(default_factory=SessionContextStats)
     last_event_seq: int = 0

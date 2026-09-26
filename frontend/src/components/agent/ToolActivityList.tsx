@@ -22,7 +22,7 @@ export default function ToolActivityList({ tools }: { tools: ToolActivity[] }) {
           className="flex items-start gap-2 text-xs text-muted-foreground"
         >
           <StatusMark status={tool.status} />
-          <span className="min-w-0 leading-5">
+          <span className="min-w-0 flex-1 leading-5">
             <span className="font-medium text-foreground">
               {t(`chat.tool.${tool.tool}`)}
             </span>
@@ -30,11 +30,56 @@ export default function ToolActivityList({ tools }: { tools: ToolActivity[] }) {
             {tool.error && (
               <span className="ml-1.5 text-accent-foreground">{tool.error.code}</span>
             )}
-            {tool.note && <span className="ml-1.5 opacity-75">{tool.note}</span>}
+            {tool.note && !tool.steps?.length && (
+              <span className="ml-1.5 opacity-75">{tool.note}</span>
+            )}
+            {tool.steps && tool.steps.length > 0 && (
+              <StepList steps={tool.steps} running={tool.status === "running"} />
+            )}
           </span>
         </div>
       ))}
     </div>
+  );
+}
+
+/**
+ * The steps a long tool went through — a mode report's pipeline stages, or a
+ * parse. Labels are the pipeline's own, so the same stage reads the same here
+ * and on the report page.
+ */
+function StepList({
+  steps,
+  running,
+}: {
+  steps: NonNullable<ToolActivity["steps"]>;
+  running: boolean;
+}) {
+  const { t } = useTranslation();
+  return (
+    <span className="mt-1 block space-y-0.5">
+      {steps.map((step, i) => {
+        const done = step.status === "done" || step.status === "skipped";
+        const active = !done && running && i === steps.length - 1;
+        return (
+          <span
+            key={step.step}
+            className={`flex items-center gap-1.5 text-[0.7rem] ${
+              done ? "text-muted-foreground" : "text-foreground"
+            }`}
+          >
+            {done ? (
+              <span className="text-success">✓</span>
+            ) : active ? (
+              <span className="inline-block h-2.5 w-2.5 animate-spin rounded-full border-[1.5px] border-border border-t-primary" />
+            ) : (
+              <span className="opacity-50">·</span>
+            )}
+            <span>{t(`step.${step.step}`) || step.step}</span>
+          </span>
+        );
+      })}
+    </span>
   );
 }
 

@@ -105,6 +105,24 @@ class AppSettings(BaseSettings):
     # Generous because one turn may now download and parse a paper it just
     # found, which a pure reading turn never did.
     agent_max_wall_seconds: int = Field(default=1800, alias="AGENT_MAX_WALL_SECONDS")
+    # --- Context management ---
+    # Conversation size (approximate tokens, system prompt and tool schemas
+    # included) at which older turns are summarised. The gateway models have
+    # no published profile, so this is an absolute number rather than a fraction
+    # of the context window; 80k leaves room for a long section read on top.
+    agent_context_trigger_tokens: int = Field(default=80_000, alias="AGENT_CONTEXT_TRIGGER_TOKENS")
+    # How many recent messages survive a compaction untouched. Counted in
+    # messages, not tokens, because a tool-call/tool-result pair must never be
+    # split — the summariser keeps whole exchanges.
+    agent_context_keep_messages: int = Field(default=12, alias="AGENT_CONTEXT_KEEP_MESSAGES")
+    # Tool results older than the most recent N are cut down to a stub before
+    # the model sees them again; a section read is tens of KB and is rarely
+    # needed verbatim two questions later. Evidence ids survive the cut.
+    agent_tool_result_keep: int = Field(default=6, alias="AGENT_TOOL_RESULT_KEEP")
+    agent_tool_result_max_chars: int = Field(default=1_500, alias="AGENT_TOOL_RESULT_MAX_CHARS")
+    # --- Long-term memory ---
+    # Ceiling on memories injected into the prompt per turn (newest first).
+    agent_memory_max_items: int = Field(default=30, alias="AGENT_MEMORY_MAX_ITEMS")
 
     # --- GROBID (structured header extraction fallback) ---
     # Base URL of a GROBID server, e.g. http://localhost:8070. Empty disables it;

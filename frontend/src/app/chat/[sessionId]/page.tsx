@@ -1,8 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useParams } from "next/navigation";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useParams, useSearchParams } from "next/navigation";
 import {
+  attachPapers,
   cancelRun,
   getSession,
   listSessions,
@@ -10,15 +11,19 @@ import {
 } from "@/lib/agent";
 import type {
   AgentMessage,
+  AgentMode,
   AgentRun,
   AgentSession,
+  SessionArtifact,
   SessionDetail,
   SessionPaper,
 } from "@/lib/agent";
-import { getPaperPdfUrl } from "@/lib/api";
+import { getPaperPdfUrl, uploadPaper } from "@/lib/api";
 import { useAgentStream } from "@/hooks/useAgentStream";
 import { useTranslation } from "@/lib/i18n";
+import ArtifactCard from "@/components/agent/ArtifactCard";
 import ChatMessage from "@/components/agent/ChatMessage";
+import ModePicker from "@/components/agent/ModePicker";
 import PaperSidebar from "@/components/agent/PaperSidebar";
 import PastTurnActivity from "@/components/agent/PastTurnActivity";
 import ToolActivityList from "@/components/agent/ToolActivityList";
@@ -27,9 +32,19 @@ import SplitPane from "@/components/SplitPane";
 import { IconArrowRight } from "@/components/icons";
 
 const ACTIVE_STATUSES = new Set(["pending", "running"]);
+const MODES: AgentMode[] = ["auto", "snap", "lens", "sphere"];
 
 export default function ChatPage() {
+  return (
+    <Suspense fallback={<div className="h-[calc(100vh-4rem)]" />}>
+      <ChatSession />
+    </Suspense>
+  );
+}
+
+function ChatSession() {
   const params = useParams();
+  const searchParams = useSearchParams();
   const sessionId = params.sessionId as string;
   const { t } = useTranslation();
 
@@ -37,6 +52,10 @@ export default function ChatPage() {
   const [sessions, setSessions] = useState<AgentSession[]>([]);
   const [loadError, setLoadError] = useState<string>("");
   const [draft, setDraft] = useState("");
+  const [mode, setMode] = useState<AgentMode>(() => {
+    const preset = searchParams.get("mode") as AgentMode | null;
+    return preset && MODES.includes(preset) ? preset : "auto";
+  });
   const [sending, setSending] = useState(false);
   const [activeRunId, setActiveRunId] = useState<string>("");
   const [activePaperId, setActivePaperId] = useState<string>("");
@@ -46,9 +65,16 @@ export default function ChatPage() {
   const [jumpToken, setJumpToken] = useState(0);
   const [pdfCollapsed, setPdfCollapsed] = useState(false);
   const [knownPaperIds, setKnownPaperIds] = useState<Set<string>>(new Set());
+  const [memoriesToken, setMemoriesToken] = useState(0);
 
   const stream = useAgentStream();
-  const { start: startStream, stop: stopStream, finishedRunId, papersChanged } = stream;
+  const {
+    start: startStream,
+    stop: stopStream,
+    finishedRunId,
+    papersChanged,
+    memoriesChanged,
+  } = stream;
   const bottomRef = useRef<HTMLDivElement>(null);
 
   const reload = useCallback(async () => {
@@ -117,8 +143,13 @@ export default function ChatPage() {
   }, [papersChanged, reload]);
 
   useEffect(() => {
+    if (!memoriesChanged) return;
+    setMemoriesToken((n) => n + 1);
+  }, [memoriesChanged]);
+
+  useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-  }, [detail?.messages.length, stream.answer, stream.tools.length]);
+  }, [detail?.messages.length, stream.answer, stream.tools.length, stream.artifacts.length]);
 
   const send = useCallback(async () => {
     const content = draft.trim();
@@ -140,6 +171,9 @@ export default function ChatPage() {
     };
     setDetail((prev) => (prev ? { ...prev, messages: [...prev.messages, pending] } : prev));
     setDraft("");
+    const chosenMode = mode;
+    // A mode is a request about this turn; the next question starts from auto.
+    setMode("auto");
 
     try {
       const res = await postMessage(sessionId, {
@@ -147,17 +181,19 @@ export default function ChatPage() {
         // A retry of the same question must not start a second turn; the server
         // keys idempotency on this.
         clientRequestId: crypto.randomUUID(),
+        mode: chosenMode,
       });
       setActiveRunId(res.run_id);
       startStream(res.run_id);
     } catch (err) {
       setLoadError(String(err));
       setDraft(content);
+      setMode(chosenMode);
       await reload().catch(() => {});
     } finally {
       setSending(false);
     }
-  }, [draft, sending, stream.isStreaming, sessionId, detail, startStream, reload]);
+  }, [draft, sending, stream.isStreaming, sessionId, detail, mode, startStream, reload]);
 
   const stop = useCallback(async () => {
     if (!activeRunId) return;
@@ -171,6 +207,20 @@ export default function ChatPage() {
     await reload().catch(() => {});
     setActiveRunId("");
   }, [activeRunId, stopStream, reload]);
+
+  const upload = useCallback(
+    async (file: File) => {
+      const uploaded = await uploadPaper(file);
+      await attachPapers(sessionId, [uploaded.paper_id]);
+      const data = await reload();
+      const attached = data.papers.find((p) => p.paper_id === uploaded.paper_id);
+      if (attached?.paper_id) {
+        setActivePaperId(attached.paper_id);
+        setTargetPage(undefined);
+      }
+    },
+    [sessionId, reload],
+  );
 
   const jumpToPage = useCallback((paperId: string, page: number) => {
     setActivePaperId(paperId);
@@ -199,8 +249,55 @@ export default function ChatPage() {
     [detail?.messages],
   );
 
+  // Reports by the turn that made them, so each card sits under its answer.
+  // While a turn is live its reports come from the stream instead; once it
+  // finishes, the reload moves them here.
+  const artifactsByRun = useMemo(() => {
+    const map = new Map<string, SessionArtifact[]>();
+    for (const artifact of detail?.artifacts ?? []) {
+      if (activeRunId && artifact.agent_run_id === activeRunId) continue;
+      const list = map.get(artifact.agent_run_id) ?? [];
+      list.push(artifact);
+      map.set(artifact.agent_run_id, list);
+    }
+    return map;
+  }, [detail?.artifacts, activeRunId]);
+
+  const contextStats = detail?.context;
+  const readablePapers = papers.filter((p) => p.paper_id).length;
+
   const conversation = (
     <div className="flex h-full flex-col">
+      <div className="flex shrink-0 items-center gap-3 border-b border-border bg-card/60 px-6 py-2 text-xs text-muted-foreground">
+        <span className="truncate font-medium text-foreground">
+          {detail?.session.title || t("chat.sessions.untitled")}
+        </span>
+        <span className="opacity-40">·</span>
+        <span>{t("chat.header.papers", { count: readablePapers })}</span>
+        {detail?.session.llm_model && (
+          <>
+            <span className="opacity-40">·</span>
+            <span className="truncate">{detail.session.llm_model}</span>
+          </>
+        )}
+        {contextStats && contextStats.compactions > 0 && (
+          <>
+            <span className="opacity-40">·</span>
+            <span title={t("chat.context.compacted_hint")}>
+              {t("chat.context.compactions", { count: contextStats.compactions })}
+            </span>
+          </>
+        )}
+        {contextStats?.last_turn_tokens != null && (
+          <>
+            <span className="opacity-40">·</span>
+            <span title={t("chat.context.tokens_hint")}>
+              {t("chat.context.tokens", { count: contextStats.last_turn_tokens.toLocaleString() })}
+            </span>
+          </>
+        )}
+      </div>
+
       <div className="flex-1 space-y-5 overflow-y-auto px-6 py-6">
         {!detail && !loadError && (
           <p className="text-sm text-muted-foreground">{t("chat.loading")}</p>
@@ -208,32 +305,71 @@ export default function ChatPage() {
 
         {detail?.messages.length === 0 && !stream.isStreaming && (
           <div className="rounded-xl border border-border bg-card px-5 py-6">
-            <p className="text-sm font-medium text-foreground">{t("chat.empty.title")}</p>
+            <p className="text-sm font-medium text-foreground">
+              {papers.length === 0 ? t("chat.empty.no_paper_title") : t("chat.empty.title")}
+            </p>
             <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">
-              {t("chat.empty.hint")}
+              {papers.length === 0 ? t("chat.empty.no_paper_hint") : t("chat.empty.hint")}
             </p>
           </div>
         )}
 
         {detail?.messages.map((message) => (
-          <div key={message.message_id} className="space-y-0">
+          <div key={message.message_id} className="space-y-3">
             <ChatMessage
               role={message.role}
               content={message.content}
               onJumpToPage={jumpToPage}
             />
             {message.role === "assistant" && message.run_id && (
-              <PastTurnActivity runId={message.run_id} />
+              <>
+                {(artifactsByRun.get(message.run_id) ?? []).map((artifact) => (
+                  <ArtifactCard
+                    key={`${artifact.agent_run_id}-${artifact.run_id}`}
+                    artifact={artifact}
+                    onJumpToPage={jumpToPage}
+                    defaultOpen={false}
+                  />
+                ))}
+                <PastTurnActivity runId={message.run_id} />
+              </>
             )}
             {message.role === "user" && (
-              <RunOutcome run={unansweredRun(message, runs, answeredRunIds)} />
+              <>
+                <RunOutcome run={unansweredRun(message, runs, answeredRunIds)} />
+                {/* A report from a turn that never produced an answer still exists. */}
+                {!answeredRunIds.has(message.run_id) &&
+                  message.run_id !== activeRunId &&
+                  (artifactsByRun.get(message.run_id) ?? []).map((artifact) => (
+                    <ArtifactCard
+                      key={`${artifact.agent_run_id}-${artifact.run_id}`}
+                      artifact={artifact}
+                      onJumpToPage={jumpToPage}
+                      defaultOpen={false}
+                    />
+                  ))}
+              </>
             )}
           </div>
         ))}
 
-        {(stream.isStreaming || stream.tools.length > 0) && (
+        {(stream.isStreaming || stream.tools.length > 0 || stream.artifacts.length > 0) && (
           <div className="space-y-3">
             <ToolActivityList tools={stream.tools} />
+            {stream.compactions.map((c) => (
+              <p
+                key={c.seq}
+                className="flex items-center gap-2 text-[0.7rem] text-muted-foreground"
+                title={t("chat.context.compacted_hint")}
+              >
+                <span className="h-px flex-1 bg-border" />
+                {t("chat.context.compacted_now", { count: c.summarizedMessages })}
+                <span className="h-px flex-1 bg-border" />
+              </p>
+            ))}
+            {stream.artifacts.map((artifact) => (
+              <ArtifactCard key={artifact.run_id} artifact={artifact} onJumpToPage={jumpToPage} />
+            ))}
             {stream.answer && (
               <ChatMessage role="assistant" content={stream.answer} onJumpToPage={jumpToPage} />
             )}
@@ -256,7 +392,13 @@ export default function ChatPage() {
         <div ref={bottomRef} />
       </div>
 
-      <div className="border-t border-border bg-card px-6 py-4">
+      <div className="border-t border-border bg-card px-6 py-3">
+        <div className="mb-2 flex items-center justify-between gap-3">
+          <ModePicker value={mode} onChange={setMode} disabled={stream.isStreaming} />
+          <span className="hidden truncate text-[0.7rem] text-muted-foreground sm:inline">
+            {t(`chat.mode.${mode}.desc`)}
+          </span>
+        </div>
         <div className="flex items-end gap-2">
           <textarea
             value={draft}
@@ -269,7 +411,9 @@ export default function ChatPage() {
               }
             }}
             rows={2}
-            placeholder={t("chat.placeholder")}
+            placeholder={
+              mode === "auto" ? t("chat.placeholder") : t("chat.placeholder_mode")
+            }
             className="min-h-[3rem] flex-1 resize-y rounded-xl border border-border bg-background px-3.5 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring/40"
           />
           {stream.isStreaming ? (
@@ -308,6 +452,8 @@ export default function ChatPage() {
           setActivePaperId(paperId);
           setTargetPage(undefined);
         }}
+        onUpload={upload}
+        memoriesToken={memoriesToken}
       />
 
       <div className="min-w-0 flex-1">

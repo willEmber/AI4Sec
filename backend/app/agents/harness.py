@@ -81,6 +81,7 @@ def warm_up(
     context_schema: type | None = None,
     checkpointer: Any = None,
     model: BaseChatModel | None = None,
+    middleware: Sequence[Any] = (),
 ) -> None:
     """Build one throwaway agent so no request has to be the first.
 
@@ -100,15 +101,16 @@ def warm_up(
 
     The model is never called: the agent is constructed and discarded.
     """
-    from app.agents.tools import RESEARCH_TOOLS
+    from app.agents.tools import ALL_AGENT_TOOLS
 
     register_scholar_harness_profile()
     create_paper_agent(
-        tools=RESEARCH_TOOLS,
+        tools=ALL_AGENT_TOOLS,
         system_prompt="warm-up",
         model=model if model is not None else _ToolSurfaceProbe(),
         context_schema=context_schema,
         checkpointer=checkpointer,
+        middleware=middleware,
     )
 
 

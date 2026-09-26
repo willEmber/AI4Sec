@@ -34,9 +34,11 @@ from langchain_core.messages import AIMessage, AIMessageChunk, ToolMessage
 
 from app.agents.context import AgentContext, BudgetUsage, RunBudget
 from app.agents.harness import create_paper_agent
+from app.agents.middleware import build_agent_middleware
 from app.agents.model_factory import build_chat_model
-from app.agents.prompts import PROMPT_VERSION, build_system_prompt
-from app.agents.tools import RESEARCH_TOOLS
+from app.agents.prompts import PROMPT_VERSION, build_system_prompt, mode_instruction
+from app.agents.tools import ALL_AGENT_TOOLS
+from app.config import get_settings
 from app.db import agent_repository as repo
 from app.models.agent_models import (
     AgentEvent,
@@ -181,16 +183,38 @@ async def _heartbeat(run_id: str) -> None:
 
 
 async def start_turn(
-    *, session: AgentSession, run: AgentRun, question: str
+    *, session: AgentSession, run: AgentRun, question: str, mode: str = "auto"
 ) -> None:
     """Schedule a turn. Returns as soon as the work is queued."""
-    task = asyncio.create_task(_execute_turn(session=session, run=run, question=question))
+    task = asyncio.create_task(
+        _execute_turn(session=session, run=run, question=question, mode=mode)
+    )
     _tasks[run.run_id] = task
     task.add_done_callback(lambda _t: _tasks.pop(run.run_id, None))
 
 
+def _usage_of(message: AIMessage | AIMessageChunk) -> int:
+    """Total tokens a model call reported on this message, or 0 when it did not."""
+    meta = getattr(message, "usage_metadata", None) or {}
+    try:
+        return int(meta.get("total_tokens") or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _model_input(question: str, mode: str, language: str) -> str:
+    """The user turn as the model sees it: the question plus the chosen mode.
+
+    The persisted user message stays the reader's own words; the mode note is
+    an instruction about *this* turn, so it travels with the turn and never
+    lands in the transcript the reader scrolls back through.
+    """
+    note = mode_instruction(mode, language)
+    return f"{question}\n\n{note}" if note else question
+
+
 async def _execute_turn(
-    *, session: AgentSession, run: AgentRun, question: str
+    *, session: AgentSession, run: AgentRun, question: str, mode: str = "auto"
 ) -> None:
     """Run one turn to completion, emitting events as it goes."""
     started = time.perf_counter()
@@ -208,40 +232,65 @@ async def _execute_turn(
             session_id=session.session_id,
             run_id=run.run_id,
             type=EventType.RUN_STARTED,
-            payload={"question": question, "model": run.llm_model},
+            payload={"question": question, "model": run.llm_model, "mode": mode},
         )
 
         papers = await repo.list_session_papers(session.session_id)
+        memories = await repo.list_memories(
+            session.owner_id, limit=get_settings().agent_memory_max_items
+        )
         context = AgentContext(
             owner_id=session.owner_id,
             session_id=session.session_id,
             run_id=run.run_id,
             thread_id=session.thread_id,
             language=session.language,
+            llm_model=run.llm_model,
+            owner_token=str((session.config or {}).get("owner_token") or ""),
             budget=budget,
             usage=usage,
         )
+
+        async def _on_compact(payload: dict[str, Any]) -> None:
+            await emit(
+                session_id=session.session_id,
+                run_id=run.run_id,
+                type=EventType.CONTEXT_COMPACTED,
+                payload=payload,
+            )
+
+        chat_model = build_chat_model(run.llm_model)
         # Off the loop: building the graph is synchronous work, and on a cold
         # process it also triggers the deepagents import. Neither should stop
         # the server answering anything else — a cancel for this very turn
         # included.
         agent = await asyncio.to_thread(
             create_paper_agent,
-            tools=RESEARCH_TOOLS,
-            system_prompt=build_system_prompt(language=session.language, papers=papers),
-            model=build_chat_model(run.llm_model),
+            tools=ALL_AGENT_TOOLS,
+            system_prompt=build_system_prompt(
+                language=session.language, papers=papers, memories=memories
+            ),
+            model=chat_model,
             context_schema=AgentContext,
             checkpointer=_checkpointer(),
+            middleware=build_agent_middleware(chat_model, on_compact=_on_compact),
         )
 
         cancelled = False
-        async for mode, chunk in agent.astream(
-            {"messages": [{"role": "user", "content": question}]},
+        async for stream_mode, chunk in agent.astream(
+            {
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": _model_input(question, mode, session.language),
+                    }
+                ]
+            },
             config=context.config(),
             context=context,
             stream_mode=["messages"],
         ):
-            if mode != "messages":
+            if stream_mode != "messages":
                 continue
             if await repo.is_cancel_requested(run.run_id):
                 cancelled = True
@@ -281,6 +330,13 @@ async def _execute_turn(
                         type=EventType.TOOL_STARTED,
                         payload={"tool": name, "call_id": call_id},
                     )
+                # The provider reports usage on the last chunk of each call.
+                # Summed per run, so the token ceiling is enforced against what
+                # was actually billed rather than left at "unknown".
+                reported = _usage_of(message)
+                if reported:
+                    usage.tokens = (usage.tokens or 0) + reported
+                    usage.llm_calls += 1
                 text = _text_of(message.content)
                 if text:
                     answer_parts.append(text)
@@ -430,10 +486,13 @@ def _summarise(data: dict[str, Any]) -> dict[str, Any]:
     for key in (
         "paper_id", "section", "question", "title", "page",
         "query", "venue", "relation", "of_paper", "source", "availability",
+        "run_id", "mode", "reused", "report_url", "memory_id", "kind",
     ):
         if key in data:
             summary[key] = data[key]
-    for key in ("sections", "hits", "blocks", "results", "papers", "rankings", "unknown_year"):
+    for key in (
+        "sections", "hits", "blocks", "results", "papers", "rankings", "unknown_year", "memories",
+    ):
         if isinstance(data.get(key), list):
             summary[f"{key}_count"] = len(data[key])
     return summary
@@ -481,6 +540,7 @@ async def warm_up_agent() -> None:
         context_schema=AgentContext,
         checkpointer=_checkpointer(),
         model=model,
+        middleware=build_agent_middleware(model),
     )
 
 

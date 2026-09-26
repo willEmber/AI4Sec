@@ -28,13 +28,16 @@ from app.db import database as db
 from app.models.agent_models import (
     ACTIVE_RUN_STATUSES,
     AgentEvent,
+    AgentMemory,
     AgentMessage,
     AgentRun,
     AgentSession,
     Availability,
     EventType,
+    MemoryKind,
     MessageRole,
     RunStatus,
+    SessionArtifact,
     SessionPaper,
 )
 from app.models.evidence_models import Evidence, Locator, SourceLevel
@@ -150,6 +153,24 @@ async def set_session_title(session_id: str, title: str) -> None:
         "UPDATE agent_sessions SET title = ?, updated_at = datetime('now') "
         "WHERE session_id = ? AND title = ''",
         (title, session_id),
+    )
+
+
+async def update_session_config(session_id: str, updates: dict[str, Any]) -> None:
+    """Merge keys into `config_json`. Empty values are ignored, not written."""
+    updates = {k: v for k, v in updates.items() if v not in ("", None)}
+    if not updates:
+        return
+    row = await db.fetch_one(
+        "SELECT config_json FROM agent_sessions WHERE session_id = ?", (session_id,)
+    )
+    if row is None:
+        return
+    config = _json_loads(row["config_json"], {})
+    config.update(updates)
+    await db.execute(
+        "UPDATE agent_sessions SET config_json = ? WHERE session_id = ?",
+        (json.dumps(config, ensure_ascii=False), session_id),
     )
 
 
@@ -522,6 +543,141 @@ async def last_event_seq(session_id: str) -> int:
         (session_id,),
     )
     return int(row["seq"]) if row else 0
+
+
+async def count_events(session_id: str, type: EventType) -> int:
+    row = await db.fetch_one(
+        "SELECT COUNT(*) AS n FROM agent_events WHERE session_id = ? AND type = ?",
+        (session_id, type.value),
+    )
+    return int(row["n"]) if row else 0
+
+
+# ── Artifacts ───────────────────────────────────────────────────────────────
+
+
+async def list_session_artifacts(session_id: str, *, limit: int = 100) -> list[SessionArtifact]:
+    """Mode reports announced in this conversation, oldest first.
+
+    Sourced from `artifact.created` events rather than `runs.agent_session_id`
+    alone. A reused report still belongs to the session that first produced it,
+    but this conversation also showed it and must keep the card after a reload.
+    `agent_run_id` is the turn that announced the card here, so it sits under
+    the answer that produced (or reused) it.
+    """
+    rows = await db.fetch_all(
+        """SELECT r.run_id, e.run_id AS agent_run_id, r.paper_id,
+                  COALESCE(p.title, '') AS paper_title,
+                  r.mode, r.language, r.status, e.created_at
+             FROM agent_events e
+             JOIN runs r ON r.run_id = json_extract(e.payload_json, '$.run_id')
+             LEFT JOIN papers p ON p.paper_id = r.paper_id
+            WHERE e.session_id = ? AND e.type = ?
+            ORDER BY e.seq
+            LIMIT ?""",
+        (session_id, EventType.ARTIFACT_CREATED.value, limit),
+    )
+    return [
+        SessionArtifact(
+            run_id=r["run_id"],
+            agent_run_id=r["agent_run_id"] or "",
+            paper_id=r["paper_id"],
+            paper_title=r["paper_title"] or "",
+            mode=r["mode"],
+            language=r["language"] or "en",
+            status=r["status"],
+            created_at=r["created_at"] or "",
+        )
+        for r in rows
+    ]
+
+
+# ── Long-term memory ────────────────────────────────────────────────────────
+
+
+def _row_to_memory(row: dict[str, Any]) -> AgentMemory:
+    try:
+        kind = MemoryKind(row["kind"])
+    except ValueError:
+        kind = MemoryKind.FACT
+    return AgentMemory(
+        memory_id=row["memory_id"],
+        owner_id=row["owner_id"],
+        kind=kind,
+        content=row["content"],
+        source_session_id=row["source_session_id"],
+        source_run_id=row["source_run_id"],
+        active=bool(row["active"]),
+        created_at=row["created_at"],
+        updated_at=row["updated_at"],
+    )
+
+
+async def add_memory(
+    *,
+    owner_id: str,
+    content: str,
+    kind: MemoryKind = MemoryKind.PREFERENCE,
+    source_session_id: str = "",
+    source_run_id: str = "",
+) -> AgentMemory:
+    """Store a memory for a principal.
+
+    Saving the same text twice updates the existing row instead of adding a
+    duplicate — the model tends to re-state a preference it has already kept.
+    """
+    content = content.strip()
+    existing = await db.fetch_one(
+        "SELECT * FROM agent_memories WHERE owner_id = ? AND content = ? AND active = 1",
+        (owner_id, content),
+    )
+    if existing is not None:
+        await db.execute(
+            "UPDATE agent_memories SET kind = ?, updated_at = datetime('now') WHERE memory_id = ?",
+            (kind.value, existing["memory_id"]),
+        )
+        row = await db.fetch_one(
+            "SELECT * FROM agent_memories WHERE memory_id = ?", (existing["memory_id"],)
+        )
+        return _row_to_memory(row)
+
+    memory_id = f"mem_{uuid.uuid4().hex[:20]}"
+    await db.execute(
+        """INSERT INTO agent_memories
+               (memory_id, owner_id, kind, content, source_session_id, source_run_id)
+           VALUES (?, ?, ?, ?, ?, ?)""",
+        (memory_id, owner_id, kind.value, content, source_session_id, source_run_id),
+    )
+    row = await db.fetch_one("SELECT * FROM agent_memories WHERE memory_id = ?", (memory_id,))
+    return _row_to_memory(row)
+
+
+async def list_memories(owner_id: str, *, limit: int = 100) -> list[AgentMemory]:
+    rows = await db.fetch_all(
+        """SELECT * FROM agent_memories
+            WHERE owner_id = ? AND active = 1
+            ORDER BY updated_at DESC, rowid DESC LIMIT ?""",
+        (owner_id, limit),
+    )
+    return [_row_to_memory(r) for r in rows]
+
+
+async def get_memory(memory_id: str, *, owner_id: str) -> AgentMemory | None:
+    row = await db.fetch_one("SELECT * FROM agent_memories WHERE memory_id = ?", (memory_id,))
+    if row is None or row["owner_id"] != owner_id:
+        return None
+    return _row_to_memory(row)
+
+
+async def deactivate_memory(memory_id: str, *, owner_id: str) -> bool:
+    """Forget a memory. Soft-deleted so an audit of a past answer still resolves it."""
+    updated = await db.execute_returning(
+        """UPDATE agent_memories SET active = 0, updated_at = datetime('now')
+            WHERE memory_id = ? AND owner_id = ? AND active = 1
+           RETURNING memory_id""",
+        (memory_id, owner_id),
+    )
+    return updated is not None
 
 
 # ── Session papers ──────────────────────────────────────────────────────────

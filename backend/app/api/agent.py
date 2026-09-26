@@ -24,12 +24,16 @@ from app.api.deps import principal_or_new, require_principal
 from app.db import agent_repository as repo
 from app.db import database as db
 from app.models.agent_models import (
+    AttachPapersRequest,
     Availability,
+    CreateMemoryRequest,
     CreateSessionRequest,
     CreateSessionResponse,
+    EventType,
     MessageRole,
     PostMessageRequest,
     PostMessageResponse,
+    SessionContextStats,
     SessionDetailResponse,
 )
 from app.rate_limit import limiter
@@ -97,7 +101,8 @@ async def create_session(
         owner_id=principal_id,
         title=body.title,
         language=body.language,
-        llm_model=body.llm_model,
+        llm_model=_allowed_model(body.llm_model),
+        config={"owner_token": body.owner_token[:100]} if body.owner_token else None,
     )
     if body.paper_ids:
         await _attach_papers(session.session_id, body.paper_ids)
@@ -106,6 +111,50 @@ async def create_session(
         thread_id=session.thread_id,
         created_at=session.created_at,
     )
+
+
+def _allowed_model(requested: str) -> str:
+    """Only a model the operator listed may be chosen; anything else is the default.
+
+    Same rule as the classic run endpoint: a caller must not be able to point a
+    conversation at an arbitrary — possibly far more expensive — model name.
+    """
+    from app.config import get_settings
+
+    name = (requested or "").strip()
+    allowed = get_settings().thinking_models
+    if name and allowed and name not in allowed:
+        logger.warning("Rejected unknown llm_model=%r for agent session; using default", name)
+        return ""
+    return name
+
+
+@router.post("/sessions/{session_id}/papers")
+@limiter.limit("30/minute")
+async def attach_papers(
+    request: Request,
+    session_id: str,
+    body: AttachPapersRequest,
+    x_agent_token: str = Header(default="", alias=AGENT_TOKEN_HEADER),
+) -> dict[str, Any]:
+    """Attach uploaded PDFs to a session without sending a message.
+
+    This is the upload path inside the conversation: the file goes through the
+    ordinary `/papers/upload`, then is attached here so the sidebar and the
+    next turn's prompt know about it.
+    """
+    principal_id = await require_principal(x_agent_token)
+    try:
+        await repo.get_session(session_id, owner_id=principal_id)
+    except repo.SessionNotFound:
+        raise HTTPException(status_code=404, detail="No such session.") from None
+    attached = await _attach_papers(session_id, body.paper_ids)
+    await repo.touch_session(session_id)
+    return {
+        "session_id": session_id,
+        "attached": attached,
+        "papers": [p.model_dump(mode="json") for p in await repo.list_session_papers(session_id)],
+    }
 
 
 @router.get("/sessions")
@@ -130,11 +179,23 @@ async def get_session(
         session = await repo.get_session(session_id, owner_id=principal_id)
     except repo.SessionNotFound:
         raise HTTPException(status_code=404, detail="No such session.") from None
+    runs = await repo.list_runs(session_id)
+    last_tokens: int | None = None
+    for run in runs:  # newest first
+        tokens = (run.usage or {}).get("tokens")
+        if isinstance(tokens, int):
+            last_tokens = tokens
+            break
     return SessionDetailResponse(
         session=session,
         messages=await repo.list_messages(session_id),
         papers=await repo.list_session_papers(session_id),
-        runs=await repo.list_runs(session_id),
+        runs=runs,
+        artifacts=await repo.list_session_artifacts(session_id),
+        context=SessionContextStats(
+            compactions=await repo.count_events(session_id, EventType.CONTEXT_COMPACTED),
+            last_turn_tokens=last_tokens,
+        ),
         last_event_seq=await repo.last_event_seq(session_id),
     )
 
@@ -160,6 +221,11 @@ async def post_message(
 
     if body.paper_ids:
         await _attach_papers(session_id, body.paper_ids)
+    if body.owner_token and not (session.config or {}).get("owner_token"):
+        # Remembered on the session so mode reports made this turn and later
+        # show up in the browser's compare matrix.
+        await repo.update_session_config(session_id, {"owner_token": body.owner_token[:100]})
+        session = await repo.get_session(session_id, owner_id=principal_id)
 
     try:
         run, deduplicated = await repo.create_run(
@@ -195,10 +261,59 @@ async def post_message(
         content=question,
         run_id=run.run_id,
     )
-    await agent_runner.start_turn(session=session, run=run, question=question)
+    await agent_runner.start_turn(
+        session=session, run=run, question=question, mode=body.mode
+    )
     return PostMessageResponse(
         run_id=run.run_id, session_id=session_id, status=run.status
     )
+
+
+# ── Long-term memory ────────────────────────────────────────────────────────
+
+
+@router.get("/memories")
+async def list_memories(
+    x_agent_token: str = Header(default="", alias=AGENT_TOKEN_HEADER),
+) -> dict[str, Any]:
+    """What the agent remembers about the calling principal."""
+    principal_id = await require_principal(x_agent_token)
+    memories = await repo.list_memories(principal_id)
+    return {"memories": [m.model_dump(mode="json") for m in memories]}
+
+
+@router.post("/memories")
+@limiter.limit("30/minute")
+async def create_memory(
+    request: Request,
+    body: CreateMemoryRequest,
+    x_agent_token: str = Header(default="", alias=AGENT_TOKEN_HEADER),
+) -> dict[str, Any]:
+    """Let the reader add a memory by hand. Same rules as the tool."""
+    from app.agents.tools.memory import MAX_MEMORY_CHARS, looks_like_secret
+
+    principal_id = await require_principal(x_agent_token)
+    content = (body.content or "").strip()
+    if not content:
+        raise HTTPException(status_code=422, detail="content must not be empty.")
+    if len(content) > MAX_MEMORY_CHARS:
+        raise HTTPException(status_code=422, detail=f"content must be under {MAX_MEMORY_CHARS} characters.")
+    if looks_like_secret(content):
+        raise HTTPException(status_code=422, detail="Credentials are never stored.")
+    memory = await repo.add_memory(owner_id=principal_id, content=content, kind=body.kind)
+    return memory.model_dump(mode="json")
+
+
+@router.delete("/memories/{memory_id}")
+async def delete_memory(
+    memory_id: str,
+    x_agent_token: str = Header(default="", alias=AGENT_TOKEN_HEADER),
+) -> dict[str, Any]:
+    principal_id = await require_principal(x_agent_token)
+    removed = await repo.deactivate_memory(memory_id, owner_id=principal_id)
+    if not removed:
+        raise HTTPException(status_code=404, detail="No such memory.")
+    return {"memory_id": memory_id, "deleted": True}
 
 
 @router.post("/runs/{run_id}/cancel")
