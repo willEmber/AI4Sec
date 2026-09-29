@@ -226,7 +226,7 @@ class LLMRankClient:
             return PublicationRankResult(
                 name=publication_name,
                 success=False,
-                error="TAVILY_KEY 配置缺失，无法进行 Tavily 网络搜索",
+                error="TAVILY_API_KEYS（或 TAVILY_KEY）配置缺失，无法进行 Tavily 网络搜索",
             )
 
         try:

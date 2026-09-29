@@ -90,12 +90,19 @@ def compute_evidence_id(
     parse_version: str = "",
     locator: Locator | None = None,
     source_url: str = "",
+    scope: str = "",
 ) -> str:
     """Derive the evidence id from what the evidence *is*.
 
     Deterministic so that reading the same passage twice yields one row rather
     than two, and so that a different quote can never reuse an id an answer has
     already cited.
+
+    `scope`, when given, makes the id private to one owner. Web evidence needs
+    it: two readers running the same web search get the same snippet, and an
+    unscoped id would make the second reader's citation resolve to a row the
+    first reader owns — which the ownership check then refuses. Empty leaves
+    the id exactly as it has always been computed.
     """
     level = source_level.value if isinstance(source_level, SourceLevel) else str(source_level)
     material = "\x1f".join(
@@ -108,6 +115,7 @@ def compute_evidence_id(
             (locator or Locator()).canonical(),
             content_hash(quote),
         ]
+        + ([scope] if scope else [])
     )
     return "ev_" + hashlib.sha1(material.encode("utf-8")).hexdigest()[:20]
 

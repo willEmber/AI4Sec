@@ -3,7 +3,7 @@ from __future__ import annotations
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import Field
+from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings
 
 
@@ -23,8 +23,27 @@ class AppSettings(BaseSettings):
     embed_model: str = Field(default="", alias="EMBED_MODELNAME")
     rerank_model: str = Field(default="", alias="RERANK_MODELNAME")
 
-    # --- Tavily web search (used by publication-rank fallback) ---
-    tavily_api_key: str = Field(default="", alias="TAVILY_KEY")
+    # --- Web search providers (app/services/web_search) ---
+    # Each may hold one key or a comma-separated pool; the pool rotates past a
+    # key that is refused, rate-limited or out of credit. The plural name comes
+    # first; the singular spellings are accepted because deployed `.env` files
+    # use them, and a key that is set but never read fails silently — the
+    # publication-rank Tavily fallback read only `TAVILY_KEY` for that reason
+    # and never ran.
+    tavily_api_keys: str = Field(
+        default="",
+        validation_alias=AliasChoices("TAVILY_API_KEYS", "TAVILY_API_KEY", "TAVILY_KEY"),
+    )
+    exa_api_keys: str = Field(
+        default="", validation_alias=AliasChoices("EXA_API_KEYS", "EXA_API_KEY")
+    )
+    firecrawl_api_keys: str = Field(
+        default="",
+        validation_alias=AliasChoices("FIRECRAWL_API_KEYS", "FIRECRAWL_API_KEY"),
+    )
+    # Off stops every web search and page read: queries leave the machine for
+    # third-party services, which some deployments must not allow.
+    web_search_enabled: bool = Field(default=True, alias="WEB_SEARCH_ENABLED")
 
     # --- Publication rank (EasyScholar) ---
     easyscholar_secret_key: str = Field(default="", alias="EASYSCHOLAR_SECRET_KEY")
@@ -101,6 +120,11 @@ class AppSettings(BaseSettings):
     # most worth tuning per deployment.
     agent_max_downloads: int = Field(default=5, alias="AGENT_MAX_DOWNLOADS")
     agent_max_parses: int = Field(default=3, alias="AGENT_MAX_PARSES")
+    # Web searches and page reads per run. Each spends third-party credit and
+    # sends the query off the machine; neither ends the turn when reached —
+    # the tool refuses and the agent answers from what it has.
+    agent_max_web_searches: int = Field(default=10, alias="AGENT_MAX_WEB_SEARCHES")
+    agent_max_web_fetches: int = Field(default=8, alias="AGENT_MAX_WEB_FETCHES")
     agent_max_tokens: int = Field(default=400_000, alias="AGENT_MAX_TOKENS")
     # Generous because one turn may now download and parse a paper it just
     # found, which a pure reading turn never did.

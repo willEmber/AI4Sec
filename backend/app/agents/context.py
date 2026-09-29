@@ -32,6 +32,10 @@ class RunBudget:
     max_tool_calls: int = 40
     max_downloads: int = 5
     max_parses: int = 3
+    # Soft ceilings: reaching one refuses further web calls but does not end
+    # the run, unlike the ceilings `BudgetUsage.exceeded` checks.
+    max_web_searches: int = 10
+    max_web_fetches: int = 8
     max_tokens: int = 400_000
     max_wall_seconds: int = 1800
 
@@ -40,6 +44,8 @@ class RunBudget:
             "max_tool_calls": self.max_tool_calls,
             "max_downloads": self.max_downloads,
             "max_parses": self.max_parses,
+            "max_web_searches": self.max_web_searches,
+            "max_web_fetches": self.max_web_fetches,
             "max_tokens": self.max_tokens,
             "max_wall_seconds": self.max_wall_seconds,
         }
@@ -65,6 +71,8 @@ class RunBudget:
             "max_tool_calls": settings.agent_max_tool_calls,
             "max_downloads": settings.agent_max_downloads,
             "max_parses": settings.agent_max_parses,
+            "max_web_searches": settings.agent_max_web_searches,
+            "max_web_fetches": settings.agent_max_web_fetches,
             "max_tokens": settings.agent_max_tokens,
             "max_wall_seconds": settings.agent_max_wall_seconds,
         }
@@ -86,6 +94,8 @@ class BudgetUsage:
     tool_calls: int = 0
     downloads: int = 0
     parses: int = 0
+    web_searches: int = 0
+    web_fetches: int = 0
     tokens: int | None = None
     wall_seconds: float = 0.0
     llm_calls: int = 0
@@ -96,6 +106,8 @@ class BudgetUsage:
             "tool_calls": self.tool_calls,
             "downloads": self.downloads,
             "parses": self.parses,
+            "web_searches": self.web_searches,
+            "web_fetches": self.web_fetches,
             "tokens": self.tokens,
             "tokens_known": self.tokens is not None,
             "wall_seconds": round(self.wall_seconds, 2),

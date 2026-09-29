@@ -5,10 +5,11 @@ parameters. Identity, session scope and budgets arrive through
 `ToolRuntime[AgentContext]`, so nothing the model writes — and nothing a paper
 says — can widen what a tool is allowed to touch.
 
-Five groups, in the order a research question tends to move through them:
+Six groups, in the order a research question tends to move through them:
 discovery finds candidates, acquisition turns a candidate into a readable file,
-reading extracts citable evidence from it, modes produce one of the three
-whole-paper reports, and memory keeps what the reader wants remembered. The
+reading extracts citable evidence from it, the web covers what is not a paper,
+modes produce one of the three whole-paper reports, and memory keeps what the
+reader wants remembered. The
 agent is not made to follow that order; tools that happen to be useful early
 are simply listed first.
 """
@@ -46,13 +47,14 @@ from app.agents.tools.reading import (
     read_paper_section,
     search_paper_content,
 )
+from app.agents.tools.web import WEB_TOOLS, read_web_page, web_search
 
 # The nine tools of the development plan's §4 contract, plus the P6 discovery
 # additions (bulk metadata, cross-paper passages, peer review).
 RESEARCH_TOOLS = [*DISCOVERY_TOOLS, *ACQUISITION_TOOLS, *READING_TOOLS]
 
-# Everything the unified agent sees (P5).
-ALL_AGENT_TOOLS = [*RESEARCH_TOOLS, *MODE_TOOLS, *MEMORY_TOOLS]
+# Everything the unified agent sees (P5), plus the open web (P7).
+ALL_AGENT_TOOLS = [*RESEARCH_TOOLS, *WEB_TOOLS, *MODE_TOOLS, *MEMORY_TOOLS]
 
 __all__ = [
     "ACQUISITION_TOOLS",
@@ -62,6 +64,7 @@ __all__ = [
     "MODE_TOOLS",
     "READING_TOOLS",
     "RESEARCH_TOOLS",
+    "WEB_TOOLS",
     "download_paper",
     "ensure_paper_parsed",
     "forget_memory",
@@ -70,6 +73,7 @@ __all__ = [
     "get_peer_reviews",
     "get_related_papers",
     "list_memories",
+    "read_web_page",
     "query_publication_rank",
     "read_paper_section",
     "resolve_paper",
@@ -80,4 +84,5 @@ __all__ = [
     "search_paper_content",
     "search_paper_snippets",
     "search_papers",
+    "web_search",
 ]

@@ -56,6 +56,7 @@ async def _store(
     locator: Locator | None = None,
     source_url: str = "",
     provider: str = "",
+    scope: str = "",
 ) -> Evidence:
     quote = _truncate(quote)
     locator = locator or Locator()
@@ -68,6 +69,7 @@ async def _store(
             parse_version=parse_version,
             locator=locator,
             source_url=source_url,
+            scope=scope,
         ),
         owner_id=owner_id,
         session_id=session_id,
@@ -182,16 +184,25 @@ async def record_web_evidence(
     session_id: str,
     provider: str = "web",
     literature_id: str = "",
+    locator: Locator | None = None,
+    owner_scoped: bool = False,
 ) -> Evidence:
-    """Record an excerpt from a web page or API response."""
+    """Record an excerpt from a web page or API response.
+
+    `owner_scoped` keys the evidence id to the owner as well (see
+    `compute_evidence_id`). General web results set it; they are the evidence
+    two readers are most likely to hit identically.
+    """
     return await _store(
         source_level=SourceLevel.EXTERNAL_WEB,
         quote=quote,
         owner_id=owner_id,
         session_id=session_id,
         literature_id=literature_id,
+        locator=locator,
         source_url=source_url,
         provider=provider,
+        scope=owner_id if owner_scoped else "",
     )
 
 

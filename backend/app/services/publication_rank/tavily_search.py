@@ -6,24 +6,23 @@ Tavily Search API 异步客户端。
 """
 from __future__ import annotations
 
-import asyncio
 import logging
-import random
 from typing import Any
 
-import httpx
-
-from app.config import get_settings
+from app.services.web_search.credentials import TAVILY, web_search_enabled
+from app.services.web_search.http import new_client
+from app.services.web_search.keypool import KeyPool, pool_for, single_key_pool
+from app.services.web_search.providers.tavily import search_raw
 
 logger = logging.getLogger("scholar.tavily")
-
-TAVILY_SEARCH_URL = "https://api.tavily.com/search"
 
 
 class TavilySearchClient:
     """对 Tavily ``/search`` 接口的轻量封装。
 
-    认证使用请求体中的 ``api_key`` 字段（兼容所有 Tavily API 版本）。
+    不显式传 ``api_key`` 时使用进程级 key 池（``TAVILY_API_KEYS``，兼容
+    ``TAVILY_API_KEY`` / ``TAVILY_KEY``）：某个 key 被拒、限流或额度用尽时自动换下一个。
+    以前只读 ``TAVILY_KEY``，而 ``.env`` 里配的是 ``TAVILY_API_KEYS``，这条兜底路径因此从未生效。
     """
 
     def __init__(
@@ -31,28 +30,19 @@ class TavilySearchClient:
         api_key: str | None = None,
         *,
         timeout: float = 30.0,
-        max_retries: int = 2,
-        search_url: str = TAVILY_SEARCH_URL,
+        pool: KeyPool | None = None,
     ):
-        settings = get_settings()
-        self.api_key = (
-            api_key if api_key is not None else settings.tavily_api_key
-        ).strip()
+        if pool is not None:
+            self._pool = pool
+        elif api_key is not None:
+            self._pool = single_key_pool(TAVILY, api_key)
+        else:
+            self._pool = pool_for(TAVILY)
         self.timeout = timeout
-        self.max_retries = max_retries
-        self.search_url = search_url
 
     @property
     def configured(self) -> bool:
-        return bool(self.api_key)
-
-    @staticmethod
-    def _is_retryable(status_code: int) -> bool:
-        return status_code in {408, 429, 500, 502, 503, 504}
-
-    @staticmethod
-    def _compute_delay(attempt: int) -> float:
-        return min(1.0 * (2 ** attempt), 20.0) * random.uniform(0.8, 1.2)
+        return self._pool.configured and web_search_enabled()
 
     async def search(
         self,
@@ -65,46 +55,20 @@ class TavilySearchClient:
         """调用 Tavily 搜索，返回原始 JSON。
 
         Raises:
-            RuntimeError: 未配置 ``TAVILY_KEY``。
-            httpx.HTTPError: 网络或服务端错误（重试耗尽后抛出）。
+            RuntimeError: 未配置 Tavily key，或网页检索已关闭。
+            ProviderError: 所有 key 都不可用，或服务端持续出错。
         """
-        if not self.api_key:
-            raise RuntimeError("TAVILY_KEY 未配置，无法进行 Tavily 网络搜索")
+        if not self.configured:
+            raise RuntimeError("TAVILY_API_KEYS 未配置或网页检索已关闭，无法进行 Tavily 网络搜索")
 
         payload: dict[str, Any] = {
-            "api_key": self.api_key,
             "query": query,
             "max_results": max_results,
             "search_depth": search_depth,
             "include_answer": include_answer,
         }
-        timeout = httpx.Timeout(connect=15.0, read=self.timeout, write=15.0, pool=15.0)
-
-        attempt = 0
-        while True:
-            attempt += 1
-            try:
-                async with httpx.AsyncClient(timeout=timeout) as client:
-                    resp = await client.post(self.search_url, json=payload)
-                if self._is_retryable(resp.status_code) and attempt <= self.max_retries:
-                    delay = self._compute_delay(attempt)
-                    logger.warning(
-                        "Tavily: HTTP %d (attempt %d/%d), retry in %.1fs",
-                        resp.status_code, attempt, self.max_retries, delay,
-                    )
-                    await asyncio.sleep(delay)
-                    continue
-                resp.raise_for_status()
-                return resp.json()
-            except (httpx.ReadTimeout, httpx.ConnectError) as e:
-                if attempt > self.max_retries:
-                    raise
-                delay = self._compute_delay(attempt)
-                logger.warning(
-                    "Tavily: %s (attempt %d/%d), retry in %.1fs",
-                    type(e).__name__, attempt, self.max_retries, delay,
-                )
-                await asyncio.sleep(delay)
+        async with new_client(self.timeout) as client:
+            return await search_raw(client, self._pool, payload)
 
     async def search_context(self, query: str, **kwargs: Any) -> str:
         """搜索并把结果整理为适合喂给 LLM 的纯文本上下文。"""

@@ -487,11 +487,13 @@ def _summarise(data: dict[str, Any]) -> dict[str, Any]:
         "paper_id", "section", "question", "title", "page",
         "query", "venue", "relation", "of_paper", "source", "availability",
         "run_id", "mode", "reused", "report_url", "memory_id", "kind",
+        "url", "domain", "provider", "topic", "cached",
     ):
         if key in data:
             summary[key] = data[key]
     for key in (
         "sections", "hits", "blocks", "results", "papers", "rankings", "unknown_year", "memories",
+        "chunks", "unknown_date",
     ):
         if isinstance(data.get(key), list):
             summary[f"{key}_count"] = len(data[key])
