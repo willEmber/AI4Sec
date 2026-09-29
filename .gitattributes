@@ -1,0 +1,19 @@
+# Every text file is stored and checked out with LF, whatever the editor saves
+# or `core.autocrlf` says. The repo is edited from both WSL and Windows; without
+# this, a file saved with the other line ending shows up as rewritten in full.
+* text=auto eol=lf
+
+# Windows-only scripts need CRLF to run.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.pdf binary
+*.zip binary
+*.woff binary
+*.woff2 binary
