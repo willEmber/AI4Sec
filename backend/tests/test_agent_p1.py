@@ -1,6 +1,6 @@
 """P1: sessions, identity, literature mapping, parse versions and evidence.
 
-Everything runs against a temporary SQLite file with no network access. The
+Everything runs against a throwaway PostgreSQL schema with no network access. The
 exit criteria the development plan sets for P1 are covered directly:
 
 * a candidate paper can be linked to a local PDF (`LiteratureCatalogTests`),
@@ -14,7 +14,6 @@ import asyncio
 import os
 import tempfile
 import unittest
-from pathlib import Path
 
 
 class AgentDataTestCase(unittest.IsolatedAsyncioTestCase):
@@ -28,12 +27,11 @@ class AgentDataTestCase(unittest.IsolatedAsyncioTestCase):
 
         get_settings.cache_clear()
 
-        from app.db.database import init_db, set_db_path
         from app.services import identity
+        from tests.pg_support import open_fresh_database
 
         identity.reset_secret_cache()
-        set_db_path(Path(self._tmp.name) / "app.db")
-        await init_db()
+        await open_fresh_database(self)
 
     async def asyncTearDown(self) -> None:
         os.environ.pop("DATA_DIR", None)
@@ -64,7 +62,8 @@ class MigrationTests(AgentDataTestCase):
         from app.db import database as db
 
         rows = await db.fetch_all(
-            "SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name"
+            "SELECT table_name AS name FROM information_schema.tables "
+            "WHERE table_schema = current_schema() ORDER BY table_name"
         )
         names = {r["name"] for r in rows}
         for table in (
@@ -86,12 +85,10 @@ class MigrationTests(AgentDataTestCase):
         self.assertIn("0001", {r["version"] for r in applied})
 
     async def test_migrations_are_idempotent(self) -> None:
-        import aiosqlite
-
         from app.db import database as db
         from app.db.migrations import apply_migrations
 
-        async with aiosqlite.connect(db.get_db_path()) as conn:
+        async with (await db.open_pool()).connection() as conn:
             second_pass = await apply_migrations(conn)
         self.assertEqual(second_pass, [], "a re-run re-applied a migration")
 

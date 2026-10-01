@@ -9,8 +9,15 @@ keeps it and sends it back; nothing else is trusted. That is enough to isolate
 sessions (acceptance case A16) without building accounts — the development plan
 explicitly allows a server-verified anonymous credential for the first version.
 
-Upgrading later means adding a real `kind='user'` principal and issuing the
-same credential shape after a login; callers keep working unchanged.
+Accounts (P7.5 I2) did not reuse this shape: an account is a `kind='user'`
+principal reached through a login session (`app/services/accounts.py`), and
+this credential proves only an *anonymous* principal that has not been merged
+into one. Once a visitor logs in and their data moves to the account, the old
+credential stops working rather than remaining a second key to it.
+
+`seal` / `unseal` sign short-lived payloads (the event-stream ticket, the OAuth
+state) with keys derived per purpose, so no sealed value can stand in for a
+credential or for a value of another purpose.
 """
 
 from __future__ import annotations
@@ -18,8 +25,10 @@ from __future__ import annotations
 import base64
 import hashlib
 import hmac
+import json
 import logging
 import secrets
+import time
 import uuid
 from pathlib import Path
 
@@ -83,6 +92,44 @@ def _sign(principal_id: str) -> str:
     return base64.urlsafe_b64encode(digest).decode("ascii").rstrip("=")
 
 
+def _b64(data: bytes) -> str:
+    return base64.urlsafe_b64encode(data).decode("ascii").rstrip("=")
+
+
+def _unb64(text: str) -> bytes:
+    return base64.urlsafe_b64decode(text + "=" * (-len(text) % 4))
+
+
+def _purpose_key(purpose: str) -> bytes:
+    return hmac.new(get_secret(), f"seal:{purpose}".encode("utf-8"), hashlib.sha256).digest()
+
+
+def seal(purpose: str, payload: dict, *, ttl_seconds: int) -> str:
+    """Sign `payload` for `purpose`, valid for `ttl_seconds`. Not encrypted."""
+    body = _b64(
+        json.dumps({**payload, "exp": int(time.time()) + ttl_seconds}, separators=(",", ":")).encode()
+    )
+    signature = _b64(hmac.new(_purpose_key(purpose), body.encode("ascii"), hashlib.sha256).digest())
+    return f"{body}.{signature}"
+
+
+def unseal(purpose: str, token: str) -> dict | None:
+    """The payload `seal` signed for this purpose, or `None` if forged or expired."""
+    body, _, signature = (token or "").strip().rpartition(".")
+    if not body or not signature:
+        return None
+    expected = _b64(hmac.new(_purpose_key(purpose), body.encode("ascii"), hashlib.sha256).digest())
+    if not hmac.compare_digest(signature, expected):
+        return None
+    try:
+        payload = json.loads(_unb64(body))
+    except (ValueError, json.JSONDecodeError):
+        return None
+    if not isinstance(payload, dict) or int(payload.get("exp") or 0) < time.time():
+        return None
+    return payload
+
+
 def issue_credential(principal_id: str) -> str:
     """Return the signed credential for a principal."""
     return f"{principal_id}.{_sign(principal_id)}"
@@ -106,31 +153,37 @@ def verify_credential(token: str) -> str | None:
 
 
 async def create_principal(kind: str = "anonymous", label: str = "") -> tuple[str, str]:
-    """Create a principal row and return `(principal_id, credential)`."""
+    """Create a principal row and return `(principal_id, credential)`.
+
+    Only an anonymous principal gets a credential; an account is reached through
+    a login session, so its credential is `""`.
+    """
     principal_id = f"pr_{uuid.uuid4().hex[:24]}"
     await db.execute(
         "INSERT INTO agent_principals (principal_id, kind, label) VALUES (?, ?, ?)",
         (principal_id, kind, label),
     )
-    return principal_id, issue_credential(principal_id)
+    return principal_id, issue_credential(principal_id) if kind == "anonymous" else ""
 
 
 async def resolve_principal(token: str) -> str | None:
     """Verify a credential and confirm the principal still exists.
 
     A valid signature over a deleted principal is rejected: the signature proves
-    the server issued the id, not that the id is still in use.
+    the server issued the id, not that the id is still in use. So is one over an
+    account, or over an anonymous principal already merged into an account —
+    the signature is not a key to either.
     """
     principal_id = verify_credential(token)
     if principal_id is None:
         return None
     row = await db.fetch_one(
-        "SELECT principal_id FROM agent_principals WHERE principal_id = ?", (principal_id,)
+        "SELECT kind, merged_into FROM agent_principals WHERE principal_id = ?", (principal_id,)
     )
-    if row is None:
+    if row is None or row["kind"] != "anonymous" or row["merged_into"]:
         return None
     await db.execute(
-        "UPDATE agent_principals SET last_seen_at = datetime('now') WHERE principal_id = ?",
+        "UPDATE agent_principals SET last_seen_at = now() WHERE principal_id = ?",
         (principal_id,),
     )
     return principal_id

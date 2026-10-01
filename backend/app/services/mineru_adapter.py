@@ -5,7 +5,6 @@ import json
 import logging
 import random
 import shutil
-import sqlite3
 import time
 import zipfile
 from pathlib import Path
@@ -209,7 +208,7 @@ def _update_parse_poll_sync(
     if not parse_id:
         return
 
-    assignments = ["updated_at = datetime('now')"]
+    assignments = ["updated_at = now()"]
     params: list[Any] = []
     if remote_batch_id:
         assignments.append("remote_batch_id = ?")
@@ -220,28 +219,19 @@ def _update_parse_poll_sync(
     if state_counts is not None:
         assignments.append("last_state_counts = ?")
         params.append(json.dumps(state_counts, ensure_ascii=True))
-        assignments.append("last_poll_at = datetime('now')")
+        assignments.append("last_poll_at = now()")
 
     params.append(parse_id)
-    conn: sqlite3.Connection | None = None
+    # Runs on the polling thread, which has no event loop, so it cannot borrow
+    # from the async pool. Diagnostics only: a failed write must not fail the
+    # parse it describes.
     try:
-        conn = sqlite3.connect(db.get_db_path(), timeout=10)
-        # busy_timeout, not journal_mode: this connection is opened once per
-        # poll on the shared database, and `PRAGMA journal_mode=WAL` takes a
-        # brief exclusive lock that does *not* honour busy_timeout — so the
-        # pragma itself becomes the statement that raises "database is locked".
-        # WAL is already set once, in `init_db`.
-        conn.execute("PRAGMA busy_timeout=10000")
-        conn.execute(
+        db.execute_sync(
             f"UPDATE mineru_parses SET {', '.join(assignments)} WHERE parse_id = ?",
             params,
         )
-        conn.commit()
     except Exception as exc:
         logger.debug("MinerU poll metadata update skipped parse_id=%s: %s", parse_id, exc)
-    finally:
-        if conn is not None:
-            conn.close()
 
 
 def _poll_until_done_sync(
@@ -322,20 +312,20 @@ async def parse_pdf(paper_id: str, parse_id: str) -> Path:
     output_dir.mkdir(parents=True, exist_ok=True)
 
     await db.execute(
-        "UPDATE mineru_parses SET status = 'running', updated_at = datetime('now') WHERE parse_id = ?",
+        "UPDATE mineru_parses SET status = 'running', updated_at = now() WHERE parse_id = ?",
         (parse_id,),
     )
 
     try:
         result_dir = await asyncio.to_thread(_parse_pdf_sync, pdf_path, output_dir, paper_id, parse_id)
         await db.execute(
-            "UPDATE mineru_parses SET status = 'done', output_dir = ?, updated_at = datetime('now') WHERE parse_id = ?",
+            "UPDATE mineru_parses SET status = 'done', output_dir = ?, updated_at = now() WHERE parse_id = ?",
             (str(result_dir), parse_id),
         )
         return result_dir
     except Exception as e:
         await db.execute(
-            "UPDATE mineru_parses SET status = 'failed', error_msg = ?, updated_at = datetime('now') WHERE parse_id = ?",
+            "UPDATE mineru_parses SET status = 'failed', error_msg = ?, updated_at = now() WHERE parse_id = ?",
             (str(e), parse_id),
         )
         raise
@@ -443,7 +433,7 @@ async def resume_parse(paper_id: str, parse_id: str, batch_id: str) -> Path:
     output_dir.mkdir(parents=True, exist_ok=True)
 
     await db.execute(
-        "UPDATE mineru_parses SET status = 'running', updated_at = datetime('now') "
+        "UPDATE mineru_parses SET status = 'running', updated_at = now() "
         "WHERE parse_id = ?",
         (parse_id,),
     )
@@ -454,13 +444,13 @@ async def resume_parse(paper_id: str, parse_id: str, batch_id: str) -> Path:
     except Exception as exc:
         await db.execute(
             "UPDATE mineru_parses SET status = 'failed', error_msg = ?, "
-            "updated_at = datetime('now') WHERE parse_id = ?",
+            "updated_at = now() WHERE parse_id = ?",
             (str(exc), parse_id),
         )
         raise
     await db.execute(
         "UPDATE mineru_parses SET status = 'done', output_dir = ?, "
-        "updated_at = datetime('now') WHERE parse_id = ?",
+        "updated_at = now() WHERE parse_id = ?",
         (str(result_dir), parse_id),
     )
     return result_dir
@@ -487,7 +477,7 @@ async def parse_pdf_batch(paper_ids: list[str], parse_ids: list[str]) -> list[Pa
 
     for parse_id in parse_ids:
         await db.execute(
-            "UPDATE mineru_parses SET status = 'running', updated_at = datetime('now') WHERE parse_id = ?",
+            "UPDATE mineru_parses SET status = 'running', updated_at = now() WHERE parse_id = ?",
             (parse_id,),
         )
 
@@ -551,12 +541,12 @@ async def parse_pdf_batch(paper_ids: list[str], parse_ids: list[str]) -> list[Pa
         has_content = (result_dir / "content_list.json").exists() or list(result_dir.glob("**/content_list.json"))
         if has_content:
             await db.execute(
-                "UPDATE mineru_parses SET status = 'done', output_dir = ?, updated_at = datetime('now') WHERE parse_id = ?",
+                "UPDATE mineru_parses SET status = 'done', output_dir = ?, updated_at = now() WHERE parse_id = ?",
                 (str(result_dir), parse_id),
             )
         else:
             await db.execute(
-                "UPDATE mineru_parses SET status = 'failed', error_msg = 'No content_list.json found', updated_at = datetime('now') WHERE parse_id = ?",
+                "UPDATE mineru_parses SET status = 'failed', error_msg = 'No content_list.json found', updated_at = now() WHERE parse_id = ?",
                 (parse_id,),
             )
 

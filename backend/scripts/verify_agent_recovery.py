@@ -86,10 +86,13 @@ class StallingModel:
 class Server:
     """One uvicorn process, killable the way a crash kills one."""
 
-    def __init__(self, *, data_dir: Path, model_port: int, secret: str, role: str) -> None:
+    def __init__(
+        self, *, data_dir: Path, db_url: str, model_port: int, secret: str, role: str
+    ) -> None:
         self.port = _free_port()
         self.base = f"http://127.0.0.1:{self.port}/api"
         self._data_dir = data_dir
+        self._db_url = db_url
         self._model_port = model_port
         self._secret = secret
         self._proc: subprocess.Popen[bytes] | None = None
@@ -100,6 +103,9 @@ class Server:
         env = {
             **os.environ,
             "DATA_DIR": str(self._data_dir),
+            # Both processes share one throwaway schema, as two instances of a
+            # deployment share one database.
+            "DATABASE_URL": self._db_url,
             "LLM_BASEURL": f"http://127.0.0.1:{self._model_port}/v1",
             "LLM_APIKEY": "drill",
             "THINKING_MODELNAME": "stall-model",
@@ -117,7 +123,9 @@ class Server:
             cwd=str(BACKEND_DIR), env=env, stdout=self._log, stderr=subprocess.STDOUT,
         )
 
-    async def wait_ready(self, timeout: float = 60.0) -> None:
+    async def wait_ready(self, timeout: float = 180.0) -> None:
+        # Generous: a cold import of the agent stack on a WSL /mnt checkout
+        # alone takes over a minute.
         deadline = time.monotonic() + timeout
         async with httpx.AsyncClient(timeout=5) as client:
             while time.monotonic() < deadline:
@@ -162,33 +170,66 @@ class Drill:
         return all(passed for passed, _ in self.results.values())
 
 
-async def _sql(data_dir: Path, sql: str, params: tuple[Any, ...] = ()) -> list[dict[str, Any]]:
+async def _sql(db_url: str, sql: str, params: tuple[Any, ...] = ()) -> list[dict[str, Any]]:
     """Read the database the servers share, from outside either of them."""
-    import aiosqlite
+    import psycopg
+    from psycopg.rows import dict_row
 
-    async with aiosqlite.connect(data_dir / "app.db") as conn:
-        conn.row_factory = aiosqlite.Row
-        async with conn.execute(sql, params) as cursor:
-            return [dict(r) for r in await cursor.fetchall()]
+    from app.db.database import to_pg_sql
+
+    async with await psycopg.AsyncConnection.connect(db_url, row_factory=dict_row) as conn:
+        cursor = await conn.execute(to_pg_sql(sql), params)
+        return list(await cursor.fetchall())
 
 
-async def _exec(data_dir: Path, sql: str, params: tuple[Any, ...] = ()) -> None:
-    import aiosqlite
+async def _exec(db_url: str, sql: str, params: tuple[Any, ...] = ()) -> None:
+    import psycopg
 
-    async with aiosqlite.connect(data_dir / "app.db") as conn:
-        await conn.execute(sql, params)
-        await conn.commit()
+    from app.db.database import to_pg_sql
+
+    async with await psycopg.AsyncConnection.connect(db_url) as conn:
+        await conn.execute(to_pg_sql(sql), params)
+
+
+def _create_drill_schema() -> tuple[str, str]:
+    """A fresh schema in DATABASE_URL's database, and a URL scoped to it."""
+    import uuid
+
+    import psycopg
+    from psycopg.conninfo import conninfo_to_dict, make_conninfo
+
+    from app.config import get_settings
+
+    base = get_settings().database_url
+    schema = f"drill_{uuid.uuid4().hex[:12]}"
+    with psycopg.connect(base, autocommit=True) as conn:
+        conn.execute(f'CREATE SCHEMA "{schema}"')
+    params = conninfo_to_dict(base)
+    options = f"{params.pop('options', '') or ''} -c search_path={schema},public".strip()
+    return schema, make_conninfo(**params, options=options)
+
+
+def _drop_drill_schema(schema: str) -> None:
+    import psycopg
+
+    from app.config import get_settings
+
+    with psycopg.connect(get_settings().database_url, autocommit=True) as conn:
+        conn.execute(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE')
 
 
 async def main() -> int:
     drill = Drill()
     tmp = tempfile.TemporaryDirectory()
     data_dir = Path(tmp.name)
+    schema, db_url = _create_drill_schema()
     model = StallingModel()
     await model.start()
     secret = "recovery-drill-secret"
 
-    first = Server(data_dir=data_dir, model_port=model.port, secret=secret, role="first")
+    first = Server(
+        data_dir=data_dir, db_url=db_url, model_port=model.port, secret=secret, role="first"
+    )
     second: Server | None = None
     try:
         print("── booting the first server ──", flush=True)
@@ -216,14 +257,14 @@ async def main() -> int:
                 f"run={run_id}",
             )
             messages = await _sql(
-                data_dir, "SELECT * FROM agent_messages WHERE session_id = ? AND role = 'user'",
+                db_url, "SELECT * FROM agent_messages WHERE session_id = ? AND role = 'user'",
                 (session_id,),
             )
             drill.check("duplicate_request_stored_one_message", len(messages) == 1)
 
             # The turn is now blocked on a provider that will never answer.
             await asyncio.sleep(3)
-            rows = await _sql(data_dir, "SELECT * FROM agent_runs WHERE run_id = ?", (run_id,))
+            rows = await _sql(db_url, "SELECT * FROM agent_runs WHERE run_id = ?", (run_id,))
             drill.check(
                 "turn_is_in_flight_when_killed",
                 bool(rows) and rows[0]["status"] == "running" and bool(rows[0]["worker_id"]),
@@ -231,15 +272,15 @@ async def main() -> int:
             )
 
             # ── A13 groundwork: a parse whose batch was already submitted ────
-            await _exec(data_dir,
+            await _exec(db_url,
                 "INSERT INTO papers (paper_id, file_path, title) VALUES ('drillpaper', 'x', 'Drill')")
             pdf = data_dir / "papers" / "drillpaper" / "original.pdf"
             pdf.parent.mkdir(parents=True, exist_ok=True)
             pdf.write_bytes(b"%PDF-1.4\n")
-            await _exec(data_dir,
+            await _exec(db_url,
                 "INSERT INTO mineru_parses (parse_id, paper_id, status, remote_batch_id) "
                 "VALUES ('drill-parse', 'drillpaper', 'running', 'drill-batch-42')")
-            await _exec(data_dir,
+            await _exec(db_url,
                 """INSERT INTO agent_jobs
                        (job_id, kind, idempotency_key, session_id, status, attempts,
                         lease_owner, lease_expires_at, remote_id, request_json)
@@ -251,7 +292,9 @@ async def main() -> int:
         first.kill()
 
         print("── booting the second server on the same data ──", flush=True)
-        second = Server(data_dir=data_dir, model_port=model.port, secret=secret, role="second")
+        second = Server(
+            data_dir=data_dir, db_url=db_url, model_port=model.port, secret=secret, role="second"
+        )
         second.start()
         await second.wait_ready()
 
@@ -261,7 +304,7 @@ async def main() -> int:
         status = ""
         error_code = ""
         while time.monotonic() < deadline:
-            rows = await _sql(data_dir, "SELECT * FROM agent_runs WHERE run_id = ?", (run_id,))
+            rows = await _sql(db_url, "SELECT * FROM agent_runs WHERE run_id = ?", (run_id,))
             status, error_code = rows[0]["status"], rows[0]["error_code"]
             if status not in ("pending", "running"):
                 break
@@ -327,7 +370,7 @@ async def main() -> int:
                     at = time.monotonic()
                     while time.monotonic() - at < 40:
                         rows = await _sql(
-                            data_dir, "SELECT status FROM agent_runs WHERE run_id = ?",
+                            db_url, "SELECT status FROM agent_runs WHERE run_id = ?",
                             (new_run,),
                         )
                         if rows and rows[0]["status"] not in ("pending", "running"):
@@ -372,9 +415,9 @@ async def main() -> int:
                 )
 
         # ── A13: the parse was rejoined, not resubmitted ─────────────────────
-        parses = await _sql(data_dir,
+        parses = await _sql(db_url,
             "SELECT * FROM mineru_parses WHERE paper_id = 'drillpaper'")
-        job = (await _sql(data_dir, "SELECT * FROM agent_jobs WHERE job_id = 'drill-job'"))[0]
+        job = (await _sql(db_url, "SELECT * FROM agent_jobs WHERE job_id = 'drill-job'"))[0]
         drill.check(
             "recovery_did_not_resubmit_the_parse",
             len(parses) == 1 and parses[0]["parse_id"] == "drill-parse",
@@ -408,6 +451,7 @@ async def main() -> int:
             (out.parent / log.name).write_bytes(log.read_bytes())
         print(f"\nreport: {out.relative_to(BACKEND_DIR)}", flush=True)
         tmp.cleanup()
+        _drop_drill_schema(schema)
 
     print("\n" + ("ALL DRILLS PASSED" if drill.ok else "SOME DRILLS FAILED"), flush=True)
     return 0 if drill.ok else 1

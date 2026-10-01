@@ -1,11 +1,15 @@
 /**
  * Client for the agent session API.
  *
- * Identity is a credential the *server* signs, unlike the browser-generated
+ * Identity is a credential the *server* issues, unlike the browser-generated
  * `owner_token` used elsewhere: anyone can send any owner_token, so it can
- * scope a list but cannot decide who may read a session. Creating a session
- * mints the credential and returns it in the `X-Agent-Token` response header;
- * every later call sends it back.
+ * scope a list but cannot decide who may read a session. The credential lives
+ * in an HttpOnly cookie (`scholar_auth`) that every same-origin `/api` call
+ * carries — a login session, or an anonymous one minted on first use.
+ *
+ * Before accounts the credential was kept in localStorage and sent as the
+ * `X-Agent-Token` header. A browser that still has one sends it until the
+ * server has copied it into the cookie, then forgets it.
  */
 
 import { getOwnerToken } from "./owner";
@@ -19,6 +23,40 @@ const BACKEND_SSE_BASE =
 
 const AGENT_TOKEN_KEY = "scholar_agent_token";
 export const AGENT_TOKEN_HEADER = "X-Agent-Token";
+
+/** An API failure with the server's error code, when it sent one. */
+export class AgentApiError extends Error {
+  constructor(
+    readonly status: number,
+    readonly code: string,
+    message: string,
+    readonly detail: Record<string, unknown> = {},
+  ) {
+    super(message);
+    this.name = "AgentApiError";
+  }
+}
+
+/** Turn a failed response into an `AgentApiError`, keeping `detail.code`. */
+export async function apiErrorFrom(res: Response): Promise<AgentApiError> {
+  const text = await res.text();
+  let detail: unknown = text;
+  try {
+    detail = (JSON.parse(text) as { detail?: unknown }).detail ?? text;
+  } catch {
+    // Not JSON; keep the text.
+  }
+  if (detail && typeof detail === "object") {
+    const d = detail as Record<string, unknown>;
+    return new AgentApiError(
+      res.status,
+      String(d.code || ""),
+      String(d.message || `API ${res.status}`),
+      d,
+    );
+  }
+  return new AgentApiError(res.status, "", `API ${res.status}: ${String(detail)}`);
+}
 
 export type EventType =
   | "run.started"
@@ -210,7 +248,10 @@ export interface Evidence {
   };
 }
 
-/** Read the stored credential. Returns "" during SSR or when storage is blocked. */
+/**
+ * The pre-accounts credential, if this browser still holds one. Returns ""
+ * during SSR or when storage is blocked. Nothing new is ever stored here.
+ */
 export function getAgentToken(): string {
   if (typeof window === "undefined") return "";
   try {
@@ -220,13 +261,13 @@ export function getAgentToken(): string {
   }
 }
 
-function storeAgentToken(token: string): void {
-  if (!token || typeof window === "undefined") return;
+/** Drop the pre-accounts credential once the cookie carries the identity. */
+export function forgetLegacyAgentToken(): void {
+  if (typeof window === "undefined") return;
   try {
-    window.localStorage.setItem(AGENT_TOKEN_KEY, token);
+    window.localStorage.removeItem(AGENT_TOKEN_KEY);
   } catch {
-    // Private mode: the credential lives for this page only. The session still
-    // works; it just will not be recoverable after a reload.
+    // Storage blocked: there was nothing stored either.
   }
 }
 
@@ -241,16 +282,12 @@ async function agentRequest<T>(
     headers.set("Content-Type", "application/json");
   }
 
-  const res = await fetch(`${API_BASE}${path}`, { ...init, headers });
-
-  // A minted credential arrives on the response, not in the body.
-  const issued = res.headers.get(AGENT_TOKEN_HEADER);
-  if (issued) storeAgentToken(issued);
-
-  if (!res.ok) {
-    const body = await res.text();
-    throw new Error(`API ${res.status}: ${body}`);
-  }
+  const res = await fetch(`${API_BASE}${path}`, {
+    ...init,
+    headers,
+    credentials: "same-origin",
+  });
+  if (!res.ok) throw await apiErrorFrom(res);
   return res.json();
 }
 
@@ -365,14 +402,17 @@ export async function getEvidence(evidenceId: string): Promise<Evidence> {
 /**
  * URL for a run's event stream.
  *
- * `EventSource` cannot set headers, so the credential goes in the query string
- * and `after` carries the resume point. Both are what the backend expects.
+ * The stream goes straight to the backend, where the same-origin cookie does
+ * not reach, and `EventSource` cannot set headers. So each (re)connect first
+ * asks — through the proxy, with the cookie — for a ticket that opens this one
+ * run for a few minutes; `after` carries the resume point.
  */
-export function getEventStreamUrl(runId: string, afterSeq = 0): string {
-  const params = new URLSearchParams({
-    after: String(afterSeq),
-    token: getAgentToken(),
-  });
+export async function getEventStreamUrl(runId: string, afterSeq = 0): Promise<string> {
+  const { ticket } = await agentRequest<{ ticket: string }>(
+    `/agent/runs/${runId}/stream-ticket`,
+    { method: "POST" },
+  );
+  const params = new URLSearchParams({ after: String(afterSeq), ticket });
   return `${BACKEND_SSE_BASE}/api/agent/runs/${runId}/events?${params}`;
 }
 

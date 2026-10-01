@@ -348,6 +348,10 @@ class UnifiedApiTests(unittest.TestCase):
     def setUp(self) -> None:
         self._tmp = tempfile.TemporaryDirectory()
         os.environ["DATA_DIR"] = self._tmp.name
+
+        from tests.pg_support import use_database_env
+
+        use_database_env(self)
         from app.config import get_settings
 
         get_settings.cache_clear()

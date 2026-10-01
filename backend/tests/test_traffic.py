@@ -2,29 +2,22 @@
 from __future__ import annotations
 
 import hashlib
-import sqlite3
-import tempfile
 import unittest
-from pathlib import Path
 
 import httpx
 
 
 class TrafficTrackingTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self) -> None:
-        self._tmp = tempfile.TemporaryDirectory()
-        self.db_file = Path(self._tmp.name) / "app.db"
-        from app.db import database as db
         from app.main import app
+        from tests.pg_support import open_fresh_database
 
-        db.set_db_path(self.db_file)
-        await db.init_db()
+        await open_fresh_database(self)
         transport = httpx.ASGITransport(app=app)
         self.client = httpx.AsyncClient(transport=transport, base_url="http://test")
 
     async def asyncTearDown(self) -> None:
         await self.client.aclose()
-        self._tmp.cleanup()
 
     async def _visit(self, owner_token: str, path: str = "/") -> httpx.Response:
         return await self.client.post(
@@ -37,14 +30,15 @@ class TrafficTrackingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((await self._visit("browser-a", "/upload")).status_code, 200)
         self.assertEqual((await self._visit("browser-b", "/library")).status_code, 200)
 
-        con = sqlite3.connect(self.db_file)
-        try:
-            rows = con.execute(
+        from app.db import database as db
+
+        rows = [
+            (r["visitor_hash"], r["visit_count"], r["last_path"])
+            for r in await db.fetch_all(
                 "SELECT visitor_hash, visit_count, last_path "
                 "FROM traffic_visitors ORDER BY visitor_hash"
-            ).fetchall()
-        finally:
-            con.close()
+            )
+        ]
 
         self.assertEqual(len(rows), 2)
         by_hash = {row[0]: (row[1], row[2]) for row in rows}

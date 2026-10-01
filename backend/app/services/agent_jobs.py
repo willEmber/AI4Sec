@@ -88,9 +88,13 @@ def _lease_is_live(expires_at: str | None) -> bool:
     if not expires_at:
         return False
     try:
-        return datetime.fromisoformat(expires_at) > _now()
+        expires = datetime.fromisoformat(expires_at)
     except ValueError:
         return False
+    # The database hands timestamps back as naive UTC.
+    if expires.tzinfo is None:
+        expires = expires.replace(tzinfo=timezone.utc)
+    return expires > _now()
 
 
 async def get_job(idempotency_key: str) -> dict[str, Any] | None:
@@ -134,7 +138,7 @@ async def release_lease(job_id: str) -> None:
     await db.execute(
         """UPDATE agent_jobs
               SET status = 'pending', lease_owner = '', lease_expires_at = NULL,
-                  updated_at = datetime('now')
+                  updated_at = now()
             WHERE job_id = ? AND status = 'running'""",
         (job_id,),
     )
@@ -143,7 +147,7 @@ async def release_lease(job_id: str) -> None:
 async def set_remote_id(job_id: str, remote_id: str) -> None:
     """Record the external task id, so a restart can query it instead of resubmitting."""
     await db.execute(
-        "UPDATE agent_jobs SET remote_id = ?, updated_at = datetime('now') WHERE job_id = ?",
+        "UPDATE agent_jobs SET remote_id = ?, updated_at = now() WHERE job_id = ?",
         (remote_id, job_id),
     )
 
@@ -169,7 +173,7 @@ async def forget(idempotency_key: str) -> bool:
 
 async def renew_lease(job_id: str) -> None:
     await db.execute(
-        "UPDATE agent_jobs SET lease_expires_at = ?, updated_at = datetime('now') "
+        "UPDATE agent_jobs SET lease_expires_at = ?, updated_at = now() "
         "WHERE job_id = ?",
         (_lease_expiry(), job_id),
     )
@@ -192,14 +196,15 @@ async def _claim(
     failed or whose lease has lapsed.
     """
     job_id = f"job_{uuid.uuid4().hex[:20]}"
-    # RETURNING makes the outcome observable: `INSERT OR IGNORE` yields a row
+    # RETURNING makes the outcome observable: `ON CONFLICT DO NOTHING` yields a row
     # only when it actually inserted, which is how the winner of the race is
     # decided without a separate read.
     inserted = await db.execute_returning(
-        """INSERT OR IGNORE INTO agent_jobs
+        """INSERT INTO agent_jobs
                (job_id, kind, idempotency_key, session_id, run_id, status,
                 attempts, lease_owner, lease_expires_at, request_json)
            VALUES (?, ?, ?, ?, ?, 'running', 1, ?, ?, ?)
+           ON CONFLICT DO NOTHING
            RETURNING job_id""",
         (
             job_id,
@@ -233,7 +238,7 @@ async def _claim(
     claimed = await db.execute_returning(
         """UPDATE agent_jobs
               SET status = 'running', attempts = ?, lease_owner = ?,
-                  lease_expires_at = ?, run_id = ?, updated_at = datetime('now')
+                  lease_expires_at = ?, run_id = ?, updated_at = now()
             WHERE job_id = ? AND status <> 'done'
               AND (status <> 'running' OR lease_expires_at < ?)
            RETURNING job_id""",
@@ -259,7 +264,7 @@ async def _finish(
         """UPDATE agent_jobs
               SET status = ?, result_json = ?, error_code = ?, error_msg = ?,
                   lease_owner = '', lease_expires_at = NULL,
-                  updated_at = datetime('now')
+                  updated_at = now()
             WHERE job_id = ?""",
         (
             status,

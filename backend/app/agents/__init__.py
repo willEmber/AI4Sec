@@ -15,7 +15,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:  # pragma: no cover - import-time typing only
-    from app.agents.checkpointer import agent_checkpoint_db_path, open_checkpointer
+    from app.agents.checkpointer import open_checkpointer
     from app.agents.harness import (
         BUILTIN_HOST_TOOLS,
         DELEGATION_TOOL,
@@ -31,7 +31,6 @@ if TYPE_CHECKING:  # pragma: no cover - import-time typing only
     )
 
 _EXPORTS = {
-    "agent_checkpoint_db_path": "app.agents.checkpointer",
     "open_checkpointer": "app.agents.checkpointer",
     "BUILTIN_HOST_TOOLS": "app.agents.harness",
     "DELEGATION_TOOL": "app.agents.harness",

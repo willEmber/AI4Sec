@@ -72,12 +72,11 @@ class AgentP2TestCase(unittest.IsolatedAsyncioTestCase):
 
         get_settings.cache_clear()
 
-        from app.db.database import init_db, set_db_path
         from app.services import identity
+        from tests.pg_support import open_fresh_database
 
         identity.reset_secret_cache()
-        set_db_path(Path(self._tmp.name) / "app.db")
-        await init_db()
+        await open_fresh_database(self)
 
         from app.db import agent_repository as repo
 
@@ -394,6 +393,10 @@ class AgentApiTests(unittest.TestCase):
     def setUp(self) -> None:
         self._tmp = tempfile.TemporaryDirectory()
         os.environ["DATA_DIR"] = self._tmp.name
+
+        from tests.pg_support import use_database_env
+
+        use_database_env(self)
 
         from app.config import get_settings
 

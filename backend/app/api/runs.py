@@ -7,15 +7,17 @@ import time
 import uuid
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import Response, StreamingResponse
 from langgraph.graph.state import CompiledStateGraph
 
+from app.api.deps import optional_caller, principal_or_new
 from app.config import get_settings
 from app.db import database as db
 from app.rate_limit import limiter
 from app.models.schemas import RecentRunResponse, RunCreate, RunOutputResponse, RunResponse
 from app.services import report_images, zotero_export
+from app.services.accounts import Caller
 from app.workflows.main_graph import build_main_graph
 from app.workflows.progress import emit_progress
 from app.workflows.state import MainGraphState
@@ -63,16 +65,18 @@ async def _reconcile_stale_runs() -> None:
     await db.execute(
         "UPDATE runs SET status = 'failed', "
         "error_msg = 'Interrupted (task no longer running)', "
-        "finished_at = datetime('now') "
+        "finished_at = now() "
         "WHERE status IN ('pending', 'running') "
-        "AND started_at < datetime('now', ?)",
-        (f"-{_STALE_RUN_SECONDS} seconds",),
+        "AND started_at < now() - make_interval(secs => ?)",
+        (_STALE_RUN_SECONDS,),
     )
 
 
 @router.post("/runs", response_model=RunResponse)
 @limiter.limit("3/minute")
-async def create_run(request: Request, req: RunCreate):
+async def create_run(
+    request: Request, req: RunCreate, principal_id: str = Depends(principal_or_new)
+):
     # Verify paper exists
     paper = await db.fetch_one("SELECT paper_id FROM papers WHERE paper_id = ?", (req.paper_id,))
     if not paper:
@@ -99,9 +103,9 @@ async def create_run(request: Request, req: RunCreate):
 
     run_id = uuid.uuid4().hex[:16]
     await db.execute(
-        "INSERT INTO runs (run_id, paper_id, mode, llm_model, language, status, user_question, owner_token) "
-        "VALUES (?, ?, ?, ?, ?, 'pending', ?, ?)",
-        (run_id, req.paper_id, mode, llm_model, language, question, owner_token),
+        "INSERT INTO runs (run_id, paper_id, mode, llm_model, language, status, user_question, "
+        "owner_token, owner_id) VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?)",
+        (run_id, req.paper_id, mode, llm_model, language, question, owner_token, principal_id),
     )
 
     # Create queue for SSE
@@ -134,7 +138,7 @@ async def _execute_run(
     except asyncio.TimeoutError:
         logger.warning(f"[run:{run_id}] Timed out waiting for execution slot")
         await db.execute(
-            "UPDATE runs SET status = 'failed', error_msg = 'Server busy, please retry later', finished_at = datetime('now') WHERE run_id = ?",
+            "UPDATE runs SET status = 'failed', error_msg = 'Server busy, please retry later', finished_at = now() WHERE run_id = ?",
             (run_id,),
         )
         if queue:
@@ -145,7 +149,7 @@ async def _execute_run(
     t0 = time.perf_counter()
     try:
         await db.execute(
-            "UPDATE runs SET status = 'running', started_at = datetime('now') WHERE run_id = ?",
+            "UPDATE runs SET status = 'running', started_at = now() WHERE run_id = ?",
             (run_id,),
         )
 
@@ -201,7 +205,7 @@ async def _execute_run(
         elapsed = time.perf_counter() - t0
         logger.exception(f"[run:{run_id}] ✗ Graph exception at {elapsed:.1f}s — {e}")
         await db.execute(
-            "UPDATE runs SET status = 'failed', error_msg = ?, finished_at = datetime('now') WHERE run_id = ?",
+            "UPDATE runs SET status = 'failed', error_msg = ?, finished_at = now() WHERE run_id = ?",
             (str(e), run_id),
         )
         if queue:
@@ -220,11 +224,14 @@ async def list_recent_runs(
     owner_token: str = "",
     limit: int = 20,
     active_only: bool = False,
+    caller: Caller | None = Depends(optional_caller),
 ):
-    """Recent runs for one browser (scoped by `owner_token`), with paper title.
+    """Recent runs for the caller, with paper title.
 
-    Runs are scoped to the caller's `owner_token` so one browser never sees
-    another's tasks. When `active_only=true`, only pending/running runs are
+    Scoped by the server-verified principal (`owner_id`). Runs made before
+    accounts carry only the browser's `owner_token`; the first principal that
+    lists them with that token adopts them, which grants nothing the token did
+    not already grant. When `active_only=true`, only pending/running runs are
     returned — used by the upload page banner to surface tasks the user
     navigated away from. Declared before `/runs/{run_id}` so the literal path
     wins.
@@ -237,8 +244,20 @@ async def list_recent_runs(
     owner_token = (owner_token or "").strip()[:_MAX_OWNER_TOKEN_LEN]
     await _reconcile_stale_runs()
 
-    conds = ["r.owner_token = ?", "r.started_at >= datetime('now', ?)"]
-    params: list[Any] = [owner_token, f"-{_RECENT_RUN_DAYS} days"]
+    if caller is not None and owner_token:
+        await db.execute(
+            "UPDATE runs SET owner_id = ? WHERE owner_id IS NULL AND owner_token = ?",
+            (caller.principal_id, owner_token),
+        )
+    conds = [
+        "(r.owner_id = ? OR (r.owner_id IS NULL AND r.owner_token = ?))",
+        "r.started_at >= now() - make_interval(days => ?)",
+    ]
+    params: list[Any] = [
+        caller.principal_id if caller is not None else "",
+        owner_token,
+        _RECENT_RUN_DAYS,
+    ]
     if active_only:
         conds.append("r.status IN ('pending', 'running')")
     where = "WHERE " + " AND ".join(conds)
@@ -365,26 +384,38 @@ async def get_run_markdown_export(request: Request, run_id: str):
 
 @router.post("/runs/{run_id}/dismiss", response_model=RunResponse)
 @limiter.limit("30/minute")
-async def dismiss_run(request: Request, run_id: str, owner_token: str = ""):
+async def dismiss_run(
+    request: Request,
+    run_id: str,
+    owner_token: str = "",
+    caller: Caller | None = Depends(optional_caller),
+):
     """Manually clear a pending/running run the user abandoned.
 
-    Only the owning browser (matching `owner_token`) may dismiss a run; legacy
-    runs with no owner are dismissible by anyone. Marks the run failed so it
+    Only the owner may dismiss a run: the principal for runs that have one, the
+    browser's `owner_token` for runs from before accounts. Legacy runs with
+    neither are dismissible by anyone. Marks the run failed so it
     leaves the active banner, and tears down any live SSE queue. Already-finished
     runs are returned unchanged.
     """
     owner_token = (owner_token or "").strip()[:_MAX_OWNER_TOKEN_LEN]
-    row = await db.fetch_one("SELECT status, owner_token FROM runs WHERE run_id = ?", (run_id,))
+    row = await db.fetch_one(
+        "SELECT status, owner_token, owner_id FROM runs WHERE run_id = ?", (run_id,)
+    )
     if not row:
         raise HTTPException(status_code=404, detail="Run not found")
     # Don't reveal existence of runs the caller doesn't own.
-    if row["owner_token"] and row["owner_token"] != owner_token:
+    if row["owner_id"]:
+        owned = caller is not None and caller.principal_id == row["owner_id"]
+    else:
+        owned = not row["owner_token"] or row["owner_token"] == owner_token
+    if not owned:
         raise HTTPException(status_code=404, detail="Run not found")
 
     if row["status"] in ("pending", "running"):
         await db.execute(
             "UPDATE runs SET status = 'failed', error_msg = 'Dismissed by user', "
-            "finished_at = datetime('now') WHERE run_id = ?",
+            "finished_at = now() WHERE run_id = ?",
             (run_id,),
         )
         queue = _run_queues.pop(run_id, None)

@@ -252,7 +252,7 @@ async def _expire_stale_failure(idempotency_key: str) -> None:
         recorded = datetime.fromisoformat(row["updated_at"].replace(" ", "T"))
     except (AttributeError, ValueError):
         return
-    # SQLite's datetime('now') is naive UTC; compare like with like.
+    # Timestamps come back from the database as naive UTC; compare like with like.
     now = datetime.now(timezone.utc).replace(tzinfo=None)
     age = (now - recorded).total_seconds()
     if age > FAILED_DOWNLOAD_TTL_SECONDS:

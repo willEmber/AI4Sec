@@ -63,7 +63,7 @@ class RunLeaseTests(AgentP2TestCase):
         run = await self._new_run()
         await repo.claim_run(run.run_id, worker_id="w1")
         await db.execute(
-            "UPDATE agent_runs SET heartbeat_at = datetime('now', '-600 seconds') "
+            "UPDATE agent_runs SET heartbeat_at = now() - interval '600 seconds' "
             "WHERE run_id = ?",
             (run.run_id,),
         )
@@ -83,7 +83,7 @@ class RunLeaseTests(AgentP2TestCase):
 
         run = await self._new_run()
         await db.execute(
-            "UPDATE agent_runs SET started_at = datetime('now', '-600 seconds') "
+            "UPDATE agent_runs SET started_at = now() - interval '600 seconds' "
             "WHERE run_id = ?",
             (run.run_id,),
         )
@@ -112,7 +112,7 @@ class RunRecoveryTests(AgentP2TestCase):
         )
         await repo.claim_run(run.run_id, worker_id="dead-worker")
         await db.execute(
-            "UPDATE agent_runs SET heartbeat_at = datetime('now', '-600 seconds') "
+            "UPDATE agent_runs SET heartbeat_at = now() - interval '600 seconds' "
             "WHERE run_id = ?",
             (run.run_id,),
         )
@@ -206,18 +206,9 @@ class JobRecoveryTests(AgentP2TestCase):
             """INSERT INTO agent_jobs
                    (job_id, kind, idempotency_key, session_id, status, attempts,
                     lease_owner, lease_expires_at, request_json)
-               VALUES (?, ?, ?, ?, 'running', 1, 'dead', datetime('now', ?), ?)""",
+               VALUES (?, ?, ?, ?, 'running', 1, 'dead', now() + CAST(? AS interval), ?)""",
             (job_id, kind, key, self.session.session_id, lease_offset,
              json.dumps({"paper_id": "paper1"})),
-        )
-        # Stored as naive UTC by SQLite; the scan compares ISO strings, so make
-        # the lease explicit rather than relying on the two formats matching.
-        row = await db.fetch_one(
-            "SELECT datetime('now', ?) AS t", (lease_offset,)
-        )
-        await db.execute(
-            "UPDATE agent_jobs SET lease_expires_at = ? WHERE job_id = ?",
-            (row["t"].replace(" ", "T"), job_id),
         )
         return job_id
 
@@ -571,6 +562,10 @@ class ActivityApiTests(unittest.TestCase):
     def setUp(self) -> None:
         self._tmp = tempfile.TemporaryDirectory()
         os.environ["DATA_DIR"] = self._tmp.name
+
+        from tests.pg_support import use_database_env
+
+        use_database_env(self)
 
         from app.config import get_settings
         from app.services import identity

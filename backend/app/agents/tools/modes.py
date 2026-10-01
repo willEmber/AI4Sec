@@ -187,8 +187,8 @@ async def _produce_report(
     await db.execute(
         """INSERT INTO runs
                (run_id, paper_id, mode, llm_model, language, status, user_question,
-                owner_token, agent_session_id, agent_run_id, started_at)
-           VALUES (?, ?, ?, ?, ?, 'running', ?, ?, ?, ?, datetime('now'))""",
+                owner_token, owner_id, agent_session_id, agent_run_id, started_at)
+           VALUES (?, ?, ?, ?, ?, 'running', ?, ?, ?, ?, ?, now())""",
         (
             run_id,
             paper_id,
@@ -197,6 +197,7 @@ async def _produce_report(
             ctx.language,
             focus[:2000],
             ctx.owner_token,
+            ctx.owner_id,
             ctx.session_id,
             ctx.run_id,
         ),
@@ -235,11 +236,13 @@ async def _produce_report(
         markdown = state.get("final_markdown", "") or ""
         json_data = state.get("final_json", "{}") or "{}"
         await db.execute(
-            "INSERT OR REPLACE INTO run_outputs (run_id, markdown, json_data) VALUES (?, ?, ?)",
+            "INSERT INTO run_outputs (run_id, markdown, json_data) VALUES (?, ?, ?) "
+            "ON CONFLICT (run_id) DO UPDATE SET markdown = excluded.markdown, "
+            "json_data = excluded.json_data",
             (run_id, markdown, json_data),
         )
         await db.execute(
-            "UPDATE runs SET status = 'done', finished_at = datetime('now') WHERE run_id = ?",
+            "UPDATE runs SET status = 'done', finished_at = now() WHERE run_id = ?",
             (run_id,),
         )
         logger.info(
@@ -254,13 +257,13 @@ async def _produce_report(
     except asyncio.CancelledError:
         await db.execute(
             "UPDATE runs SET status = 'failed', error_msg = 'Cancelled', "
-            "finished_at = datetime('now') WHERE run_id = ?",
+            "finished_at = now() WHERE run_id = ?",
             (run_id,),
         )
         raise
     except Exception as exc:
         await db.execute(
-            "UPDATE runs SET status = 'failed', error_msg = ?, finished_at = datetime('now') "
+            "UPDATE runs SET status = 'failed', error_msg = ?, finished_at = now() "
             "WHERE run_id = ?",
             (str(exc)[:500], run_id),
         )

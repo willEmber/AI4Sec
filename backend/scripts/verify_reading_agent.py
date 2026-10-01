@@ -33,7 +33,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from app.config import get_settings  # noqa: E402
 from app.db import agent_repository as repo  # noqa: E402
 from app.db import database as db  # noqa: E402
-from app.db.database import init_db, set_db_path  # noqa: E402
 from app.models.agent_models import Availability, EventType, RunStatus  # noqa: E402
 from app.services import agent_runner, evidence_service, identity, paper_catalog  # noqa: E402
 
@@ -123,8 +122,8 @@ async def main() -> int:
     args = parser.parse_args()
 
     settings = get_settings()
-    set_db_path(settings.data_dir / "app.db")
-    await init_db()
+    db.configure(settings.database_url)
+    await db.init_db()
     await agent_runner.open_agent_checkpointer()
 
     paper_id, title = await _pick_paper(args.paper_id)

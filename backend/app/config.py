@@ -11,6 +11,16 @@ class AppSettings(BaseSettings):
     # --- paths ---
     data_dir: Path = Path("data")
 
+    # --- Database (PostgreSQL) ---
+    # Every business table and the agent checkpoints live here. The pool is
+    # per process; with several uvicorn workers the server sees
+    # workers x DATABASE_POOL_MAX connections, plus a small checkpoint pool each.
+    database_url: str = Field(
+        default="postgresql://scholar:scholar@localhost:5432/scholar", alias="DATABASE_URL"
+    )
+    database_pool_min: int = Field(default=1, alias="DATABASE_POOL_MIN")
+    database_pool_max: int = Field(default=10, alias="DATABASE_POOL_MAX")
+
     # --- LLM (Qwen / DashScope MaaS Responses API) ---
     # Compatible-mode base URL ending in /v1; client POSTs to {base}/responses
     # with enable_thinking=true for every thinking model.
@@ -103,15 +113,12 @@ class AppSettings(BaseSettings):
     agent_request_timeout_seconds: int = Field(default=300, alias="AGENT_REQUEST_TIMEOUT_SECONDS")
     # Transport-level retries inside the OpenAI SDK (connection resets, 5xx).
     agent_max_retries: int = Field(default=3, alias="AGENT_MAX_RETRIES")
-    # HMAC secret signing anonymous agent credentials. Empty generates one and
+    # HMAC secret signing anonymous agent credentials, event-stream tickets and
+    # the OAuth login state. Empty generates one and
     # persists it under the data dir, so local dev needs no configuration;
     # set it explicitly in production, and across every instance, or a restart
     # invalidates every issued credential.
     agent_identity_secret: str = Field(default="", alias="AGENT_IDENTITY_SECRET")
-    # LangGraph checkpoint database. Empty puts it next to app.db as
-    # `agent_checkpoints.db`; kept separate so pruning checkpoints can never
-    # touch the papers/runs tables.
-    agent_checkpoint_db: str = Field(default="", alias="AGENT_CHECKPOINT_DB")
     # Per-run ceilings, enforced by the executor rather than asked of the model.
     # Reaching one ends the turn with whatever was found, reported as such.
     agent_max_tool_calls: int = Field(default=40, alias="AGENT_MAX_TOOL_CALLS")
@@ -129,6 +136,12 @@ class AppSettings(BaseSettings):
     # Generous because one turn may now download and parse a paper it just
     # found, which a pure reading turn never did.
     agent_max_wall_seconds: int = Field(default=1800, alias="AGENT_MAX_WALL_SECONDS")
+    # Streamed answer text is buffered and written as one `message.delta` event
+    # per window instead of one per model chunk. Each event is a committed row,
+    # and per-chunk writes made the event log ~98% deltas and a turn ~450
+    # commits — the dominant write load under concurrent readers.
+    agent_delta_flush_ms: int = Field(default=150, alias="AGENT_DELTA_FLUSH_MS")
+    agent_delta_flush_chars: int = Field(default=1500, alias="AGENT_DELTA_FLUSH_CHARS")
     # --- Context management ---
     # Conversation size (approximate tokens, system prompt and tool schemas
     # included) at which older turns are summarised. The gateway models have
@@ -198,6 +211,34 @@ class AppSettings(BaseSettings):
     r2_bucket: str = Field(default="", alias="R2_BUCKET")
     r2_endpoint: str = Field(default="", alias="R2_ENDPOINT")
     r2_public_base_url: str = Field(default="", alias="R2_PUBLIC_BASE_URL")
+
+    # --- accounts (P7.5 I2) ---
+    # `multi_user`: OAuth accounts, optionally beside anonymous trial use.
+    # `single_user`: a self-hosted instance for one person — every request is
+    # the same local principal and nobody logs in.
+    auth_mode: str = Field(default="multi_user", alias="AUTH_MODE")
+    # Whether a visitor may use the app before logging in (multi_user only).
+    auth_allow_anonymous: bool = Field(default=True, alias="AUTH_ALLOW_ANONYMOUS")
+    # The origin the browser sees (the Next.js frontend). OAuth callbacks are
+    # built from it, so it must match what is registered with each provider.
+    public_base_url: str = Field(default="http://localhost:3001", alias="PUBLIC_BASE_URL")
+    # Cookies are `Secure` unless this is turned off for plain-http local dev.
+    auth_cookie_secure: bool = Field(default=True, alias="AUTH_COOKIE_SECURE")
+    # Login sessions last this long since they were last used.
+    auth_session_days: int = Field(default=30, alias="AUTH_SESSION_DAYS")
+    # A provider is offered once both its id and secret are set.
+    oauth_github_client_id: str = Field(default="", alias="OAUTH_GITHUB_CLIENT_ID")
+    oauth_github_client_secret: str = Field(default="", alias="OAUTH_GITHUB_CLIENT_SECRET")
+    oauth_google_client_id: str = Field(default="", alias="OAUTH_GOOGLE_CLIENT_ID")
+    oauth_google_client_secret: str = Field(default="", alias="OAUTH_GOOGLE_CLIENT_SECRET")
+    oauth_linuxdo_client_id: str = Field(default="", alias="OAUTH_LINUXDO_CLIENT_ID")
+    oauth_linuxdo_client_secret: str = Field(default="", alias="OAUTH_LINUXDO_CLIENT_SECRET")
+    # Per-principal daily agent quotas (UTC day), counted from agent_runs.
+    # 0 means unlimited; single_user mode is never limited.
+    quota_anon_daily_runs: int = Field(default=20, alias="QUOTA_ANON_DAILY_RUNS")
+    quota_anon_daily_tokens: int = Field(default=1_000_000, alias="QUOTA_ANON_DAILY_TOKENS")
+    quota_user_daily_runs: int = Field(default=200, alias="QUOTA_USER_DAILY_RUNS")
+    quota_user_daily_tokens: int = Field(default=10_000_000, alias="QUOTA_USER_DAILY_TOKENS")
 
     # --- server ---
     host: str = "0.0.0.0"

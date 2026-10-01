@@ -1,5 +1,6 @@
 "use client";
 
+import { AuthMenu } from "@/components/AuthMenu";
 import { LanguageProvider, LanguageToggle, useTranslation } from "@/lib/i18n";
 import { recordVisit } from "@/lib/api";
 import { useEffect, type ReactNode } from "react";
@@ -47,6 +48,7 @@ function NavBar() {
         <NavLink href="/library" label={t("nav.library")} />
         <div className="flex-1" />
         <LanguageToggle />
+        <AuthMenu />
       </div>
     </nav>
   );

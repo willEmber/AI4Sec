@@ -140,11 +140,12 @@ class TestSignalsCache(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self) -> None:
         from app.db import database as db
 
+        from tests.pg_support import open_fresh_database
+
         self._tmp = TemporaryDirectory()
-        db.set_db_path(Path(self._tmp.name) / "app.db")
-        await db.init_db()
+        await open_fresh_database(self)
         await db.execute(
-            "INSERT OR REPLACE INTO papers (paper_id, file_path) VALUES (?, ?)",
+            "INSERT INTO papers (paper_id, file_path) VALUES (?, ?) ON CONFLICT DO NOTHING",
             ("p1", "papers/p1/original.pdf"),
         )
 

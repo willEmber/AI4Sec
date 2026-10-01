@@ -12,6 +12,22 @@ const translations: Record<Locale, Record<string, string>> = {
     "nav.upload": "Classic Report",
     "nav.library": "Knowledge Base",
 
+    // Accounts
+    "auth.login": "Log in",
+    "auth.logout": "Log out",
+    "auth.continueWith": "Continue with {provider}",
+    "auth.noProviders": "No login provider is configured.",
+    "auth.anonymousHint": "Your conversations so far will move into the account.",
+    "auth.quotaToday": "Today: {runs} / {limit} turns",
+    "auth.quotaTodayUnlimited": "Today: {runs} turns",
+    "auth.quotaExceeded": "You have used today's limit of turns. It resets at 00:00 UTC.",
+    "auth.quotaExceededAnon": "You have used today's anonymous limit. Log in for a larger daily quota.",
+    "auth.loginRequired": "Please log in to continue.",
+    "auth.error.denied": "Login was cancelled.",
+    "auth.error.account_disabled": "This account has been disabled.",
+    "auth.error.account_inactive": "The provider reports this account as inactive.",
+    "auth.error.generic": "Login failed ({code}). Please try again.",
+
     // Landing page
     "home.title": "Read papers with an agent that shows its work",
     "home.subtitle":
@@ -457,6 +473,22 @@ const translations: Record<Locale, Record<string, string>> = {
     "nav.brand": "Scholar",
     "nav.upload": "经典报告",
     "nav.library": "知识库",
+
+    // Accounts
+    "auth.login": "登录",
+    "auth.logout": "退出登录",
+    "auth.continueWith": "使用 {provider} 登录",
+    "auth.noProviders": "尚未配置任何登录方式。",
+    "auth.anonymousHint": "登录后，当前的对话会自动归入你的账号。",
+    "auth.quotaToday": "今日：{runs} / {limit} 轮",
+    "auth.quotaTodayUnlimited": "今日：{runs} 轮",
+    "auth.quotaExceeded": "今日对话额度已用完，将于 UTC 00:00 重置。",
+    "auth.quotaExceededAnon": "今日匿名额度已用完。登录后可获得更高的每日额度。",
+    "auth.loginRequired": "请先登录再继续。",
+    "auth.error.denied": "已取消登录。",
+    "auth.error.account_disabled": "该账号已被停用。",
+    "auth.error.account_inactive": "登录提供方报告该账号未激活。",
+    "auth.error.generic": "登录失败（{code}），请重试。",
 
     // Landing page
     "home.title": "和一个会亮出证据的 Agent 一起读论文",

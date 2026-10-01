@@ -25,6 +25,7 @@ import logging
 import os
 import sys
 import time
+import uuid
 from pathlib import Path
 from typing import Any
 
@@ -313,18 +314,14 @@ async def check_checkpoint_resume(model_name: str) -> dict[str, Any]:
     """A thread must resume from disk in a process that never saw turn one.
 
     Turn one runs here; turn two runs in a *separate* interpreter, so nothing
-    but the SQLite file carries the history. An in-memory saver would pass a
-    same-process test and fail this one.
+    but the database carries the history. An in-memory saver would pass a
+    same-process test and fail this one. The thread id is fresh per run, so a
+    previous probe's history cannot make this one pass.
     """
-    db = get_settings().data_dir / "p0_checkpoint_probe.db"
-    if db.exists():
-        db.unlink()
-    for suffix in ("-wal", "-shm"):
-        side = db.with_name(db.name + suffix)
-        if side.exists():
-            side.unlink()
+    db_url = get_settings().database_url
+    thread_id = f"p0-resume-{uuid.uuid4().hex[:12]}"
 
-    async with open_checkpointer(db) as saver:
+    async with open_checkpointer(db_url) as saver:
         agent = create_paper_agent(
             tools=TOOLS,
             system_prompt=SYSTEM_PROMPT,
@@ -337,7 +334,7 @@ async def check_checkpoint_resume(model_name: str) -> dict[str, Any]:
                     {"role": "user", "content": "What method does paper abc123 propose?"}
                 ]
             },
-            config={"configurable": {"thread_id": "p0-resume"}},
+            config={"configurable": {"thread_id": thread_id}},
         )
 
     child = f"""
@@ -348,15 +345,14 @@ from scripts.verify_agent_protocol import TOOLS, SYSTEM_PROMPT, _final_text, _to
 from app.agents.checkpointer import open_checkpointer
 from app.agents.harness import create_paper_agent
 from app.agents.model_factory import build_chat_model
-from pathlib import Path
 
 async def main():
-    async with open_checkpointer(Path({str(db)!r})) as saver:
+    async with open_checkpointer({db_url!r}) as saver:
         agent = create_paper_agent(
             tools=TOOLS, system_prompt=SYSTEM_PROMPT,
             model=build_chat_model({model_name!r}), checkpointer=saver,
         )
-        cfg = {{"configurable": {{"thread_id": "p0-resume"}}}}
+        cfg = {{"configurable": {{"thread_id": {thread_id!r}}}}}
         state = await agent.aget_state(cfg)
         restored = len(state.values.get("messages", []))
         out = await agent.ainvoke(
@@ -403,10 +399,10 @@ asyncio.run(main())
             "passed": payload["restored_messages"] > 0
             and ("29.7" in answer or "bleu" in answer or "wmt" in answer),
             **payload,
-            "checkpoint_db": str(db),
+            "thread_id": thread_id,
             "note": (
-                "Turn two ran in a separate interpreter; only the SQLite checkpoint "
-                "carried turn one's history."
+                "Turn two ran in a separate interpreter; only the PostgreSQL "
+                "checkpoint carried turn one's history."
             ),
         }
     )

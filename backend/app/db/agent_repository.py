@@ -10,19 +10,22 @@ process restart or a second worker must not be able to violate them:
 * one in-flight run per session (partial unique index on `agent_runs`), and
 * one run per `(session_id, client_request_id)`.
 
-`sqlite3.IntegrityError` from those indexes is translated into the exceptions
+`db.IntegrityError` from those indexes is translated into the exceptions
 below.
+
+Per-session sequence numbers (`agent_messages.seq`, `agent_events.seq`) are
+allocated as `MAX(seq) + 1` under a transaction-scoped advisory lock on the
+session. SQLite's single writer used to serialise this for free; under
+PostgreSQL's concurrent writers two appends would otherwise read the same
+maximum.
 """
 
 from __future__ import annotations
 
 import json
 import logging
-import sqlite3
 import uuid
 from typing import Any
-
-import aiosqlite
 
 from app.db import database as db
 from app.models.agent_models import (
@@ -143,14 +146,14 @@ async def list_sessions(owner_id: str, *, limit: int = 50) -> list[AgentSession]
 
 async def touch_session(session_id: str) -> None:
     await db.execute(
-        "UPDATE agent_sessions SET updated_at = datetime('now') WHERE session_id = ?",
+        "UPDATE agent_sessions SET updated_at = now() WHERE session_id = ?",
         (session_id,),
     )
 
 
 async def set_session_title(session_id: str, title: str) -> None:
     await db.execute(
-        "UPDATE agent_sessions SET title = ?, updated_at = datetime('now') "
+        "UPDATE agent_sessions SET title = ?, updated_at = now() "
         "WHERE session_id = ? AND title = ''",
         (title, session_id),
     )
@@ -238,7 +241,7 @@ async def create_run(
                 prompt_version,
             ),
         )
-    except sqlite3.IntegrityError as exc:
+    except db.IntegrityError as exc:
         # Either the active-run index or the idempotency index fired. Re-read to
         # tell which: a concurrent identical submit should still be a dedupe.
         if client_request_id:
@@ -279,7 +282,7 @@ async def claim_run(run_id: str, *, worker_id: str) -> bool:
     """
     claimed = await db.execute_returning(
         """UPDATE agent_runs
-              SET status = 'running', worker_id = ?, heartbeat_at = datetime('now')
+              SET status = 'running', worker_id = ?, heartbeat_at = now()
             WHERE run_id = ? AND status = 'pending'
            RETURNING run_id""",
         (worker_id, run_id),
@@ -294,7 +297,7 @@ async def heartbeat_run(run_id: str, *, worker_id: str) -> None:
     run looking alive after someone else has recovered it.
     """
     await db.execute(
-        """UPDATE agent_runs SET heartbeat_at = datetime('now')
+        """UPDATE agent_runs SET heartbeat_at = now()
             WHERE run_id = ? AND worker_id = ? AND status = 'running'""",
         (run_id, worker_id),
     )
@@ -307,15 +310,16 @@ async def list_stale_runs(*, stale_after_seconds: int) -> list[AgentRun]:
     a crash between "persist the run" and "schedule it" leaves exactly that, and
     nothing else would ever pick it up.
 
-    Times are compared in SQLite rather than in Python because `datetime('now')`
-    is what wrote them; parsing them here would mean reproducing its format.
+    Times are compared on the database clock, which is what wrote them; mixing
+    it with this process's clock would make staleness depend on clock skew
+    between machines.
     """
     rows = await db.fetch_all(
         """SELECT * FROM agent_runs
             WHERE status IN ('pending', 'running')
-              AND COALESCE(heartbeat_at, started_at) < datetime('now', ?)
+              AND COALESCE(heartbeat_at, started_at) < now() - make_interval(secs => ?)
             ORDER BY started_at""",
-        (f"-{int(stale_after_seconds)} seconds",),
+        (int(stale_after_seconds),),
     )
     return [_row_to_run(r) for r in rows]
 
@@ -334,7 +338,7 @@ async def finish_run(
     await db.execute(
         """UPDATE agent_runs
               SET status = ?, error_code = ?, error_msg = ?, usage_json = ?,
-                  finished_at = datetime('now')
+                  finished_at = now()
             WHERE run_id = ?""",
         (
             status.value,
@@ -371,6 +375,16 @@ async def is_cancel_requested(run_id: str) -> bool:
 # ── Messages ────────────────────────────────────────────────────────────────
 
 
+async def _lock_session_seq(tx: db.Transaction, session_id: str) -> None:
+    """Serialise `seq` allocation for one session until the transaction ends.
+
+    An advisory lock rather than `SELECT … FOR UPDATE` on the session row, so
+    it holds even for an event whose session row is not visible to this
+    transaction, and so it never blocks ordinary updates to the session.
+    """
+    await tx.execute("SELECT pg_advisory_xact_lock(hashtextextended(?, 0))", (session_id,))
+
+
 async def append_message(
     *,
     session_id: str,
@@ -380,12 +394,9 @@ async def append_message(
     citations: list[str] | None = None,
 ) -> AgentMessage:
     message_id = f"am_{uuid.uuid4().hex[:24]}"
-    async with aiosqlite.connect(db.get_db_path()) as conn:
-        conn.row_factory = aiosqlite.Row
-        # Seq allocation is a contended write; wait for the lock rather than
-        # failing the turn.
-        await conn.execute("PRAGMA busy_timeout=5000")
-        cursor = await conn.execute(
+    async with db.transaction() as tx:
+        await _lock_session_seq(tx, session_id)
+        row = await tx.fetch_one(
             """INSERT INTO agent_messages
                    (message_id, session_id, run_id, role, content, citations_json, seq)
                VALUES (?, ?, ?, ?, ?, ?,
@@ -401,8 +412,7 @@ async def append_message(
                 session_id,
             ),
         )
-        row = await cursor.fetchone()
-        await conn.commit()
+    assert row is not None
     return AgentMessage(
         message_id=message_id,
         session_id=session_id,
@@ -451,12 +461,9 @@ async def append_event(
     appends cannot collide, and the event is durable *before* anyone publishes
     it — a client that reconnects must be able to replay what it missed.
     """
-    async with aiosqlite.connect(db.get_db_path()) as conn:
-        conn.row_factory = aiosqlite.Row
-        # Seq allocation is a contended write; wait for the lock rather than
-        # failing the turn.
-        await conn.execute("PRAGMA busy_timeout=5000")
-        cursor = await conn.execute(
+    async with db.transaction() as tx:
+        await _lock_session_seq(tx, session_id)
+        row = await tx.fetch_one(
             """INSERT INTO agent_events (session_id, seq, run_id, type, payload_json)
                VALUES (?,
                        (SELECT COALESCE(MAX(seq), 0) + 1 FROM agent_events WHERE session_id = ?),
@@ -470,8 +477,7 @@ async def append_event(
                 json.dumps(payload or {}, ensure_ascii=False),
             ),
         )
-        row = await cursor.fetchone()
-        await conn.commit()
+    assert row is not None
     return AgentEvent(
         schema_version=row["schema_version"],
         session_id=session_id,
@@ -570,7 +576,7 @@ async def list_session_artifacts(session_id: str, *, limit: int = 100) -> list[S
                   COALESCE(p.title, '') AS paper_title,
                   r.mode, r.language, r.status, e.created_at
              FROM agent_events e
-             JOIN runs r ON r.run_id = json_extract(e.payload_json, '$.run_id')
+             JOIN runs r ON r.run_id = (e.payload_json::jsonb ->> 'run_id')
              LEFT JOIN papers p ON p.paper_id = r.paper_id
             WHERE e.session_id = ? AND e.type = ?
             ORDER BY e.seq
@@ -633,7 +639,7 @@ async def add_memory(
     )
     if existing is not None:
         await db.execute(
-            "UPDATE agent_memories SET kind = ?, updated_at = datetime('now') WHERE memory_id = ?",
+            "UPDATE agent_memories SET kind = ?, updated_at = now() WHERE memory_id = ?",
             (kind.value, existing["memory_id"]),
         )
         row = await db.fetch_one(
@@ -656,7 +662,7 @@ async def list_memories(owner_id: str, *, limit: int = 100) -> list[AgentMemory]
     rows = await db.fetch_all(
         """SELECT * FROM agent_memories
             WHERE owner_id = ? AND active = 1
-            ORDER BY updated_at DESC, rowid DESC LIMIT ?""",
+            ORDER BY updated_at DESC, created_at DESC, memory_id DESC LIMIT ?""",
         (owner_id, limit),
     )
     return [_row_to_memory(r) for r in rows]
@@ -672,7 +678,7 @@ async def get_memory(memory_id: str, *, owner_id: str) -> AgentMemory | None:
 async def deactivate_memory(memory_id: str, *, owner_id: str) -> bool:
     """Forget a memory. Soft-deleted so an audit of a past answer still resolves it."""
     updated = await db.execute_returning(
-        """UPDATE agent_memories SET active = 0, updated_at = datetime('now')
+        """UPDATE agent_memories SET active = 0, updated_at = now()
             WHERE memory_id = ? AND owner_id = ? AND active = 1
            RETURNING memory_id""",
         (memory_id, owner_id),
@@ -702,7 +708,7 @@ async def attach_session_paper(
                                ELSE session_papers.paper_id END,
                availability = excluded.availability,
                note = excluded.note,
-               updated_at = datetime('now')""",
+               updated_at = now()""",
         (session_id, literature_id, paper_id, availability.value, added_by, note),
     )
 
@@ -712,7 +718,7 @@ async def set_session_paper_availability(
 ) -> None:
     await db.execute(
         """UPDATE session_papers
-              SET availability = ?, note = ?, updated_at = datetime('now')
+              SET availability = ?, note = ?, updated_at = now()
             WHERE session_id = ? AND literature_id = ?""",
         (availability.value, note, session_id, literature_id),
     )
@@ -781,15 +787,16 @@ def _row_to_evidence(row: dict[str, Any]) -> Evidence:
 async def insert_evidence(evidence: Evidence) -> Evidence:
     """Store evidence. Idempotent: re-reading a passage reuses the existing row.
 
-    `INSERT OR IGNORE` rather than an upsert, because evidence is immutable —
-    if the id is already present, the stored row is by definition the same
-    content, and overwriting it would defeat the point.
+    `DO NOTHING` rather than an upsert, because evidence is immutable — if the
+    id is already present, the stored row is by definition the same content,
+    and overwriting it would defeat the point.
     """
     await db.execute(
-        """INSERT OR IGNORE INTO evidence
+        """INSERT INTO evidence
                (evidence_id, owner_id, session_id, literature_id, paper_id, parse_version,
                 source_level, locator_json, quote, content_hash, source_url, provider)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT (evidence_id) DO NOTHING""",
         (
             evidence.evidence_id,
             evidence.owner_id,

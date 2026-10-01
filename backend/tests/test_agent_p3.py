@@ -412,9 +412,9 @@ class AcquisitionTests(AgentP2TestCase):
 
             # Age it past the TTL.
             await db.execute(
-                "UPDATE agent_jobs SET updated_at = datetime('now', ?) "
+                "UPDATE agent_jobs SET updated_at = now() - make_interval(secs => ?) "
                 "WHERE idempotency_key = ?",
-                (f"-{FAILED_DOWNLOAD_TTL_SECONDS + 3600} seconds", f"download:{literature_id}"),
+                (FAILED_DOWNLOAD_TTL_SECONDS + 3600, f"download:{literature_id}"),
             )
             await self._call(download_paper, literature_id=literature_id)
 

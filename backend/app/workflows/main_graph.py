@@ -518,7 +518,7 @@ async def persist_output(state: MainGraphState) -> dict[str, Any]:
 
     if state.get("error"):
         await db.execute(
-            "UPDATE runs SET status = 'failed', error_msg = ?, mode = ?, detected_intent = ?, finished_at = datetime('now') WHERE run_id = ?",
+            "UPDATE runs SET status = 'failed', error_msg = ?, mode = ?, detected_intent = ?, finished_at = now() WHERE run_id = ?",
             (state["error"], final_mode, detected_intent, run_id),
         )
         logger.info(f"[{paper_id}] persist_output: Saved FAILED status in {time.perf_counter()-t0:.2f}s")
@@ -528,11 +528,13 @@ async def persist_output(state: MainGraphState) -> dict[str, Any]:
     json_data = state.get("final_json", "{}")
 
     await db.execute(
-        "INSERT OR REPLACE INTO run_outputs (run_id, markdown, json_data) VALUES (?, ?, ?)",
+        "INSERT INTO run_outputs (run_id, markdown, json_data) VALUES (?, ?, ?) "
+        "ON CONFLICT (run_id) DO UPDATE SET markdown = excluded.markdown, "
+        "json_data = excluded.json_data",
         (run_id, markdown, json_data),
     )
     await db.execute(
-        "UPDATE runs SET status = 'done', mode = ?, detected_intent = ?, finished_at = datetime('now') WHERE run_id = ?",
+        "UPDATE runs SET status = 'done', mode = ?, detected_intent = ?, finished_at = now() WHERE run_id = ?",
         (final_mode, detected_intent, run_id),
     )
 

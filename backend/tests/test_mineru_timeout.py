@@ -7,6 +7,7 @@ from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 from app.db import database as db
+from tests.pg_support import open_fresh_database
 from app.services.mineru_adapter import (
     MinerUPollTimeoutError,
     _poll_until_done_sync,
@@ -55,8 +56,11 @@ class MinerUProgressEventTests(unittest.IsolatedAsyncioTestCase):
     async def test_mineru_parse_emits_running_progress_before_remote_parse(self) -> None:
         asyncio.get_running_loop().slow_callback_duration = 10.0
         with tempfile.TemporaryDirectory() as tmp:
-            db.set_db_path(Path(tmp) / "app.db")
-            await db.init_db()
+            await open_fresh_database(self)
+            await db.execute(
+                "INSERT INTO papers (paper_id, file_path) VALUES (?, ?)",
+                ("paper", "papers/paper/original.pdf"),
+            )
 
             queue = asyncio.Queue()
             state = {
@@ -83,8 +87,7 @@ class MinerUProgressEventTests(unittest.IsolatedAsyncioTestCase):
     async def test_poll_metadata_updates_parse_row_for_diagnostics(self) -> None:
         asyncio.get_running_loop().slow_callback_duration = 10.0
         with tempfile.TemporaryDirectory() as tmp:
-            db.set_db_path(Path(tmp) / "app.db")
-            await db.init_db()
+            await open_fresh_database(self)
             await db.execute(
                 "INSERT INTO papers (paper_id, file_path) VALUES (?, ?)",
                 ("paper", "papers/paper/original.pdf"),

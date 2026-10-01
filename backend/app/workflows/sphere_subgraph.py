@@ -1769,13 +1769,38 @@ async def _persist_sphere(sphere: SphereState, run_id: str) -> None:
         for n in sphere.nodes.values()
     ]
     await db.execute_many(
-        """INSERT OR REPLACE INTO sphere_nodes
+        """INSERT INTO sphere_nodes
         (node_id, run_id, doi, arxiv_id, openalex_id, s2_paper_id,
          title, year, venue, authors, abstract_text, cited_by_count,
          pdf_path, mineru_parsed, source, score_total, layer, cluster_id,
          tier, relation_type, relevance, relation_reason,
          quality_score, sci_rank, ccf_rank, influential)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT (node_id, run_id) DO UPDATE SET
+         doi = excluded.doi,
+         arxiv_id = excluded.arxiv_id,
+         openalex_id = excluded.openalex_id,
+         s2_paper_id = excluded.s2_paper_id,
+         title = excluded.title,
+         year = excluded.year,
+         venue = excluded.venue,
+         authors = excluded.authors,
+         abstract_text = excluded.abstract_text,
+         cited_by_count = excluded.cited_by_count,
+         pdf_path = excluded.pdf_path,
+         mineru_parsed = excluded.mineru_parsed,
+         source = excluded.source,
+         score_total = excluded.score_total,
+         layer = excluded.layer,
+         cluster_id = excluded.cluster_id,
+         tier = excluded.tier,
+         relation_type = excluded.relation_type,
+         relevance = excluded.relevance,
+         relation_reason = excluded.relation_reason,
+         quality_score = excluded.quality_score,
+         sci_rank = excluded.sci_rank,
+         ccf_rank = excluded.ccf_rank,
+         influential = excluded.influential""",
         node_rows,
     )
 

@@ -64,8 +64,12 @@ export function useAgentStream(): UseAgentStreamReturn {
   const seqRef = useRef(0);
   const runIdRef = useRef<string>("");
   const retryRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Bumped by every teardown, so a connect still awaiting its ticket can tell
+  // it was stopped (or unmounted) in the meantime.
+  const generationRef = useRef(0);
 
   const teardown = useCallback(() => {
+    generationRef.current += 1;
     sourceRef.current?.close();
     sourceRef.current = null;
     if (retryRef.current) {
@@ -137,9 +141,27 @@ export function useAgentStream(): UseAgentStreamReturn {
   }, []);
 
   const connect = useCallback(
-    (runId: string) => {
+    async (runId: string) => {
       teardown();
-      const source = new EventSource(getEventStreamUrl(runId, seqRef.current));
+      const generation = generationRef.current;
+      let url: string;
+      try {
+        url = await getEventStreamUrl(runId, seqRef.current);
+      } catch {
+        // No ticket (a network blip, or the run is gone): retry like a dropped
+        // stream while the turn is still open.
+        if (generation !== generationRef.current) return;
+        setIsStreaming((streaming) => {
+          if (streaming && runIdRef.current === runId) {
+            retryRef.current = setTimeout(() => void connect(runId), 1500);
+          }
+          return streaming;
+        });
+        return;
+      }
+      // Stopped, unmounted or moved to another run while the ticket was in flight.
+      if (generation !== generationRef.current || runIdRef.current !== runId) return;
+      const source = new EventSource(url);
       sourceRef.current = source;
 
       const onEvent = (e: MessageEvent) => {
@@ -159,7 +181,7 @@ export function useAgentStream(): UseAgentStreamReturn {
         // as an error too; only reconnect while the turn is still open.
         setIsStreaming((streaming) => {
           if (streaming && runIdRef.current === runId) {
-            retryRef.current = setTimeout(() => connect(runId), 1500);
+            retryRef.current = setTimeout(() => void connect(runId), 1500);
           }
           return streaming;
         });
@@ -182,7 +204,7 @@ export function useAgentStream(): UseAgentStreamReturn {
       setErrorCode("");
       setFinishedRunId(null);
       setIsStreaming(true);
-      connect(runId);
+      void connect(runId);
     },
     [connect, teardown],
   );

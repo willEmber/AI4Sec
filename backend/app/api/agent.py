@@ -20,7 +20,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 
-from app.api.deps import principal_or_new, require_principal
+from app.api.deps import principal_or_new, require_caller, require_principal, resolve_caller
 from app.db import agent_repository as repo
 from app.db import database as db
 from app.models.agent_models import (
@@ -37,8 +37,8 @@ from app.models.agent_models import (
     SessionDetailResponse,
 )
 from app.rate_limit import limiter
-from app.services import agent_runner, evidence_service, paper_catalog
-from app.services.identity import AGENT_TOKEN_HEADER
+from app.services import accounts, agent_runner, evidence_service, identity, paper_catalog
+from app.services.accounts import Caller
 
 logger = logging.getLogger("scholar.api.agent")
 
@@ -47,6 +47,9 @@ router = APIRouter(prefix="/agent", tags=["agent"])
 # How long an idle stream waits before sending a keepalive. Proxies routinely
 # drop a silent connection at 60s, and a turn can think for longer than that.
 _SSE_KEEPALIVE_SECONDS = 15.0
+# A stream ticket only has to outlive the gap between asking for it and
+# opening the stream; reconnects ask again.
+_STREAM_TICKET_SECONDS = 300
 
 
 async def _attach_papers(session_id: str, paper_ids: list[str]) -> list[str]:
@@ -93,9 +96,9 @@ async def create_session(
 ) -> CreateSessionResponse:
     """Create a session, optionally with papers already attached.
 
-    The only route that mints a principal: a first-time client has no
-    credential yet, and `principal_or_new` returns the new one in the
-    `X-Agent-Token` response header.
+    The agent route that may mint a principal: a first-time visitor has no
+    credential yet, and `principal_or_new` sets the new one as the auth cookie
+    (and, for older clients, the `X-Agent-Token` response header).
     """
     session = await repo.create_session(
         owner_id=principal_id,
@@ -110,6 +113,31 @@ async def create_session(
         session_id=session.session_id,
         thread_id=session.thread_id,
         created_at=session.created_at,
+    )
+
+
+async def _check_quota(caller: Caller, session_id: str, client_request_id: str) -> None:
+    """429 once today's turns or tokens are used up.
+
+    A resubmission of a turn that already exists is let through: it starts
+    nothing, and refusing it would make a network retry look like a new turn.
+    """
+    usage = await accounts.daily_usage(caller)
+    if not usage.exceeded:
+        return
+    if client_request_id and await db.fetch_one(
+        "SELECT 1 AS hit FROM agent_runs WHERE session_id = ? AND client_request_id = ?",
+        (session_id, client_request_id),
+    ):
+        return
+    raise HTTPException(
+        status_code=429,
+        detail={
+            "code": "quota_exceeded",
+            "message": "Daily usage limit reached. It resets at 00:00 UTC.",
+            "kind": caller.kind,
+            "usage": usage.as_dict(),
+        },
     )
 
 
@@ -135,7 +163,7 @@ async def attach_papers(
     request: Request,
     session_id: str,
     body: AttachPapersRequest,
-    x_agent_token: str = Header(default="", alias=AGENT_TOKEN_HEADER),
+    principal_id: str = Depends(require_principal),
 ) -> dict[str, Any]:
     """Attach uploaded PDFs to a session without sending a message.
 
@@ -143,7 +171,6 @@ async def attach_papers(
     ordinary `/papers/upload`, then is attached here so the sidebar and the
     next turn's prompt know about it.
     """
-    principal_id = await require_principal(x_agent_token)
     try:
         await repo.get_session(session_id, owner_id=principal_id)
     except repo.SessionNotFound:
@@ -160,10 +187,9 @@ async def attach_papers(
 @router.get("/sessions")
 async def list_sessions(
     request: Request,
-    x_agent_token: str = Header(default="", alias=AGENT_TOKEN_HEADER),
+    principal_id: str = Depends(require_principal),
 ) -> dict[str, Any]:
     """Recent sessions for the calling principal."""
-    principal_id = await require_principal(x_agent_token)
     sessions = await repo.list_sessions(principal_id)
     return {"sessions": [s.model_dump() for s in sessions]}
 
@@ -171,10 +197,9 @@ async def list_sessions(
 @router.get("/sessions/{session_id}", response_model=SessionDetailResponse)
 async def get_session(
     session_id: str,
-    x_agent_token: str = Header(default="", alias=AGENT_TOKEN_HEADER),
+    principal_id: str = Depends(require_principal),
 ) -> SessionDetailResponse:
     """Messages, papers and run history for one session."""
-    principal_id = await require_principal(x_agent_token)
     try:
         session = await repo.get_session(session_id, owner_id=principal_id)
     except repo.SessionNotFound:
@@ -206,10 +231,10 @@ async def post_message(
     request: Request,
     session_id: str,
     body: PostMessageRequest,
-    x_agent_token: str = Header(default="", alias=AGENT_TOKEN_HEADER),
+    caller: Caller = Depends(require_caller),
 ) -> PostMessageResponse:
     """Submit a turn. Persists first, schedules second, returns a run id."""
-    principal_id = await require_principal(x_agent_token)
+    principal_id = caller.principal_id
     try:
         session = await repo.get_session(session_id, owner_id=principal_id)
     except repo.SessionNotFound:
@@ -218,6 +243,8 @@ async def post_message(
     question = (body.content or "").strip()
     if not question:
         raise HTTPException(status_code=422, detail="content must not be empty.")
+
+    await _check_quota(caller, session_id, body.client_request_id)
 
     if body.paper_ids:
         await _attach_papers(session_id, body.paper_ids)
@@ -274,10 +301,9 @@ async def post_message(
 
 @router.get("/memories")
 async def list_memories(
-    x_agent_token: str = Header(default="", alias=AGENT_TOKEN_HEADER),
+    principal_id: str = Depends(require_principal),
 ) -> dict[str, Any]:
     """What the agent remembers about the calling principal."""
-    principal_id = await require_principal(x_agent_token)
     memories = await repo.list_memories(principal_id)
     return {"memories": [m.model_dump(mode="json") for m in memories]}
 
@@ -287,12 +313,11 @@ async def list_memories(
 async def create_memory(
     request: Request,
     body: CreateMemoryRequest,
-    x_agent_token: str = Header(default="", alias=AGENT_TOKEN_HEADER),
+    principal_id: str = Depends(require_principal),
 ) -> dict[str, Any]:
     """Let the reader add a memory by hand. Same rules as the tool."""
     from app.agents.tools.memory import MAX_MEMORY_CHARS, looks_like_secret
 
-    principal_id = await require_principal(x_agent_token)
     content = (body.content or "").strip()
     if not content:
         raise HTTPException(status_code=422, detail="content must not be empty.")
@@ -307,9 +332,8 @@ async def create_memory(
 @router.delete("/memories/{memory_id}")
 async def delete_memory(
     memory_id: str,
-    x_agent_token: str = Header(default="", alias=AGENT_TOKEN_HEADER),
+    principal_id: str = Depends(require_principal),
 ) -> dict[str, Any]:
-    principal_id = await require_principal(x_agent_token)
     removed = await repo.deactivate_memory(memory_id, owner_id=principal_id)
     if not removed:
         raise HTTPException(status_code=404, detail="No such memory.")
@@ -319,10 +343,9 @@ async def delete_memory(
 @router.post("/runs/{run_id}/cancel")
 async def cancel_run(
     run_id: str,
-    x_agent_token: str = Header(default="", alias=AGENT_TOKEN_HEADER),
+    principal_id: str = Depends(require_principal),
 ) -> dict[str, Any]:
     """Request cancellation. Idempotent; safe to call on a finished run."""
-    principal_id = await require_principal(x_agent_token)
     try:
         run = await repo.request_cancel(run_id, owner_id=principal_id)
     except repo.SessionNotFound:
@@ -342,7 +365,7 @@ async def cancel_run(
 @router.get("/runs/{run_id}/activity")
 async def run_activity(
     run_id: str,
-    x_agent_token: str = Header(default="", alias=AGENT_TOKEN_HEADER),
+    principal_id: str = Depends(require_principal),
 ) -> dict[str, Any]:
     """What a past turn did, replayed from the durable event log.
 
@@ -354,7 +377,6 @@ async def run_activity(
 
     `message.delta` is left out: the answer is already stored as a message.
     """
-    principal_id = await require_principal(x_agent_token)
     try:
         run = await repo.get_run(run_id, owner_id=principal_id)
     except repo.SessionNotFound:
@@ -368,22 +390,59 @@ async def run_activity(
     }
 
 
+@router.post("/runs/{run_id}/stream-ticket")
+async def stream_ticket(
+    run_id: str,
+    principal_id: str = Depends(require_principal),
+) -> dict[str, Any]:
+    """A short-lived ticket that opens this run's event stream.
+
+    The stream is the one request that goes straight to the backend rather than
+    through the same-origin proxy (which buffers it), so the login cookie does
+    not reach it — and being HttpOnly, page scripts cannot put it in a URL
+    either. The ticket names one run and expires in minutes, so a copy that
+    lands in an access log opens nothing else, and nothing for long.
+    """
+    try:
+        await repo.get_run(run_id, owner_id=principal_id)
+    except repo.SessionNotFound:
+        raise HTTPException(status_code=404, detail="No such run.") from None
+    return {
+        "ticket": identity.seal(
+            "stream", {"p": principal_id, "r": run_id}, ttl_seconds=_STREAM_TICKET_SECONDS
+        ),
+        "expires_in": _STREAM_TICKET_SECONDS,
+    }
+
+
+async def _stream_principal(request: Request, run_id: str, ticket: str) -> str:
+    """Who may open a stream: a ticket for this run, else the usual credential."""
+    if ticket:
+        payload = identity.unseal("stream", ticket)
+        if not payload or payload.get("r") != run_id:
+            raise HTTPException(status_code=401, detail="Invalid or expired stream ticket.")
+        return str(payload["p"])
+    caller = await resolve_caller(request)
+    if caller is None:
+        raise HTTPException(status_code=401, detail="Login required.")
+    return caller.principal_id
+
+
 @router.get("/runs/{run_id}/events")
 async def stream_events(
+    request: Request,
     run_id: str,
     after: int = Query(default=0, ge=0),
-    token: str = Query(default=""),
+    ticket: str = Query(default=""),
     last_event_id: str = Header(default="", alias="Last-Event-ID"),
-    x_agent_token: str = Header(default="", alias=AGENT_TOKEN_HEADER),
 ) -> StreamingResponse:
     """Stream a run's events, resuming from `after` or `Last-Event-ID`.
 
-    `EventSource` cannot set headers, so the credential may also arrive as a
-    query parameter. That is the same credential either way; it is not a weaker
-    check, though it does mean the value can land in an access log, which is why
-    every other route takes the header.
+    `EventSource` cannot set headers, so access comes from `?ticket=` (see
+    `stream_ticket`). The cookie, the header and the old `?token=` credential
+    still work for same-origin and pre-accounts clients.
     """
-    principal_id = await require_principal(x_agent_token or token)
+    principal_id = await _stream_principal(request, run_id, ticket)
     try:
         run = await repo.get_run(run_id, owner_id=principal_id)
     except repo.SessionNotFound:
@@ -445,10 +504,9 @@ def _is_terminal(event_type: str) -> bool:
 @router.get("/evidence/{evidence_id}")
 async def get_evidence(
     evidence_id: str,
-    x_agent_token: str = Header(default="", alias=AGENT_TOKEN_HEADER),
+    principal_id: str = Depends(require_principal),
 ) -> dict[str, Any]:
     """Resolve a citation to its paper, page and original excerpt."""
-    principal_id = await require_principal(x_agent_token)
     try:
         evidence = await evidence_service.resolve(evidence_id, owner_id=principal_id)
     except repo.EvidenceNotFound:

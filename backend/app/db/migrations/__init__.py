@@ -1,13 +1,15 @@
-"""Incremental schema migrations.
+"""Numbered schema migrations (PostgreSQL).
 
-`schema.sql` stays the baseline for a fresh database. Anything added after a
-release ships as a numbered `.sql` file here instead, so an existing deployment
-moves forward without the ad-hoc `ALTER TABLE ... except: pass` pattern in
-`database.py` — those silently swallow real errors and cannot express a new
-table plus its backfill as one unit.
+`0001_baseline.sql` is the whole schema as of the move off SQLite; anything
+later ships as the next numbered file. Each file is applied once, inside a
+transaction, and recorded in `schema_migrations`. Files are ordered by their
+numeric prefix.
 
-Each file is applied once, inside a transaction, and recorded in
-`schema_migrations`. Files are ordered by their numeric prefix.
+Two instances starting at once must not both migrate. A session-level advisory
+lock serialises them: the second waits, then finds every version applied.
+
+Migration files are executed as written — no placeholder translation — so they
+may use `%`, `?` operators and dollar-quoted bodies freely.
 """
 
 from __future__ import annotations
@@ -16,12 +18,15 @@ import logging
 import re
 from pathlib import Path
 
-import aiosqlite
+import psycopg
 
 logger = logging.getLogger("scholar.db.migrations")
 
 _MIGRATIONS_DIR = Path(__file__).parent
 _NAME_RE = re.compile(r"^(\d{4})_[a-z0-9_]+\.sql$")
+
+# Arbitrary but fixed: every process migrating this database contends on it.
+MIGRATION_LOCK_KEY = 0x5C0_1A12
 
 
 def discover_migrations() -> list[tuple[str, Path]]:
@@ -41,36 +46,43 @@ def discover_migrations() -> list[tuple[str, Path]]:
     return found
 
 
-async def apply_migrations(db: aiosqlite.Connection) -> list[str]:
+async def apply_migrations(conn: psycopg.AsyncConnection) -> list[str]:
     """Apply every unapplied migration. Returns the versions applied this call."""
-    await db.execute(
-        """CREATE TABLE IF NOT EXISTS schema_migrations (
-               version    TEXT PRIMARY KEY,
-               name       TEXT NOT NULL,
-               applied_at TEXT NOT NULL DEFAULT (datetime('now'))
-           )"""
-    )
-    await db.commit()
+    await conn.execute("SELECT pg_advisory_lock(%s)", (MIGRATION_LOCK_KEY,))
+    await conn.commit()
+    try:
+        await conn.execute(
+            """CREATE TABLE IF NOT EXISTS schema_migrations (
+                   version    TEXT PRIMARY KEY,
+                   name       TEXT NOT NULL,
+                   applied_at TIMESTAMPTZ NOT NULL DEFAULT now()
+               )"""
+        )
+        await conn.commit()
+        cursor = await conn.execute("SELECT version FROM schema_migrations")
+        applied = {row["version"] if isinstance(row, dict) else row[0] for row in await cursor.fetchall()}
+        await conn.commit()
 
-    async with db.execute("SELECT version FROM schema_migrations") as cursor:
-        applied = {row[0] for row in await cursor.fetchall()}
-
-    newly_applied: list[str] = []
-    for version, path in discover_migrations():
-        if version in applied:
-            continue
-        sql = path.read_text(encoding="utf-8")
-        try:
-            await db.executescript(sql)
-            await db.execute(
-                "INSERT INTO schema_migrations (version, name) VALUES (?, ?)",
-                (version, path.name),
-            )
-            await db.commit()
-        except Exception:
-            await db.rollback()
-            logger.error("Migration %s failed; database left at the previous version", path.name)
-            raise
-        newly_applied.append(version)
-        logger.info("Applied migration %s", path.name)
-    return newly_applied
+        newly_applied: list[str] = []
+        for version, path in discover_migrations():
+            if version in applied:
+                continue
+            sql = path.read_text(encoding="utf-8")
+            try:
+                async with conn.transaction():
+                    # No parameters: sent as a simple query, so a file may hold
+                    # many statements.
+                    await conn.execute(sql)  # type: ignore[arg-type]
+                    await conn.execute(
+                        "INSERT INTO schema_migrations (version, name) VALUES (%s, %s)",
+                        (version, path.name),
+                    )
+            except Exception:
+                logger.error("Migration %s failed; database left at the previous version", path.name)
+                raise
+            newly_applied.append(version)
+            logger.info("Applied migration %s", path.name)
+        return newly_applied
+    finally:
+        await conn.execute("SELECT pg_advisory_unlock(%s)", (MIGRATION_LOCK_KEY,))
+        await conn.commit()

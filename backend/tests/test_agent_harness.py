@@ -142,66 +142,65 @@ class HostBoundaryTest(unittest.TestCase):
 class CheckpointerTest(unittest.IsolatedAsyncioTestCase):
     """A thread's history must survive the saver being closed and reopened."""
 
-    async def test_history_reloads_from_disk(self) -> None:
+    async def asyncSetUp(self) -> None:
+        from tests.pg_support import use_database_env
+
+        self.db_url = use_database_env(self)
+
+    async def test_history_reloads_from_the_database(self) -> None:
         from app.agents.checkpointer import open_checkpointer
 
-        with tempfile.TemporaryDirectory() as tmp:
-            db = Path(tmp) / "checkpoints.db"
-            config = {"configurable": {"thread_id": "resume-me"}}
+        config = {"configurable": {"thread_id": "resume-me"}}
 
-            async with open_checkpointer(db) as saver:
-                model = ScriptedModel()
-                agent = create_paper_agent(
-                    tools=[get_paper_outline],
-                    system_prompt="test",
-                    model=model,
-                    checkpointer=saver,
-                )
-                await agent.ainvoke(
-                    {"messages": [{"role": "user", "content": "first turn"}]}, config=config
-                )
+        async with open_checkpointer(self.db_url) as saver:
+            model = ScriptedModel()
+            agent = create_paper_agent(
+                tools=[get_paper_outline],
+                system_prompt="test",
+                model=model,
+                checkpointer=saver,
+            )
+            await agent.ainvoke(
+                {"messages": [{"role": "user", "content": "first turn"}]}, config=config
+            )
 
-            self.assertTrue(db.exists())
+        # Fresh saver, fresh agent, fresh pool — only the database carries state.
+        async with open_checkpointer(self.db_url) as saver:
+            model = ScriptedModel()
+            agent = create_paper_agent(
+                tools=[get_paper_outline],
+                system_prompt="test",
+                model=model,
+                checkpointer=saver,
+            )
+            state = await agent.aget_state(config)
+            restored = state.values.get("messages", [])
+            self.assertTrue(restored, "no messages restored from the checkpoint tables")
+            self.assertIn("first turn", str(restored[0].content))
 
-            # Fresh saver, fresh agent, fresh connection — only the file carries state.
-            async with open_checkpointer(db) as saver:
-                model = ScriptedModel()
-                agent = create_paper_agent(
-                    tools=[get_paper_outline],
-                    system_prompt="test",
-                    model=model,
-                    checkpointer=saver,
-                )
-                state = await agent.aget_state(config)
-                restored = state.values.get("messages", [])
-                self.assertTrue(restored, "no messages restored from the checkpoint file")
-                self.assertIn("first turn", str(restored[0].content))
-
-                out = await agent.ainvoke(
-                    {"messages": [{"role": "user", "content": "second turn"}]}, config=config
-                )
-                texts = [str(m.content) for m in out["messages"]]
-                self.assertTrue(any("first turn" in t for t in texts))
-                self.assertTrue(any("second turn" in t for t in texts))
+            out = await agent.ainvoke(
+                {"messages": [{"role": "user", "content": "second turn"}]}, config=config
+            )
+            texts = [str(m.content) for m in out["messages"]]
+            self.assertTrue(any("first turn" in t for t in texts))
+            self.assertTrue(any("second turn" in t for t in texts))
 
     async def test_threads_are_isolated(self) -> None:
         from app.agents.checkpointer import open_checkpointer
 
-        with tempfile.TemporaryDirectory() as tmp:
-            db = Path(tmp) / "checkpoints.db"
-            async with open_checkpointer(db) as saver:
-                agent = create_paper_agent(
-                    tools=[get_paper_outline],
-                    system_prompt="test",
-                    model=ScriptedModel(),
-                    checkpointer=saver,
-                )
-                await agent.ainvoke(
-                    {"messages": [{"role": "user", "content": "session A secret"}]},
-                    config={"configurable": {"thread_id": "A"}},
-                )
-                state_b = await agent.aget_state({"configurable": {"thread_id": "B"}})
-                self.assertEqual(state_b.values.get("messages", []), [])
+        async with open_checkpointer(self.db_url) as saver:
+            agent = create_paper_agent(
+                tools=[get_paper_outline],
+                system_prompt="test",
+                model=ScriptedModel(),
+                checkpointer=saver,
+            )
+            await agent.ainvoke(
+                {"messages": [{"role": "user", "content": "session A secret"}]},
+                config={"configurable": {"thread_id": "A"}},
+            )
+            state_b = await agent.aget_state({"configurable": {"thread_id": "B"}})
+            self.assertEqual(state_b.values.get("messages", []), [])
 
 
 class ModelFactoryTest(unittest.TestCase):

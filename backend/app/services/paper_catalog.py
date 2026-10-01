@@ -200,7 +200,7 @@ async def upsert_literature_item(
         assignments.extend(["year = ?", "year_known = 1"])
         params.append(year)
     if assignments:
-        assignments.append("updated_at = datetime('now')")
+        assignments.append("updated_at = now()")
         params.append(literature_id)
         await db.execute(
             f"UPDATE literature_items SET {', '.join(assignments)} WHERE literature_id = ?",

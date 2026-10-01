@@ -96,6 +96,93 @@ async def emit(
     return event
 
 
+class DeltaCoalescer:
+    """Buffers one turn's answer text and emits it as fewer, larger deltas.
+
+    Every event is a committed row, so emitting one per model chunk made a turn
+    hundreds of writes. Text is flushed when the oldest buffered fragment is
+    `flush_ms` old or the buffer reaches `flush_chars`, whichever comes first;
+    a timer covers the case where the model pauses with text still buffered.
+
+    Order matters more than batching: a delta must never land after an event
+    the model produced later. Every other event of the turn therefore goes
+    through :meth:`emit`, which flushes first, and flush and emit share a lock
+    so the timer cannot interleave a stale delta between them.
+    """
+
+    def __init__(
+        self,
+        *,
+        session_id: str,
+        run_id: str,
+        flush_ms: int,
+        flush_chars: int,
+    ) -> None:
+        self._session_id = session_id
+        self._run_id = run_id
+        self._flush_seconds = max(0, flush_ms) / 1000.0
+        self._flush_chars = max(1, flush_chars)
+        self._parts: list[str] = []
+        self._size = 0
+        self._lock = asyncio.Lock()
+        self._timer: asyncio.Task[None] | None = None
+
+    async def add(self, text: str) -> None:
+        if not text:
+            return
+        async with self._lock:
+            self._parts.append(text)
+            self._size += len(text)
+            if self._size >= self._flush_chars or self._flush_seconds == 0:
+                await self._flush_locked()
+                return
+        if self._timer is None or self._timer.done():
+            self._timer = asyncio.create_task(self._flush_later())
+
+    async def _flush_later(self) -> None:
+        await asyncio.sleep(self._flush_seconds)
+        async with self._lock:
+            await self._flush_locked()
+
+    async def _flush_locked(self) -> None:
+        if not self._parts:
+            return
+        text = "".join(self._parts)
+        self._parts.clear()
+        self._size = 0
+        await emit(
+            session_id=self._session_id,
+            run_id=self._run_id,
+            type=EventType.MESSAGE_DELTA,
+            payload={"text": text},
+        )
+
+    async def flush(self) -> None:
+        async with self._lock:
+            await self._flush_locked()
+
+    async def emit(self, type: EventType, payload: dict[str, Any] | None = None) -> AgentEvent:
+        """Emit a non-delta event of this turn, after any text that preceded it."""
+        async with self._lock:
+            await self._flush_locked()
+            return await emit(
+                session_id=self._session_id, run_id=self._run_id, type=type, payload=payload
+            )
+
+    async def close(self) -> None:
+        """Flush what is left. Safe to call more than once.
+
+        The timer is awaited rather than cancelled: cancelling it mid-write
+        would drop text it had already taken out of the buffer, and it finishes
+        within one flush window anyway.
+        """
+        timer, self._timer = self._timer, None
+        if timer is not None and not timer.done():
+            with contextlib.suppress(Exception):
+                await timer
+        await self.flush()
+
+
 def is_executing(run_id: str) -> bool:
     """Whether this process is running that turn right now."""
     task = _tasks.get(run_id)
@@ -224,20 +311,25 @@ async def _execute_turn(
     answer_parts: list[str] = []
     seen_calls: set[str] = set()
     heartbeat: asyncio.Task[None] | None = None
+    settings = get_settings()
+    stream = DeltaCoalescer(
+        session_id=session.session_id,
+        run_id=run.run_id,
+        flush_ms=settings.agent_delta_flush_ms,
+        flush_chars=settings.agent_delta_flush_chars,
+    )
 
     try:
         await repo.claim_run(run.run_id, worker_id=WORKER_ID)
         heartbeat = asyncio.create_task(_heartbeat(run.run_id))
-        await emit(
-            session_id=session.session_id,
-            run_id=run.run_id,
-            type=EventType.RUN_STARTED,
-            payload={"question": question, "model": run.llm_model, "mode": mode},
+        await stream.emit(
+            EventType.RUN_STARTED,
+            {"question": question, "model": run.llm_model, "mode": mode},
         )
 
         papers = await repo.list_session_papers(session.session_id)
         memories = await repo.list_memories(
-            session.owner_id, limit=get_settings().agent_memory_max_items
+            session.owner_id, limit=settings.agent_memory_max_items
         )
         context = AgentContext(
             owner_id=session.owner_id,
@@ -252,12 +344,7 @@ async def _execute_turn(
         )
 
         async def _on_compact(payload: dict[str, Any]) -> None:
-            await emit(
-                session_id=session.session_id,
-                run_id=run.run_id,
-                type=EventType.CONTEXT_COMPACTED,
-                payload=payload,
-            )
+            await stream.emit(EventType.CONTEXT_COMPACTED, payload)
 
         chat_model = build_chat_model(run.llm_model)
         # Off the loop: building the graph is synchronous work, and on a cold
@@ -302,33 +389,23 @@ async def _execute_turn(
                 payload = _tool_completion_payload(message)
                 collected_evidence.extend(payload.pop("_evidence_ids", []))
                 attached = payload.pop("_attached_paper", None)
-                await emit(
-                    session_id=session.session_id,
-                    run_id=run.run_id,
-                    type=EventType.TOOL_FAILED
+                await stream.emit(
+                    EventType.TOOL_FAILED
                     if payload.get("status") in {"error"}
                     else EventType.TOOL_COMPLETED,
-                    payload=payload,
+                    payload,
                 )
                 if attached:
                     # The session gained a paper mid-turn. The client shows the
                     # paper list beside the conversation, so it has to hear about
                     # it now rather than on the next reload.
-                    await emit(
-                        session_id=session.session_id,
-                        run_id=run.run_id,
-                        type=EventType.PAPER_ADDED,
-                        payload=attached,
-                    )
+                    await stream.emit(EventType.PAPER_ADDED, attached)
                 continue
 
             if isinstance(message, (AIMessage, AIMessageChunk)):
                 for name, call_id in _announced_calls(message, seen_calls):
-                    await emit(
-                        session_id=session.session_id,
-                        run_id=run.run_id,
-                        type=EventType.TOOL_STARTED,
-                        payload={"tool": name, "call_id": call_id},
+                    await stream.emit(
+                        EventType.TOOL_STARTED, {"tool": name, "call_id": call_id}
                     )
                 # The provider reports usage on the last chunk of each call.
                 # Summed per run, so the token ceiling is enforced against what
@@ -340,12 +417,7 @@ async def _execute_turn(
                 text = _text_of(message.content)
                 if text:
                     answer_parts.append(text)
-                    await emit(
-                        session_id=session.session_id,
-                        run_id=run.run_id,
-                        type=EventType.MESSAGE_DELTA,
-                        payload={"text": text},
-                    )
+                    await stream.add(text)
 
             # Refreshed every step: the wall-clock ceiling is the only one that
             # keeps rising while nothing else happens, so a slow parse or a
@@ -359,6 +431,7 @@ async def _execute_turn(
                 )
                 break
 
+        await stream.close()
         usage.wall_seconds = time.perf_counter() - started
         answer = "".join(answer_parts).strip()
         citations = _citations_in(answer, collected_evidence)
@@ -370,12 +443,7 @@ async def _execute_turn(
                 error_code=ErrorCode.CANCELLED.value,
                 usage=usage.as_dict(),
             )
-            await emit(
-                session_id=session.session_id,
-                run_id=run.run_id,
-                type=EventType.RUN_CANCELLED,
-                payload={"usage": usage.as_dict()},
-            )
+            await stream.emit(EventType.RUN_CANCELLED, {"usage": usage.as_dict()})
             return
 
         if answer:
@@ -390,11 +458,8 @@ async def _execute_turn(
 
         await repo.finish_run(run.run_id, status=RunStatus.DONE, usage=usage.as_dict())
         await repo.touch_session(session.session_id)
-        await emit(
-            session_id=session.session_id,
-            run_id=run.run_id,
-            type=EventType.RUN_COMPLETED,
-            payload={"citations": citations, "usage": usage.as_dict()},
+        await stream.emit(
+            EventType.RUN_COMPLETED, {"citations": citations, "usage": usage.as_dict()}
         )
 
     except asyncio.CancelledError:
@@ -402,12 +467,8 @@ async def _execute_turn(
             run.run_id, status=RunStatus.CANCELLED, error_code=ErrorCode.CANCELLED.value
         )
         with contextlib.suppress(Exception):
-            await emit(
-                session_id=session.session_id,
-                run_id=run.run_id,
-                type=EventType.RUN_CANCELLED,
-                payload={},
-            )
+            await stream.close()
+            await stream.emit(EventType.RUN_CANCELLED, {})
         raise
 
     except Exception as exc:  # noqa: BLE001 — a failed turn must still close its run
@@ -422,11 +483,10 @@ async def _execute_turn(
             usage=usage.as_dict(),
         )
         with contextlib.suppress(Exception):
-            await emit(
-                session_id=session.session_id,
-                run_id=run.run_id,
-                type=EventType.RUN_FAILED,
-                payload={
+            await stream.close()
+            await stream.emit(
+                EventType.RUN_FAILED,
+                {
                     "code": ErrorCode.UPSTREAM_ERROR.value,
                     "error": str(exc)[:500],
                     "usage": usage.as_dict(),
@@ -501,9 +561,8 @@ def _summarise(data: dict[str, Any]) -> dict[str, Any]:
 
 
 # ── Checkpointer lifetime ───────────────────────────────────────────────────
-# Held open for the process rather than per run: opening a SQLite connection
-# per turn would serialise behind the previous one's WAL checkpoint, and the
-# saver is safe to share.
+# Held open for the process rather than per run: the saver owns a connection
+# pool, and it is safe to share between concurrent turns.
 _checkpointer_cm = None
 _checkpointer_instance = None
 
