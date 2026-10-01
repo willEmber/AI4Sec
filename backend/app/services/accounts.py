@@ -38,7 +38,7 @@ _RENEW_AFTER_SECONDS = 3600
 
 # Tables whose `owner_id` moves with a merge. `runs` (classic mode reports) is
 # handled beside them because its column is nullable.
-_OWNED_TABLES = ("agent_sessions", "agent_runs", "agent_memories", "evidence")
+_OWNED_TABLES = ("agent_sessions", "agent_runs", "agent_memories", "evidence", "agent_projects")
 
 
 class AccountDisabled(Exception):

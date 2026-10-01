@@ -168,6 +168,25 @@ class AgentSession(BaseModel):
     llm_model: str = ""
     config: dict[str, Any] = Field(default_factory=dict)
     status: str = "active"
+    # The research project this session belongs to; '' when it belongs to none.
+    project_id: str = ""
+    created_at: str = ""
+    updated_at: str = ""
+
+
+class AgentProject(BaseModel):
+    """A group of sessions about one research question (P8).
+
+    Its papers are derived from its sessions' papers rather than stored, so
+    they appear only on the detail views that compute them.
+    """
+
+    project_id: str
+    owner_id: str = ""
+    title: str = ""
+    description: str = ""
+    status: str = "active"          # active | archived
+    session_count: int = 0
     created_at: str = ""
     updated_at: str = ""
 
@@ -324,6 +343,8 @@ class AgentMemory(BaseModel):
     content: str
     source_session_id: str = ""
     source_run_id: str = ""
+    # '' is a global memory; otherwise it reaches only that project's sessions.
+    project_id: str = ""
     active: bool = True
     created_at: str = ""
     updated_at: str = ""
@@ -342,6 +363,8 @@ class CreateSessionRequest(BaseModel):
     # show up in the compare matrix and the recent-runs list beside reports
     # started from the classic upload page; it grants nothing.
     owner_token: str = ""
+    # Start the session inside one of the caller's projects.
+    project_id: str = ""
 
 
 class CreateSessionResponse(BaseModel):
@@ -370,6 +393,28 @@ class AttachPapersRequest(BaseModel):
 class CreateMemoryRequest(BaseModel):
     content: str
     kind: MemoryKind = MemoryKind.PREFERENCE
+    # One of the caller's projects, or '' for a global memory.
+    project_id: str = ""
+
+
+class CreateProjectRequest(BaseModel):
+    title: str = Field(default="", max_length=200)
+    description: str = Field(default="", max_length=4000)
+
+
+class UpdateProjectRequest(BaseModel):
+    """Fields left as `None` are not changed."""
+
+    title: str | None = Field(default=None, max_length=200)
+    description: str | None = Field(default=None, max_length=4000)
+    status: Literal["active", "archived"] | None = None
+
+
+class UpdateSessionRequest(BaseModel):
+    """Fields left as `None` are not changed; `project_id=""` takes the session out of its project."""
+
+    project_id: str | None = None
+    title: str | None = Field(default=None, max_length=200)
 
 
 class PostMessageResponse(BaseModel):
@@ -396,3 +441,7 @@ class SessionDetailResponse(BaseModel):
     artifacts: list[SessionArtifact] = Field(default_factory=list)
     context: SessionContextStats = Field(default_factory=SessionContextStats)
     last_event_seq: int = 0
+    # The session's project, and that project's papers this session has not
+    # attached yet (P8). Empty when the session belongs to no project.
+    project: AgentProject | None = None
+    project_papers: list[SessionPaper] = Field(default_factory=list)

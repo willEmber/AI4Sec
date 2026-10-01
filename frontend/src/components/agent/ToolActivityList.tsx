@@ -108,6 +108,7 @@ const COUNT_LABELS: Array<[string, string]> = [
   ["papers_count", "chat.tool.n_papers"],
   ["rankings_count", "chat.tool.n_rankings"],
   ["unknown_year_count", "chat.tool.n_unknown_year"],
+  ["turns_count", "chat.tool.n_turns"],
 ];
 
 function detail(tool: ToolActivity, t: Translate): string {

@@ -1,18 +1,22 @@
 "use client";
 
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import { useParams, useSearchParams } from "next/navigation";
 import {
   AgentApiError,
   attachPapers,
   cancelRun,
   getSession,
+  listProjects,
   listSessions,
   postMessage,
+  updateSession,
 } from "@/lib/agent";
 import type {
   AgentMessage,
   AgentMode,
+  AgentProject,
   AgentRun,
   AgentSession,
   SessionArtifact,
@@ -63,6 +67,8 @@ function ChatSession() {
 
   const [detail, setDetail] = useState<SessionDetail | null>(null);
   const [sessions, setSessions] = useState<AgentSession[]>([]);
+  const [projects, setProjects] = useState<AgentProject[]>([]);
+  const [moving, setMoving] = useState(false);
   const [loadError, setLoadError] = useState<string>("");
   const [draft, setDraft] = useState("");
   const [mode, setMode] = useState<AgentMode>(() => {
@@ -115,6 +121,12 @@ function ChatSession() {
     reload()
       .then((data) => {
         if (cancelled) return;
+        // Inside a project the sidebar lists that project's conversations.
+        listSessions(data.session.project_id || undefined)
+          .then((list) => {
+            if (!cancelled) setSessions(list.sessions);
+          })
+          .catch(() => {});
         const firstPaper = data.papers.find((p) => p.paper_id);
         if (firstPaper) setActivePaperId(firstPaper.paper_id);
         const running = data.runs.find((r) => ACTIVE_STATUSES.has(r.status));
@@ -126,9 +138,9 @@ function ChatSession() {
       .catch((err) => {
         if (!cancelled) setLoadError(String(err));
       });
-    listSessions()
+    listProjects()
       .then((data) => {
-        if (!cancelled) setSessions(data.sessions);
+        if (!cancelled) setProjects(data.projects);
       })
       .catch(() => {});
     return () => {
@@ -141,11 +153,12 @@ function ChatSession() {
   useEffect(() => {
     if (!finishedRunId) return;
     reload()
-      .then(() => setActiveRunId(""))
+      .then((data) => {
+        setActiveRunId("");
+        return listSessions(data.session.project_id || undefined);
+      })
+      .then((list) => setSessions(list.sessions))
       .catch(() => setActiveRunId(""));
-    listSessions()
-      .then((data) => setSessions(data.sessions))
-      .catch(() => {});
   }, [finishedRunId, reload]);
 
   // The agent can add a paper part-way through a turn, so the sidebar has to
@@ -235,6 +248,36 @@ function ChatSession() {
     [sessionId, reload],
   );
 
+  // Moving a conversation changes which papers, memories and earlier
+  // conversations its next turn can draw on, so everything is reloaded.
+  const moveToProject = useCallback(
+    async (projectId: string) => {
+      setMoving(true);
+      try {
+        await updateSession(sessionId, { project_id: projectId });
+        const data = await reload();
+        const list = await listSessions(data.session.project_id || undefined);
+        setSessions(list.sessions);
+        setMemoriesToken((n) => n + 1);
+      } catch (err) {
+        setLoadError(String(err));
+      } finally {
+        setMoving(false);
+      }
+    },
+    [sessionId, reload],
+  );
+
+  const addProjectPaper = useCallback(
+    async (paperId: string) => {
+      await attachPapers(sessionId, [paperId]);
+      await reload();
+      setActivePaperId(paperId);
+      setTargetPage(undefined);
+    },
+    [sessionId, reload],
+  );
+
   const jumpToPage = useCallback((paperId: string, page: number) => {
     setActivePaperId(paperId);
     setPdfCollapsed(false);
@@ -285,6 +328,39 @@ function ChatSession() {
         <span className="truncate font-medium text-foreground">
           {detail?.session.title || t("chat.sessions.untitled")}
         </span>
+        {detail && (
+          <>
+            <span className="opacity-40">·</span>
+            <select
+              value={detail.session.project_id || ""}
+              disabled={moving}
+              onChange={(e) => void moveToProject(e.target.value)}
+              title={t("chat.project.move_title")}
+              className="max-w-[12rem] truncate rounded-md border border-border bg-background px-1.5 py-0.5 text-xs text-foreground focus:outline-none disabled:opacity-50"
+            >
+              <option value="">{t("chat.project.none")}</option>
+              {/* The current project stays selectable even when archived. */}
+              {detail.project && !projects.some((p) => p.project_id === detail.project?.project_id) && (
+                <option value={detail.project.project_id}>
+                  {detail.project.title || t("project.untitled")}
+                </option>
+              )}
+              {projects.map((project) => (
+                <option key={project.project_id} value={project.project_id}>
+                  {project.title || t("project.untitled")}
+                </option>
+              ))}
+            </select>
+            {detail.project && (
+              <Link
+                href={`/projects/${detail.project.project_id}`}
+                className="shrink-0 underline-offset-2 hover:text-foreground hover:underline"
+              >
+                {t("chat.project.open")}
+              </Link>
+            )}
+          </>
+        )}
         <span className="opacity-40">·</span>
         <span>{t("chat.header.papers", { count: readablePapers })}</span>
         {detail?.session.llm_model && (
@@ -467,6 +543,9 @@ function ChatSession() {
         }}
         onUpload={upload}
         memoriesToken={memoriesToken}
+        project={detail?.project ?? null}
+        projectPapers={detail?.project_papers ?? []}
+        onAddProjectPaper={addProjectPaper}
       />
 
       <div className="min-w-0 flex-1">

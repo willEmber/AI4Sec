@@ -3,7 +3,7 @@
 import { useCallback, useRef, useState } from "react";
 import Link from "next/link";
 import { useTranslation } from "@/lib/i18n";
-import type { AgentSession, SessionPaper } from "@/lib/agent";
+import type { AgentProject, AgentSession, SessionPaper } from "@/lib/agent";
 import MemoryPanel from "@/components/agent/MemoryPanel";
 import { IconPlus, IconUpload } from "@/components/icons";
 
@@ -28,11 +28,19 @@ interface Props {
   onUpload?: (file: File) => Promise<void>;
   /** Bumped when the agent saved a memory mid-turn. */
   memoriesToken?: number;
+  /** The session's research project, when it has one. */
+  project?: AgentProject | null;
+  /** That project's papers this session has not attached yet. */
+  projectPapers?: SessionPaper[];
+  /** Attach one of `projectPapers` (by paper_id) to this session. */
+  onAddProjectPaper?: (paperId: string) => Promise<void>;
 }
 
 /**
  * The papers this session can read, plus the reader's other sessions and
- * what the agent remembers about them.
+ * what the agent remembers about them. Inside a research project, the
+ * project's other papers are offered too, and the session list is the
+ * project's.
  *
  * `availability` is shown rather than hidden: "only the abstract is available"
  * changes how an answer should be read, so it belongs on screen next to the
@@ -46,11 +54,33 @@ export default function PaperSidebar({
   onSelectPaper,
   onUpload,
   memoriesToken = 0,
+  project = null,
+  projectPapers = [],
+  onAddProjectPaper,
 }: Props) {
   const { t } = useTranslation();
   const inputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState("");
+  const [adding, setAdding] = useState("");
+  // Only papers with a file can be attached from here; a metadata-only work
+  // is the agent's to fetch.
+  const addable = projectPapers.filter((p) => p.paper_id);
+
+  const addProjectPaper = useCallback(
+    async (paperId: string) => {
+      if (!onAddProjectPaper || adding) return;
+      setAdding(paperId);
+      try {
+        await onAddProjectPaper(paperId);
+      } catch (err) {
+        setUploadError(err instanceof Error ? err.message : String(err));
+      } finally {
+        setAdding("");
+      }
+    },
+    [onAddProjectPaper, adding],
+  );
 
   const handleFile = useCallback(
     async (file: File | undefined) => {
@@ -147,12 +177,43 @@ export default function PaperSidebar({
         ))}
       </div>
 
+      {addable.length > 0 && (
+        <div className="max-h-[30%] overflow-y-auto border-t border-border p-2">
+          <h2
+            className="px-2 pb-1.5 pt-1 text-[0.7rem] font-semibold uppercase tracking-wider text-muted-foreground"
+            title={t("chat.project_papers.hint")}
+          >
+            {t("chat.project_papers.heading")}
+          </h2>
+          {addable.map((paper) => (
+            <div
+              key={paper.literature_id}
+              className="mb-0.5 flex items-start gap-2 rounded-lg px-3 py-2 hover:bg-card/70"
+            >
+              <span className="line-clamp-2 min-w-0 flex-1 text-xs leading-snug text-muted-foreground">
+                {paper.title || t("chat.papers.untitled")}
+              </span>
+              {onAddProjectPaper && (
+                <button
+                  type="button"
+                  disabled={Boolean(adding)}
+                  onClick={() => void addProjectPaper(paper.paper_id)}
+                  className="shrink-0 rounded-md border border-border bg-card px-1.5 py-0.5 text-[0.65rem] text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50"
+                >
+                  {adding === paper.paper_id ? "…" : t("chat.project_papers.add")}
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
       <div className="flex items-center justify-between border-t border-border px-4 py-3">
         <h2 className="text-[0.7rem] font-semibold uppercase tracking-wider text-muted-foreground">
-          {t("chat.sessions.heading")}
+          {project ? t("chat.sessions.heading_project") : t("chat.sessions.heading")}
         </h2>
         <Link
-          href="/chat?new=1"
+          href={project ? `/chat?new=1&project=${project.project_id}` : "/chat?new=1"}
           title={t("chat.sessions.new")}
           className="inline-flex items-center gap-1 rounded-md border border-border bg-card px-2 py-1 text-[0.7rem] text-muted-foreground transition-colors hover:text-foreground"
         >
@@ -182,7 +243,7 @@ export default function PaperSidebar({
         ))}
       </div>
 
-      <MemoryPanel refreshToken={memoriesToken} />
+      <MemoryPanel refreshToken={memoriesToken} projectId={project?.project_id ?? ""} />
     </aside>
   );
 }

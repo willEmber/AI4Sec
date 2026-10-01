@@ -42,12 +42,14 @@ from app.config import get_settings
 from app.db import agent_repository as repo
 from app.models.agent_models import (
     AgentEvent,
+    AgentProject,
     AgentRun,
     AgentSession,
     ErrorCode,
     EventType,
     MessageRole,
     RunStatus,
+    SessionPaper,
 )
 from app.services.agent_worker import HEARTBEAT_SECONDS, WORKER_ID
 
@@ -328,8 +330,11 @@ async def _execute_turn(
         )
 
         papers = await repo.list_session_papers(session.session_id)
-        memories = await repo.list_memories(
-            session.owner_id, limit=settings.agent_memory_max_items
+        project, project_papers = await _project_context(session)
+        memories = await repo.list_memories_for_prompt(
+            session.owner_id,
+            project_id=project.project_id if project is not None else "",
+            limit=settings.agent_memory_max_items,
         )
         context = AgentContext(
             owner_id=session.owner_id,
@@ -339,6 +344,7 @@ async def _execute_turn(
             language=session.language,
             llm_model=run.llm_model,
             owner_token=str((session.config or {}).get("owner_token") or ""),
+            project_id=project.project_id if project is not None else "",
             budget=budget,
             usage=usage,
         )
@@ -355,7 +361,11 @@ async def _execute_turn(
             create_paper_agent,
             tools=ALL_AGENT_TOOLS,
             system_prompt=build_system_prompt(
-                language=session.language, papers=papers, memories=memories
+                language=session.language,
+                papers=papers,
+                memories=memories,
+                project=project,
+                project_papers=project_papers,
             ),
             model=chat_model,
             context_schema=AgentContext,
@@ -498,6 +508,32 @@ async def _execute_turn(
             heartbeat.cancel()
 
 
+async def _project_context(
+    session: AgentSession,
+) -> tuple[AgentProject | None, list[SessionPaper]]:
+    """The session's project and the project papers it has not attached, if any.
+
+    A project that does not resolve for the session's owner is treated as
+    none, so recall and project papers are never scoped to something the
+    reader does not own.
+    """
+    if not session.project_id:
+        return None, []
+    try:
+        project = await repo.get_project(session.project_id, owner_id=session.owner_id)
+    except repo.ProjectNotFound:
+        logger.warning(
+            "Session %s names project %s, which its owner does not have",
+            session.session_id,
+            session.project_id,
+        )
+        return None, []
+    papers = await repo.list_project_papers(
+        project.project_id, exclude_session_id=session.session_id
+    )
+    return project, papers
+
+
 def _tool_completion_payload(message: ToolMessage) -> dict[str, Any]:
     """Summarise a tool result for the event stream.
 
@@ -553,7 +589,7 @@ def _summarise(data: dict[str, Any]) -> dict[str, Any]:
             summary[key] = data[key]
     for key in (
         "sections", "hits", "blocks", "results", "papers", "rankings", "unknown_year", "memories",
-        "chunks", "unknown_date",
+        "chunks", "unknown_date", "turns",
     ):
         if isinstance(data.get(key), list):
             summary[f"{key}_count"] = len(data[key])

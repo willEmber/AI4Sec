@@ -114,6 +114,8 @@ export interface AgentMemory {
   content: string;
   source_session_id: string;
   source_run_id: string;
+  /** "" for a global memory; otherwise only that project's conversations see it. */
+  project_id: string;
   active: boolean;
   created_at: string;
   updated_at: string;
@@ -189,8 +191,48 @@ export interface AgentSession {
   llm_model: string;
   config?: Record<string, unknown>;
   status: string;
+  /** The research project the session belongs to; "" when none. */
+  project_id: string;
   created_at: string;
   updated_at: string;
+}
+
+/** A group of conversations about one research question (P8). */
+export interface AgentProject {
+  project_id: string;
+  title: string;
+  description: string;
+  status: "active" | "archived";
+  session_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ProjectDetail {
+  project: AgentProject;
+  sessions: AgentSession[];
+  /** Derived from the project's sessions, one row per work. */
+  papers: SessionPaper[];
+  memories: AgentMemory[];
+}
+
+/** One earlier question and answer, with the evidence the answer cited. */
+export interface RecalledTurn {
+  session_id: string;
+  session_title: string;
+  project_id: string;
+  run_id: string;
+  asked_at: string;
+  question: string;
+  answer_excerpt: string;
+  evidence: {
+    evidence_id: string;
+    source_level: string;
+    paper_title: string;
+    page: number | null;
+    section: string;
+    quote: string;
+  }[];
 }
 
 export interface SessionDetail {
@@ -201,6 +243,9 @@ export interface SessionDetail {
   artifacts: SessionArtifact[];
   context: SessionContextStats;
   last_event_seq: number;
+  /** The session's project, and that project's papers this session lacks. */
+  project: AgentProject | null;
+  project_papers: SessionPaper[];
 }
 
 export interface EvidenceLocator {
@@ -296,6 +341,7 @@ export async function createSession(input: {
   language?: "zh" | "en";
   llm_model?: string;
   paper_ids?: string[];
+  project_id?: string;
 }): Promise<{ session_id: string; thread_id: string; created_at: string }> {
   return agentRequest("/agent/sessions", {
     method: "POST",
@@ -304,6 +350,7 @@ export async function createSession(input: {
       language: input.language || "zh",
       llm_model: input.llm_model || "",
       paper_ids: input.paper_ids || [],
+      project_id: input.project_id || "",
       // Lets mode reports made in this conversation appear in the compare
       // matrix beside reports made from the classic upload page.
       owner_token: getOwnerToken(),
@@ -328,10 +375,15 @@ export async function listMemories(): Promise<{ memories: AgentMemory[] }> {
 export async function createMemory(input: {
   content: string;
   kind?: MemoryKind;
+  project_id?: string;
 }): Promise<AgentMemory> {
   return agentRequest("/agent/memories", {
     method: "POST",
-    body: JSON.stringify({ content: input.content, kind: input.kind || "preference" }),
+    body: JSON.stringify({
+      content: input.content,
+      kind: input.kind || "preference",
+      project_id: input.project_id || "",
+    }),
   });
 }
 
@@ -339,8 +391,59 @@ export async function deleteMemory(memoryId: string): Promise<void> {
   await agentRequest(`/agent/memories/${memoryId}`, { method: "DELETE" });
 }
 
-export async function listSessions(): Promise<{ sessions: AgentSession[] }> {
-  return agentRequest("/agent/sessions");
+/** Recent sessions; `projectId` narrows to one project ("" = sessions in none). */
+export async function listSessions(projectId?: string): Promise<{ sessions: AgentSession[] }> {
+  const query = projectId === undefined ? "" : `?project_id=${encodeURIComponent(projectId)}`;
+  return agentRequest(`/agent/sessions${query}`);
+}
+
+/** Rename a session, or move it into a project (`project_id: ""` takes it out). */
+export async function updateSession(
+  sessionId: string,
+  input: { project_id?: string; title?: string },
+): Promise<{ session: AgentSession }> {
+  return agentRequest(`/agent/sessions/${sessionId}`, {
+    method: "PATCH",
+    body: JSON.stringify(input),
+  });
+}
+
+export async function listProjects(includeArchived = false): Promise<{ projects: AgentProject[] }> {
+  return agentRequest(`/agent/projects${includeArchived ? "?include_archived=true" : ""}`);
+}
+
+export async function createProject(input: {
+  title: string;
+  description?: string;
+}): Promise<{ project: AgentProject }> {
+  return agentRequest("/agent/projects", {
+    method: "POST",
+    body: JSON.stringify({ title: input.title, description: input.description || "" }),
+  });
+}
+
+export async function getProject(projectId: string): Promise<ProjectDetail> {
+  return agentRequest(`/agent/projects/${projectId}`);
+}
+
+export async function updateProject(
+  projectId: string,
+  input: { title?: string; description?: string; status?: AgentProject["status"] },
+): Promise<{ project: AgentProject }> {
+  return agentRequest(`/agent/projects/${projectId}`, {
+    method: "PATCH",
+    body: JSON.stringify(input),
+  });
+}
+
+/** The same search the agent's recall uses, over the caller's conversations. */
+export async function searchConversations(
+  query: string,
+  projectId?: string,
+): Promise<{ query: string; turns: RecalledTurn[] }> {
+  const params = new URLSearchParams({ q: query });
+  if (projectId) params.set("project_id", projectId);
+  return agentRequest(`/agent/search?${params}`);
 }
 
 export async function getSession(sessionId: string): Promise<SessionDetail> {

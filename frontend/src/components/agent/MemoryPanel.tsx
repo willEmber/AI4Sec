@@ -9,6 +9,8 @@ import { IconPlus } from "@/components/icons";
 interface Props {
   /** Bump to refetch — the agent can save a memory mid-turn. */
   refreshToken: number;
+  /** The conversation's research project; "" outside one. */
+  projectId?: string;
 }
 
 /**
@@ -18,23 +20,27 @@ interface Props {
  * so the reader must be able to see each one and remove it. Adding one by
  * hand is allowed too — telling the agent is the usual way, but a reader who
  * already knows what they want should not have to phrase it as a request.
+ *
+ * Inside a project the panel shows what the agent will actually see there:
+ * global memories plus this project's, never another project's.
  */
-export default function MemoryPanel({ refreshToken }: Props) {
+export default function MemoryPanel({ refreshToken, projectId = "" }: Props) {
   const { t } = useTranslation();
   const [memories, setMemories] = useState<AgentMemory[] | null>(null);
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [projectOnly, setProjectOnly] = useState(false);
 
   const reload = useCallback(async () => {
     try {
       const data = await listMemories();
-      setMemories(data.memories);
+      setMemories(data.memories.filter((m) => !m.project_id || m.project_id === projectId));
     } catch {
       setMemories([]);
     }
-  }, []);
+  }, [projectId]);
 
   useEffect(() => {
     void reload();
@@ -61,7 +67,7 @@ export default function MemoryPanel({ refreshToken }: Props) {
     setBusy(true);
     setError("");
     try {
-      await createMemory({ content });
+      await createMemory({ content, project_id: projectId && projectOnly ? projectId : "" });
       setDraft("");
       await reload();
     } catch (err) {
@@ -69,7 +75,7 @@ export default function MemoryPanel({ refreshToken }: Props) {
     } finally {
       setBusy(false);
     }
-  }, [draft, reload]);
+  }, [draft, reload, projectId, projectOnly]);
 
   const count = memories?.length ?? 0;
 
@@ -104,6 +110,11 @@ export default function MemoryPanel({ refreshToken }: Props) {
               </span>
               <span className="min-w-0 flex-1 text-xs leading-snug text-foreground">
                 {memory.content}
+                {memory.project_id && (
+                  <span className="ml-1 text-[0.6rem] text-accent-foreground">
+                    · {t("chat.memory.scope.project")}
+                  </span>
+                )}
               </span>
               <button
                 type="button"
@@ -141,6 +152,16 @@ export default function MemoryPanel({ refreshToken }: Props) {
               <IconPlus className="text-[12px]" />
             </button>
           </div>
+          {projectId && (
+            <label className="mt-1 flex items-center gap-1.5 px-2 text-[0.7rem] text-muted-foreground">
+              <input
+                type="checkbox"
+                checked={projectOnly}
+                onChange={(e) => setProjectOnly(e.target.checked)}
+              />
+              {t("chat.memory.only_project")}
+            </label>
+          )}
           {error && <p className="mt-1 px-2 text-[0.7rem] text-destructive">{error}</p>}
           <p className="mt-2 px-2 text-[0.65rem] leading-relaxed text-muted-foreground">
             {t("chat.memory.hint")}

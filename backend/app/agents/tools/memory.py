@@ -6,6 +6,12 @@ never paper content, which lives in evidence and is re-read rather than
 remembered. Each memory belongs to a principal (`owner_id`), is injected into
 the prompt as reference data, and can be inspected and deleted by the reader.
 
+A memory is global or belongs to one research project (P8). A project memory
+reaches only that project's sessions, so "I am working on X" kept in one
+project is not wrong context in the next. The project is the session's, taken
+from the trusted context; the model can only choose between "this project"
+and "everywhere".
+
 Two boundaries are enforced in code, not asked of the model:
 
 * Memories are written under the identity in the trusted runtime context. The
@@ -62,15 +68,19 @@ async def save_memory(
     content: str,
     runtime: ToolRuntime[AgentContext],
     kind: str = "preference",
+    scope: str = "auto",
 ) -> str:
     """Remember something durable about the reader for future conversations.
 
     Use this when the reader states how they want answers (language, format,
     depth), what they are working on, or gives a standing instruction — or when
     they explicitly ask you to remember something. `kind` is one of
-    preference, fact, project, instruction. Do not store paper content, one-off
-    requests, or anything transient; do not store credentials. Write the memory
-    as a short, self-contained sentence.
+    preference, fact, project, instruction. `scope` is "project" (only this
+    research project's conversations will see it), "global" (every
+    conversation), or "auto": a `project` memory stays in the project, anything
+    else is global. Do not store paper content, one-off requests, or anything
+    transient; do not store credentials. Write the memory as a short,
+    self-contained sentence.
     """
     ctx = runtime.context
     text = (content or "").strip()
@@ -95,18 +105,44 @@ async def save_memory(
     except ValueError:
         memory_kind = MemoryKind.FACT
 
+    project_id, scope_note = _memory_project(ctx, memory_kind, scope)
     memory = await repo.add_memory(
         owner_id=ctx.owner_id,
         content=text,
         kind=memory_kind,
         source_session_id=ctx.session_id,
         source_run_id=ctx.run_id,
+        project_id=project_id,
     )
     await _emit_saved(ctx, memory.memory_id, memory.kind.value, memory.content)
+    where = (
+        "future conversations in this project" if memory.project_id else "future conversations"
+    )
     return ToolResult.ok(
-        {"memory_id": memory.memory_id, "kind": memory.kind.value, "content": memory.content},
-        note="Saved. It will be available in future conversations; the reader can delete it.",
+        {
+            "memory_id": memory.memory_id,
+            "kind": memory.kind.value,
+            "content": memory.content,
+            "scope": "project" if memory.project_id else "global",
+        },
+        note=f"Saved. It will be available in {where}; the reader can delete it. {scope_note}".strip(),
     ).to_json()
+
+
+def _memory_project(ctx: AgentContext, kind: MemoryKind, scope: str) -> tuple[str, str]:
+    """`(project_id, note)` for a memory being saved in this turn.
+
+    The project can only ever be the session's own; `scope` merely says
+    whether to use it.
+    """
+    wanted = (scope or "auto").strip().lower()
+    if wanted == "auto":
+        wanted = "project" if kind == MemoryKind.PROJECT else "global"
+    if wanted != "project":
+        return "", ""
+    if not ctx.project_id:
+        return "", "This conversation is not in a project, so it was saved as a global memory."
+    return ctx.project_id, ""
 
 
 @tool(parse_docstring=False)
@@ -121,8 +157,15 @@ async def list_memories(runtime: ToolRuntime[AgentContext]) -> str:
     return ToolResult.ok(
         {
             "memories": [
-                {"memory_id": m.memory_id, "kind": m.kind.value, "content": m.content}
+                {
+                    "memory_id": m.memory_id,
+                    "kind": m.kind.value,
+                    "content": m.content,
+                    "scope": "project" if m.project_id else "global",
+                }
                 for m in memories
+                # Another project's memories are not this conversation's business.
+                if not m.project_id or m.project_id == ctx.project_id
             ]
         }
     ).to_json()

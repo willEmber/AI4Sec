@@ -150,6 +150,10 @@ class AgentContext:
     # in the compare matrix next to reports made from the upload page. Grants
     # nothing; identity is `owner_id`.
     owner_token: str = ""
+    # The session's research project ('' = none), read from the session row at
+    # the start of the turn. Recall and project papers are scoped by this, so a
+    # tool argument cannot reach into another project (P8).
+    project_id: str = ""
     budget: RunBudget = field(default_factory=RunBudget)
     usage: BudgetUsage = field(default_factory=BudgetUsage)
 

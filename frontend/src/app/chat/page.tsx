@@ -3,8 +3,8 @@
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { createSession, listSessions } from "@/lib/agent";
-import type { AgentMode, AgentSession } from "@/lib/agent";
+import { createSession, listProjects, listSessions } from "@/lib/agent";
+import type { AgentMode, AgentProject, AgentSession } from "@/lib/agent";
 import { listModels, listRecentRuns, uploadPaper } from "@/lib/api";
 import type { RecentRunResponse } from "@/lib/types";
 import { useTranslation } from "@/lib/i18n";
@@ -33,7 +33,8 @@ const MODE_ICON: Record<AgentMode, ComponentType<{ className?: string }>> = {
  * Three ways in. Drop a PDF and a session opens on it; pick a paper already in
  * the workspace; or open an empty conversation and let the agent find papers.
  * `?paper=<id>` (from a report page) and `?new=1` (from the sidebar) skip the
- * choice; `?mode=` carries a preselected mode into the new session.
+ * choice; `?mode=` carries a preselected mode into the new session, and
+ * `?project=` files it under that research project.
  *
  * Reading the query string opts the page out of prerendering, so it needs a
  * Suspense boundary of its own.
@@ -52,9 +53,11 @@ function ChatEntry() {
   const presetPaperId = searchParams.get("paper") || "";
   const presetMode = (searchParams.get("mode") || "auto") as AgentMode;
   const wantsNew = searchParams.get("new") === "1";
+  const presetProjectId = searchParams.get("project") || "";
   const { t, locale } = useTranslation();
 
   const [sessions, setSessions] = useState<AgentSession[] | null>(null);
+  const [projects, setProjects] = useState<AgentProject[]>([]);
   const [runs, setRuns] = useState<RecentRunResponse[] | null>(null);
   const [models, setModels] = useState<string[]>([]);
   const [llmModel, setLlmModel] = useState("");
@@ -68,6 +71,9 @@ function ChatEntry() {
     listSessions()
       .then((data) => setSessions(data.sessions))
       .catch(() => setSessions([]));
+    listProjects()
+      .then((data) => setProjects(data.projects))
+      .catch(() => setProjects([]));
     listRecentRuns(40, false)
       .then(setRuns)
       .catch(() => setRuns([]));
@@ -100,6 +106,7 @@ function ChatEntry() {
           language: locale === "zh" ? "zh" : "en",
           llm_model: llmModel,
           paper_ids: paperIds,
+          project_id: presetProjectId,
         });
         const query = mode !== "auto" ? `?mode=${mode}` : "";
         router.push(`/chat/${session.session_id}${query}`);
@@ -108,8 +115,10 @@ function ChatEntry() {
         setCreating("");
       }
     },
-    [creating, locale, llmModel, mode, router],
+    [creating, locale, llmModel, mode, router, presetProjectId],
   );
+
+  const presetProject = projects.find((p) => p.project_id === presetProjectId);
 
   const handleFile = useCallback(
     async (file: File | undefined) => {
@@ -157,6 +166,12 @@ function ChatEntry() {
       {error && (
         <p className="mb-6 rounded-lg border border-border bg-muted px-3 py-2 text-xs text-destructive">
           {error}
+        </p>
+      )}
+
+      {presetProject && (
+        <p className="mb-6 rounded-lg border border-border bg-accent px-3 py-2 text-xs text-accent-foreground">
+          {t("chat.entry.in_project", { title: presetProject.title || t("project.untitled") })}
         </p>
       )}
 
@@ -284,6 +299,35 @@ function ChatEntry() {
           ))}
         </div>
       </section>
+
+      {projects.length > 0 && (
+        <section className="mb-10">
+          <div className="mb-3 flex items-center justify-between">
+            <h2 className="text-[0.7rem] font-semibold uppercase tracking-wider text-muted-foreground">
+              {t("chat.entry.projects")}
+            </h2>
+            <Link href="/projects" className="text-xs text-muted-foreground hover:text-foreground">
+              {t("chat.entry.projects_all")}
+            </Link>
+          </div>
+          <div className="grid gap-2 sm:grid-cols-2">
+            {projects.slice(0, 6).map((project) => (
+              <Link
+                key={project.project_id}
+                href={`/projects/${project.project_id}`}
+                className="lift flex items-center justify-between gap-3 rounded-xl border border-border bg-card px-4 py-2.5"
+              >
+                <span className="truncate text-sm text-foreground">
+                  {project.title || t("project.untitled")}
+                </span>
+                <span className="shrink-0 text-[0.7rem] text-muted-foreground">
+                  {t("project.sessions", { count: project.session_count })}
+                </span>
+              </Link>
+            ))}
+          </div>
+        </section>
+      )}
 
       <section>
         <h2 className="mb-3 text-[0.7rem] font-semibold uppercase tracking-wider text-muted-foreground">

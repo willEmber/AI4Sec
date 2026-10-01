@@ -5,13 +5,13 @@ parameters. Identity, session scope and budgets arrive through
 `ToolRuntime[AgentContext]`, so nothing the model writes — and nothing a paper
 says — can widen what a tool is allowed to touch.
 
-Six groups, in the order a research question tends to move through them:
+Seven groups, in the order a research question tends to move through them:
 discovery finds candidates, acquisition turns a candidate into a readable file,
 reading extracts citable evidence from it, the web covers what is not a paper,
-modes produce one of the three whole-paper reports, and memory keeps what the
-reader wants remembered. The
-agent is not made to follow that order; tools that happen to be useful early
-are simply listed first.
+modes produce one of the three whole-paper reports, memory keeps what the
+reader wants remembered, and the project tools reach back into earlier
+conversations and the project's other papers. The agent is not made to follow
+that order; tools that happen to be useful early are simply listed first.
 """
 
 from app.agents.tools.acquisition import (
@@ -41,6 +41,11 @@ from app.agents.tools.modes import (
     run_logic_lens,
     run_research_sphere,
 )
+from app.agents.tools.project import (
+    PROJECT_TOOLS,
+    open_project_paper,
+    recall_conversations,
+)
 from app.agents.tools.reading import (
     READING_TOOLS,
     get_paper_outline,
@@ -53,8 +58,8 @@ from app.agents.tools.web import WEB_TOOLS, read_web_page, web_search
 # additions (bulk metadata, cross-paper passages, peer review).
 RESEARCH_TOOLS = [*DISCOVERY_TOOLS, *ACQUISITION_TOOLS, *READING_TOOLS]
 
-# Everything the unified agent sees (P5), plus the open web (P7).
-ALL_AGENT_TOOLS = [*RESEARCH_TOOLS, *WEB_TOOLS, *MODE_TOOLS, *MEMORY_TOOLS]
+# Everything the unified agent sees (P5), plus the open web (P7) and projects (P8).
+ALL_AGENT_TOOLS = [*RESEARCH_TOOLS, *WEB_TOOLS, *MODE_TOOLS, *MEMORY_TOOLS, *PROJECT_TOOLS]
 
 __all__ = [
     "ACQUISITION_TOOLS",
@@ -62,6 +67,7 @@ __all__ = [
     "DISCOVERY_TOOLS",
     "MEMORY_TOOLS",
     "MODE_TOOLS",
+    "PROJECT_TOOLS",
     "READING_TOOLS",
     "RESEARCH_TOOLS",
     "WEB_TOOLS",
@@ -73,9 +79,11 @@ __all__ = [
     "get_peer_reviews",
     "get_related_papers",
     "list_memories",
+    "open_project_paper",
     "read_web_page",
     "query_publication_rank",
     "read_paper_section",
+    "recall_conversations",
     "resolve_paper",
     "run_insight_snap",
     "run_logic_lens",

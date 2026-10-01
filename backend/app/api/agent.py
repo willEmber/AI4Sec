@@ -27,6 +27,7 @@ from app.models.agent_models import (
     AttachPapersRequest,
     Availability,
     CreateMemoryRequest,
+    CreateProjectRequest,
     CreateSessionRequest,
     CreateSessionResponse,
     EventType,
@@ -35,9 +36,18 @@ from app.models.agent_models import (
     PostMessageResponse,
     SessionContextStats,
     SessionDetailResponse,
+    UpdateProjectRequest,
+    UpdateSessionRequest,
 )
 from app.rate_limit import limiter
-from app.services import accounts, agent_runner, evidence_service, identity, paper_catalog
+from app.services import (
+    accounts,
+    agent_runner,
+    conversation_recall,
+    evidence_service,
+    identity,
+    paper_catalog,
+)
 from app.services.accounts import Caller
 
 logger = logging.getLogger("scholar.api.agent")
@@ -100,13 +110,17 @@ async def create_session(
     credential yet, and `principal_or_new` sets the new one as the auth cookie
     (and, for older clients, the `X-Agent-Token` response header).
     """
-    session = await repo.create_session(
-        owner_id=principal_id,
-        title=body.title,
-        language=body.language,
-        llm_model=_allowed_model(body.llm_model),
-        config={"owner_token": body.owner_token[:100]} if body.owner_token else None,
-    )
+    try:
+        session = await repo.create_session(
+            owner_id=principal_id,
+            title=body.title,
+            language=body.language,
+            llm_model=_allowed_model(body.llm_model),
+            config={"owner_token": body.owner_token[:100]} if body.owner_token else None,
+            project_id=body.project_id.strip(),
+        )
+    except repo.ProjectNotFound:
+        raise HTTPException(status_code=404, detail="No such project.") from None
     if body.paper_ids:
         await _attach_papers(session.session_id, body.paper_ids)
     return CreateSessionResponse(
@@ -187,11 +201,38 @@ async def attach_papers(
 @router.get("/sessions")
 async def list_sessions(
     request: Request,
+    project_id: str | None = Query(default=None, max_length=64),
     principal_id: str = Depends(require_principal),
 ) -> dict[str, Any]:
-    """Recent sessions for the calling principal."""
-    sessions = await repo.list_sessions(principal_id)
+    """Recent sessions for the calling principal; `project_id` narrows to one project
+    (an empty value lists the sessions in no project)."""
+    sessions = await repo.list_sessions(principal_id, project_id=project_id)
     return {"sessions": [s.model_dump() for s in sessions]}
+
+
+@router.patch("/sessions/{session_id}")
+@limiter.limit("60/minute")
+async def update_session(
+    request: Request,
+    session_id: str,
+    body: UpdateSessionRequest,
+    principal_id: str = Depends(require_principal),
+) -> dict[str, Any]:
+    """Rename a session, or move it into a project (`project_id=""` takes it out)."""
+    try:
+        session = await repo.get_session(session_id, owner_id=principal_id)
+        if body.project_id is not None and body.project_id.strip() != session.project_id:
+            session = await repo.set_session_project(
+                session_id, owner_id=principal_id, project_id=body.project_id.strip()
+            )
+        if body.title is not None and body.title.strip():
+            await repo.rename_session(session_id, body.title.strip())
+            session = await repo.get_session(session_id, owner_id=principal_id)
+    except repo.SessionNotFound:
+        raise HTTPException(status_code=404, detail="No such session.") from None
+    except repo.ProjectNotFound:
+        raise HTTPException(status_code=404, detail="No such project.") from None
+    return {"session": session.model_dump()}
 
 
 @router.get("/sessions/{session_id}", response_model=SessionDetailResponse)
@@ -205,6 +246,16 @@ async def get_session(
     except repo.SessionNotFound:
         raise HTTPException(status_code=404, detail="No such session.") from None
     runs = await repo.list_runs(session_id)
+    project = None
+    project_papers = []
+    if session.project_id:
+        try:
+            project = await repo.get_project(session.project_id, owner_id=principal_id)
+            project_papers = await repo.list_project_papers(
+                project.project_id, exclude_session_id=session_id
+            )
+        except repo.ProjectNotFound:
+            project = None
     last_tokens: int | None = None
     for run in runs:  # newest first
         tokens = (run.usage or {}).get("tokens")
@@ -222,6 +273,8 @@ async def get_session(
             last_turn_tokens=last_tokens,
         ),
         last_event_seq=await repo.last_event_seq(session_id),
+        project=project,
+        project_papers=project_papers,
     )
 
 
@@ -325,8 +378,110 @@ async def create_memory(
         raise HTTPException(status_code=422, detail=f"content must be under {MAX_MEMORY_CHARS} characters.")
     if looks_like_secret(content):
         raise HTTPException(status_code=422, detail="Credentials are never stored.")
-    memory = await repo.add_memory(owner_id=principal_id, content=content, kind=body.kind)
+    project_id = body.project_id.strip()
+    if project_id:
+        try:
+            await repo.get_project(project_id, owner_id=principal_id)
+        except repo.ProjectNotFound:
+            raise HTTPException(status_code=404, detail="No such project.") from None
+    memory = await repo.add_memory(
+        owner_id=principal_id, content=content, kind=body.kind, project_id=project_id
+    )
     return memory.model_dump(mode="json")
+
+
+# ── Research projects (P8) ──────────────────────────────────────────────────
+
+
+@router.get("/projects")
+async def list_projects(
+    include_archived: bool = False,
+    principal_id: str = Depends(require_principal),
+) -> dict[str, Any]:
+    projects = await repo.list_projects(principal_id, include_archived=include_archived)
+    return {"projects": [p.model_dump() for p in projects]}
+
+
+@router.post("/projects")
+@limiter.limit("30/minute")
+async def create_project(
+    request: Request,
+    body: CreateProjectRequest,
+    principal_id: str = Depends(principal_or_new),
+) -> dict[str, Any]:
+    """Create a project. May mint a principal, like creating a session: a first-time
+    visitor organising work before their first question is a normal start."""
+    project = await repo.create_project(
+        owner_id=principal_id, title=body.title, description=body.description
+    )
+    return {"project": project.model_dump()}
+
+
+@router.get("/projects/{project_id}")
+async def get_project(
+    project_id: str,
+    principal_id: str = Depends(require_principal),
+) -> dict[str, Any]:
+    """A project with its sessions, its papers and its own memories."""
+    try:
+        project = await repo.get_project(project_id, owner_id=principal_id)
+    except repo.ProjectNotFound:
+        raise HTTPException(status_code=404, detail="No such project.") from None
+    sessions = await repo.list_sessions(principal_id, project_id=project_id, limit=200)
+    papers = await repo.list_project_papers(project_id)
+    memories = [m for m in await repo.list_memories(principal_id) if m.project_id == project_id]
+    return {
+        "project": project.model_dump(),
+        "sessions": [s.model_dump() for s in sessions],
+        "papers": [p.model_dump(mode="json") for p in papers],
+        "memories": [m.model_dump(mode="json") for m in memories],
+    }
+
+
+@router.patch("/projects/{project_id}")
+@limiter.limit("60/minute")
+async def update_project(
+    request: Request,
+    project_id: str,
+    body: UpdateProjectRequest,
+    principal_id: str = Depends(require_principal),
+) -> dict[str, Any]:
+    try:
+        project = await repo.update_project(
+            project_id,
+            owner_id=principal_id,
+            title=body.title,
+            description=body.description,
+            status=body.status,
+        )
+    except repo.ProjectNotFound:
+        raise HTTPException(status_code=404, detail="No such project.") from None
+    return {"project": project.model_dump()}
+
+
+@router.get("/search")
+@limiter.limit("60/minute")
+async def search_conversations(
+    request: Request,
+    q: str = Query(min_length=1, max_length=500),
+    project_id: str | None = Query(default=None, max_length=64),
+    limit: int = Query(default=10, ge=1, le=10),
+    principal_id: str = Depends(require_principal),
+) -> dict[str, Any]:
+    """Search the caller's conversations — the same search the agent's recall uses.
+
+    `project_id` narrows to one of the caller's projects. One that is not
+    theirs is a 404, the same answer as one that does not exist.
+    """
+    if project_id:
+        try:
+            await repo.get_project(project_id, owner_id=principal_id)
+        except repo.ProjectNotFound:
+            raise HTTPException(status_code=404, detail="No such project.") from None
+    turns = await conversation_recall.recall(
+        principal_id, q, project_id=project_id or None, limit=limit
+    )
+    return {"query": q, "turns": [t.as_dict() for t in turns]}
 
 
 @router.delete("/memories/{memory_id}")
