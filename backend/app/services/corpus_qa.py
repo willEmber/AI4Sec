@@ -146,7 +146,7 @@ async def answer_corpus_question(
         ],
         model=llm_model,
         temperature=0.2,
-        max_tokens=2048,
+        max_tokens=8192,
     )
     logger.info(
         "corpus_qa: LLM answered in %.1fs — %d sources, %d chars",

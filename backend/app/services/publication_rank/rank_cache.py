@@ -3,6 +3,7 @@ SQLite 持久缓存 — 存储 PublicationRankResult，支持 TTL 自动过期�
 """
 from __future__ import annotations
 
+import json
 import logging
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -29,6 +30,17 @@ CREATE TABLE IF NOT EXISTS publication_rank_cache (
     expires_at       TEXT NOT NULL
 );
 """
+
+# The cache predates the full ranking payload, so an existing file needs the
+# column added. Cheaper than a migration framework for a single derived cache
+# that may be deleted at any time without loss.
+#
+# The default is the empty string, not '{}', and the difference is load-bearing:
+# every write since this column existed stores at least '{}', so '' can only
+# mean "written before the payload was kept". Such a row is treated as a miss
+# and refetched once, rather than serving a result with the CAS division
+# silently absent for the next six months.
+_ADD_EXTRA_COLUMN = "ALTER TABLE publication_rank_cache ADD COLUMN extra_json TEXT NOT NULL DEFAULT ''"
 
 
 def _default_db_path() -> Path:
@@ -61,6 +73,10 @@ class RankCache:
         self._db = await aiosqlite.connect(self._db_path)
         await self._db.execute("PRAGMA journal_mode=WAL;")
         await self._db.executescript(_SCHEMA)
+        try:
+            await self._db.execute(_ADD_EXTRA_COLUMN)
+        except Exception:
+            pass  # already present
         await self._db.commit()
 
     async def get(self, name: str) -> PublicationRankResult | None:
@@ -68,7 +84,7 @@ class RankCache:
         assert self._db is not None, "call init() first"
         key = _normalize_publication_name(name)
         cursor = await self._db.execute(
-            "SELECT name_display, sci, ccf, success, error, expires_at "
+            "SELECT name_display, sci, ccf, success, error, expires_at, source, extra_json "
             "FROM publication_rank_cache WHERE name_normalized = ?",
             (key,),
         )
@@ -76,7 +92,7 @@ class RankCache:
         if row is None:
             return None
 
-        name_display, sci, ccf, success, error, expires_at = row
+        name_display, sci, ccf, success, error, expires_at, source, extra_json = row
         exp = datetime.fromisoformat(expires_at).replace(tzinfo=timezone.utc)
         if datetime.now(timezone.utc) >= exp:
             await self._db.execute(
@@ -87,12 +103,24 @@ class RankCache:
             logger.debug("cache expired for %s", key)
             return None
 
+        if success and extra_json == "":
+            logger.debug("refetching %s: cached before the full payload was kept", key)
+            return None
+
+        try:
+            extra = json.loads(extra_json or "{}")
+        except (TypeError, ValueError):
+            extra = {}
         return PublicationRankResult(
             name=name_display,
             sci=sci,
             ccf=ccf,
             success=bool(success),
             error=error,
+            extra=extra if isinstance(extra, dict) else {},
+            # The original source is kept, so a caller can tell a cached
+            # EasyScholar answer from a cached web-search guess.
+            source=source or "",
         )
 
     async def put(self, result: PublicationRankResult, source: str) -> None:
@@ -104,12 +132,13 @@ class RankCache:
 
         await self._db.execute(
             "INSERT INTO publication_rank_cache "
-            "(name_normalized, name_display, sci, ccf, source, success, error, expires_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?) "
+            "(name_normalized, name_display, sci, ccf, source, success, error, expires_at, extra_json) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) "
             "ON CONFLICT(name_normalized) DO UPDATE SET "
             "name_display=excluded.name_display, sci=excluded.sci, ccf=excluded.ccf, "
             "source=excluded.source, success=excluded.success, error=excluded.error, "
-            "created_at=datetime('now'), expires_at=excluded.expires_at",
+            "created_at=datetime('now'), expires_at=excluded.expires_at, "
+            "extra_json=excluded.extra_json",
             (
                 key,
                 result.name,
@@ -119,6 +148,7 @@ class RankCache:
                 int(result.success),
                 result.error,
                 expires.isoformat(),
+                json.dumps(result.extra or {}, ensure_ascii=False),
             ),
         )
         await self._db.commit()

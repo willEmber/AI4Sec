@@ -82,7 +82,7 @@ async def extract_evidence_pool(
     slots: list[str],
     model: str = "",
     max_cards: int = 16,
-    max_tokens: int = 3000,
+    max_tokens: int = 8192,
     log_label: str = "evidence",
 ) -> list[dict[str, Any]]:
     """Best-effort: returns ``[]`` if anything goes wrong.
@@ -94,7 +94,8 @@ async def extract_evidence_pool(
         model: optional model override.
         max_cards: hard cap on returned items (post-LLM, in case the model
             ignores the prompt).
-        max_tokens: response budget for the extraction call.
+        max_tokens: response budget for the extraction call. Reasoning is billed
+            against the same ceiling, so this is well above the size of the cards.
         log_label: prefix for log lines so callers can tell snap from lens.
     """
     if not context.strip() or not slots:

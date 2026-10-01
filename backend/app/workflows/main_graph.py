@@ -106,7 +106,12 @@ async def build_paper_ir(state: MainGraphState) -> dict[str, Any]:
 
     logger.info(f"[{paper_id}] build_paper_ir: Parsing content_list from {output_dir}...")
     try:
-        paper_ir = await build_and_store_paper_ir(output_dir, paper_id)
+        paper_ir = await build_and_store_paper_ir(
+            output_dir,
+            paper_id,
+            parse_id=state.get("parse_id", ""),
+            parser_config={"backend": get_settings().mineru_model_version},
+        )
         elapsed = time.perf_counter() - t0
         logger.info(
             f"[{paper_id}] build_paper_ir: DONE in {elapsed:.2f}s — "
@@ -213,9 +218,13 @@ async def _s2_lookup(doi: str = "", arxiv_id: str = "", title: str = "") -> dict
     """Query Semantic Scholar for venue and year. Tries DOI -> arXiv -> title match."""
     fields = "venue,year,externalIds,publicationVenue"
 
-    async with httpx.AsyncClient(timeout=15.0) as client:
+    from app.services.paper_search.credentials import s2_headers
+    from app.services.paper_search.ratelimit import S2_LIMITER
+
+    async with httpx.AsyncClient(timeout=15.0, headers=s2_headers()) as client:
         if doi:
             try:
+                await S2_LIMITER.wait()
                 resp = await client.get(
                     f"https://api.semanticscholar.org/graph/v1/paper/DOI:{doi}",
                     params={"fields": fields},
@@ -227,6 +236,7 @@ async def _s2_lookup(doi: str = "", arxiv_id: str = "", title: str = "") -> dict
 
         if arxiv_id:
             try:
+                await S2_LIMITER.wait()
                 resp = await client.get(
                     f"https://api.semanticscholar.org/graph/v1/paper/ARXIV:{arxiv_id}",
                     params={"fields": fields},
@@ -238,6 +248,7 @@ async def _s2_lookup(doi: str = "", arxiv_id: str = "", title: str = "") -> dict
 
         if title:
             try:
+                await S2_LIMITER.wait()
                 resp = await client.get(
                     "https://api.semanticscholar.org/graph/v1/paper/search/match",
                     params={"query": title[:200], "fields": fields},
@@ -507,7 +518,7 @@ async def persist_output(state: MainGraphState) -> dict[str, Any]:
 
     if state.get("error"):
         await db.execute(
-            "UPDATE runs SET status = 'failed', error_msg = ?, mode = ?, detected_intent = ?, finished_at = datetime('now') WHERE run_id = ?",
+            "UPDATE runs SET status = 'failed', error_msg = ?, mode = ?, detected_intent = ?, finished_at = now() WHERE run_id = ?",
             (state["error"], final_mode, detected_intent, run_id),
         )
         logger.info(f"[{paper_id}] persist_output: Saved FAILED status in {time.perf_counter()-t0:.2f}s")
@@ -517,11 +528,13 @@ async def persist_output(state: MainGraphState) -> dict[str, Any]:
     json_data = state.get("final_json", "{}")
 
     await db.execute(
-        "INSERT OR REPLACE INTO run_outputs (run_id, markdown, json_data) VALUES (?, ?, ?)",
+        "INSERT INTO run_outputs (run_id, markdown, json_data) VALUES (?, ?, ?) "
+        "ON CONFLICT (run_id) DO UPDATE SET markdown = excluded.markdown, "
+        "json_data = excluded.json_data",
         (run_id, markdown, json_data),
     )
     await db.execute(
-        "UPDATE runs SET status = 'done', mode = ?, detected_intent = ?, finished_at = datetime('now') WHERE run_id = ?",
+        "UPDATE runs SET status = 'done', mode = ?, detected_intent = ?, finished_at = now() WHERE run_id = ?",
         (final_mode, detected_intent, run_id),
     )
 

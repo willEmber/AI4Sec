@@ -101,7 +101,7 @@ async def run_qa(state: MainGraphState) -> dict[str, Any]:
         ],
         model=model,
         temperature=0.2,
-        max_tokens=2048,
+        max_tokens=8192,
     )
     logger.info(f"[{paper_id}] qa: LLM returned in {time.perf_counter()-t_llm:.1f}s — {len(markdown)} chars")
 

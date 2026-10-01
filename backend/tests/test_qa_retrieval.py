@@ -6,6 +6,7 @@ import unittest
 from pathlib import Path
 
 from app.db import database as db
+from tests.pg_support import open_fresh_database
 from app.models.paper_ir import Block, PaperIR, Section
 from app.services.paper_ir import build_and_store_paper_ir
 from app.services.qa_retrieval import (
@@ -108,8 +109,7 @@ class PaperNodeStorageTests(unittest.IsolatedAsyncioTestCase):
     async def test_build_and_store_paper_ir_persists_hierarchy_nodes(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             base = Path(tmp)
-            db.set_db_path(base / "app.db")
-            await db.init_db()
+            await open_fresh_database(self)
             await db.execute(
                 "INSERT INTO papers (paper_id, file_path, title) VALUES (?, ?, ?)",
                 ("paper", "papers/paper/original.pdf", ""),

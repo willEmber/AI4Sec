@@ -1,4 +1,27 @@
 services:
+  postgres:
+    # pgvector ships in the image so vector columns (P8 recall) need no rebuild.
+    image: ${POSTGRES_IMAGE:-pgvector/pgvector:pg17}
+    container_name: scholar-postgres
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER:-scholar}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-scholar}
+      - POSTGRES_DB=${POSTGRES_DB:-scholar}
+    # A named volume, not a path under ./docker-data: the backend entrypoint
+    # chowns that whole tree to its own user, and PostgreSQL refuses to start
+    # on a data directory it does not own.
+    volumes:
+      - scholar-pgdata:/var/lib/postgresql/data
+    # Not published: only the backend talks to it. Uncomment to inspect locally.
+    # ports:
+    #   - "5432:5432"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-scholar} -d ${POSTGRES_DB:-scholar}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
   backend:
     build:
       context: .
@@ -9,10 +32,14 @@ services:
     env_file: .env
     environment:
       - CORS_ORIGINS=["http://localhost:3001","http://127.0.0.1:3001"]
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-scholar}:${POSTGRES_PASSWORD:-scholar}@postgres:5432/${POSTGRES_DB:-scholar}
     volumes:
       - ./docker-data:/scholar/backend/data
     ports:
       - "8001:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
     restart: unless-stopped
     healthcheck:
       test:
@@ -41,3 +68,6 @@ services:
       backend:
         condition: service_healthy
     restart: unless-stopped
+
+volumes:
+  scholar-pgdata:

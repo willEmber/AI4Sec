@@ -83,6 +83,10 @@ class RunResponse(BaseModel):
     detected_intent: str = ""
     current_step: str = ""
     progress_json: str = "[]"
+    # Set when the report was produced inside a conversation (P5). The report
+    # page uses it to offer a way back to that conversation.
+    agent_session_id: str = ""
+    agent_run_id: str = ""
 
 
 class RecentRunResponse(BaseModel):

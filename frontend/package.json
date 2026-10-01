@@ -6,12 +6,11 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "postinstall": "mkdir -p public && cp node_modules/react-pdf/node_modules/pdfjs-dist/build/pdf.worker.min.mjs public/pdf.worker.min.mjs 2>/dev/null || cp node_modules/pdfjs-dist/build/pdf.worker.min.mjs public/pdf.worker.min.mjs"
+    "postinstall": "node -e \"const fs=require('fs'),path=require('path');const pdfjs=path.dirname(require.resolve('pdfjs-dist/package.json',{paths:[path.dirname(require.resolve('react-pdf'))]}));fs.mkdirSync('public',{recursive:true});fs.copyFileSync(path.join(pdfjs,'build','pdf.worker.min.mjs'),path.join('public','pdf.worker.min.mjs'))\""
   },
   "dependencies": {
     "katex": "^0.16",
     "next": "^15.1",
-    "pdfjs-dist": "^4.9",
     "react": "^19.0",
     "react-dom": "^19.0",
     "react-markdown": "^9.0",

@@ -33,6 +33,16 @@ from app.workflows.state import MainGraphState
 
 logger = logging.getLogger("scholar.graph")
 
+# Output budgets for the three passes. On the Responses API `max_output_tokens`
+# covers reasoning as well as visible text, and `enable_thinking` is required by
+# the MaaS gateway for every thinking model — so these have to leave room for a
+# full reasoning trace *plus* the answer. A budget sized for the answer alone
+# lets reasoning consume all of it and the call returns nothing at all.
+_REPORT_MAX_TOKENS = 16384
+# The repair attempt gets more room, not the same: the first failure is usually
+# the budget rather than the schema, and retrying at the same size re-fails.
+_REPORT_REPAIR_MAX_TOKENS = 24576
+_CONTENT_REVIEW_MAX_TOKENS = 8192
 
 
 async def _generate_report(
@@ -47,6 +57,9 @@ async def _generate_report(
 
     A model that ignores the schema on the first attempt usually complies when
     told exactly what went wrong, so one repair round-trip is worth the latency.
+    The retry also raises the output budget, because the other way this call
+    fails — reasoning spending the whole allowance and leaving no text — looks
+    identical from here and is not fixed by a better prompt.
     If it fails twice the raw text is kept as Markdown (``degraded=True``) — a
     prose report is worse than a structured one but far better than no run.
     """
@@ -64,7 +77,9 @@ async def _generate_report(
                 ],
                 model=model,
                 temperature=0.2 if attempt == 1 else 0.0,
-                max_tokens=4096,
+                max_tokens=(
+                    _REPORT_MAX_TOKENS if attempt == 1 else _REPORT_REPAIR_MAX_TOKENS
+                ),
             )
         except Exception as exc:
             logger.warning("%s: report call attempt %d failed: %s", log_label, attempt, exc)
@@ -106,7 +121,7 @@ async def _run_content_review(
             ],
             model=model,
             temperature=0.0,
-            max_tokens=2000,
+            max_tokens=_CONTENT_REVIEW_MAX_TOKENS,
         )
     except Exception as exc:
         logger.warning("%s: content review call failed: %s", log_label, exc)

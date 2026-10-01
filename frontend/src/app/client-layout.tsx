@@ -1,5 +1,6 @@
 "use client";
 
+import { AuthMenu } from "@/components/AuthMenu";
 import { LanguageProvider, LanguageToggle, useTranslation } from "@/lib/i18n";
 import { recordVisit } from "@/lib/api";
 import { useEffect, type ReactNode } from "react";
@@ -41,11 +42,14 @@ function NavBar() {
           <span className="text-[15px]">{t("nav.brand")}</span>
         </a>
         <div className="mx-1 hidden h-5 w-px bg-border sm:block" />
+        <NavLink href="/chat" label={t("nav.chat")} />
+        <NavLink href="/projects" label={t("nav.projects")} />
         <NavLink href="/upload" label={t("nav.upload")} />
         <NavLink href="/compare" label={t("nav.compare")} />
         <NavLink href="/library" label={t("nav.library")} />
         <div className="flex-1" />
         <LanguageToggle />
+        <AuthMenu />
       </div>
     </nav>
   );

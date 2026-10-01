@@ -2,17 +2,57 @@ from __future__ import annotations
 
 from ..config import Settings
 from ..http_client import HTTPClient
-from ..models import Paper
+from ..models import FILTER_PUBLICATION_TYPES, FILTER_YEAR, Paper, SearchFilters
 from ..utils import jaccard_similarity, normalize_doi, normalize_whitespace, strip_html
+
+SUPPORTED_FILTERS = frozenset({FILTER_YEAR, FILTER_PUBLICATION_TYPES})
+SUPPORTED_SORTS = frozenset({"relevance", "citations", "recent"})
+
+_TYPE_TO_CROSSREF = {
+    "conference": "proceedings-article",
+    "journal": "journal-article",
+    "preprint": "posted-content",
+}
+_CROSSREF_TO_TYPE = {v: k for k, v in _TYPE_TO_CROSSREF.items()}
+
+
+def filter_param(filters: SearchFilters | None) -> str:
+    if filters is None:
+        return ""
+    clauses: list[str] = []
+    if filters.year_from:
+        clauses.append(f"from-pub-date:{filters.year_from}")
+    if filters.year_to:
+        clauses.append(f"until-pub-date:{filters.year_to}")
+    for t in filters.publication_types:
+        if t in _TYPE_TO_CROSSREF:
+            clauses.append(f"type:{_TYPE_TO_CROSSREF[t]}")
+    return ",".join(clauses)
 
 
 async def search_crossref(
-    client: HTTPClient, *, query: str, limit: int, settings: Settings
+    client: HTTPClient,
+    *,
+    query: str,
+    limit: int,
+    settings: Settings,
+    filters: SearchFilters | None = None,
+    offset: int = 0,
 ) -> list[Paper]:
     params = {"query": query, "rows": str(limit)}
+    if offset:
+        params["offset"] = str(int(offset))
     mailto = settings.pick_crossref_mailto()
     if mailto:
         params["mailto"] = mailto
+    flt = filter_param(filters)
+    if flt:
+        params["filter"] = flt
+    sort = (filters.sort if filters else "relevance") or "relevance"
+    if sort == "citations":
+        params.update({"sort": "is-referenced-by-count", "order": "desc"})
+    elif sort == "recent":
+        params.update({"sort": "published", "order": "desc"})
 
     data = await client.get_json("https://api.crossref.org/works", params=params)
     items = ((data.get("message") or {}).get("items")) or []
@@ -37,20 +77,29 @@ async def search_crossref(
                 author_parts.append(name)
         authors = "; ".join(author_parts)
 
+        # year: try published-print → published-online → issued
         year = 0
+        publication_date = ""
         for date_key in ("published-print", "published-online", "issued"):
             date_parts = (item.get(date_key) or {}).get("date-parts")
             if date_parts and isinstance(date_parts, list) and date_parts[0]:
                 try:
                     year = int(date_parts[0][0])
+                    publication_date = "-".join(f"{int(x):02d}" for x in date_parts[0][:3])
                     break
                 except (IndexError, ValueError, TypeError):
                     continue
 
+        # venue: container-title (journal/conference name)
         venue = ""
         container = item.get("container-title") or []
         if container and isinstance(container, list):
             venue = normalize_whitespace(container[0] or "")
+
+        citation_counts: dict[str, int] = {}
+        if isinstance(item.get("is-referenced-by-count"), int):
+            citation_counts["Crossref"] = int(item["is-referenced-by-count"])
+        venue_type = _CROSSREF_TO_TYPE.get(item.get("type") or "", "")
 
         papers.append(
             Paper(
@@ -62,6 +111,9 @@ async def search_crossref(
                 source_platform="Crossref",
                 year=year,
                 venue=venue,
+                publication_date=publication_date if len(publication_date) >= 7 else "",
+                venue_type=venue_type,
+                citation_counts=citation_counts,
             )
         )
     return papers

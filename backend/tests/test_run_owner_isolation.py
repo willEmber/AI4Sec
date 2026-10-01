@@ -7,16 +7,20 @@ endpoints (the owner-scoping logic) are exercised.
 from __future__ import annotations
 
 import os
-import sqlite3
 import tempfile
 import unittest
-from pathlib import Path
+
+import psycopg
 
 
 class RunOwnerIsolationTests(unittest.TestCase):
     def setUp(self) -> None:
         self._tmp = tempfile.TemporaryDirectory()
         os.environ["DATA_DIR"] = self._tmp.name
+
+        from tests.pg_support import use_database_env
+
+        self.db_url = use_database_env(self)
 
         from app.config import get_settings
 
@@ -29,7 +33,6 @@ class RunOwnerIsolationTests(unittest.TestCase):
         self._client_cm = TestClient(app)
         self.client = self._client_cm.__enter__()  # runs lifespan -> init_db()
 
-        self.db_file = Path(self._tmp.name) / "app.db"
         self._seed()
 
     def tearDown(self) -> None:
@@ -41,25 +44,23 @@ class RunOwnerIsolationTests(unittest.TestCase):
         self._tmp.cleanup()
 
     def _seed(self) -> None:
-        con = sqlite3.connect(self.db_file)
-        con.execute(
-            "INSERT INTO papers (paper_id, file_path, title) VALUES (?, ?, ?)",
-            ("paperX", "x.pdf", "Paper X"),
-        )
-
-        def add_run(run_id: str, owner: str, started: str) -> None:
+        with psycopg.connect(self.db_url) as con:
             con.execute(
-                "INSERT INTO runs (run_id, paper_id, mode, language, status, started_at, owner_token) "
-                f"VALUES (?, ?, 'sphere', 'en', 'pending', {started}, ?)",
-                (run_id, "paperX", owner),
+                "INSERT INTO papers (paper_id, file_path, title) VALUES (%s, %s, %s)",
+                ("paperX", "x.pdf", "Paper X"),
             )
 
-        add_run("r_a", "A", "datetime('now')")
-        add_run("r_b", "B", "datetime('now')")
-        add_run("r_legacy", "", "datetime('now')")
-        add_run("r_old", "A", "datetime('now', '-100 days')")  # stale + outside 7-day window
-        con.commit()
-        con.close()
+            def add_run(run_id: str, owner: str, started: str) -> None:
+                con.execute(
+                    "INSERT INTO runs (run_id, paper_id, mode, language, status, started_at, owner_token) "
+                    f"VALUES (%s, %s, 'sphere', 'en', 'pending', {started}, %s)",
+                    (run_id, "paperX", owner),
+                )
+
+            add_run("r_a", "A", "now()")
+            add_run("r_b", "B", "now()")
+            add_run("r_legacy", "", "now()")
+            add_run("r_old", "A", "now() - interval '100 days'")  # stale + outside 7-day window
 
     def _recent_ids(self, owner: str) -> set[str]:
         resp = self.client.get("/api/runs/recent", params={"owner_token": owner})
@@ -67,21 +68,16 @@ class RunOwnerIsolationTests(unittest.TestCase):
         return {r["run_id"] for r in resp.json()}
 
     def _status(self, run_id: str) -> str:
-        con = sqlite3.connect(self.db_file)
-        try:
-            row = con.execute("SELECT status FROM runs WHERE run_id = ?", (run_id,)).fetchone()
-        finally:
-            con.close()
+        with psycopg.connect(self.db_url) as con:
+            row = con.execute("SELECT status FROM runs WHERE run_id = %s", (run_id,)).fetchone()
         return row[0] if row else ""
 
     def test_migration_added_owner_index(self) -> None:
-        con = sqlite3.connect(self.db_file)
-        try:
+        with psycopg.connect(self.db_url) as con:
             rows = con.execute(
-                "SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'idx_runs_owner_started'"
+                "SELECT indexname FROM pg_indexes "
+                "WHERE schemaname = current_schema() AND indexname = 'idx_runs_owner_started'"
             ).fetchall()
-        finally:
-            con.close()
         self.assertEqual(len(rows), 1)
 
     def test_recent_runs_are_owner_scoped(self) -> None:

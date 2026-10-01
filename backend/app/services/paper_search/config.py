@@ -139,8 +139,7 @@ class Settings:
     tool_name: str = "papersearch"
     email_pick_strategy: str = "round_robin"  # first | round_robin | random
 
-    # Semantic Scholar
-    semantic_api_key: str = ""
+    # Semantic Scholar / OpenAlex / OpenReview keys are read by credentials.py.
 
     # IEEE Xplore
     ieee_api_key: str = ""
@@ -157,6 +156,7 @@ class Settings:
     rank_model: str = ""
     embed_model: str = ""
     rerank_model: str = ""
+    rerank_url: str = ""
 
     # Rerank controls
     rerank_timeout_s: float = 30.0
@@ -292,7 +292,6 @@ class Settings:
             contact_emails=contact_emails,
             tool_name=(os.getenv("PAPERSEARCH_TOOL_NAME") or "papersearch").strip() or "papersearch",
             email_pick_strategy=email_pick_strategy,
-            semantic_api_key=(os.getenv("PAPERSEARCH_SEMANTICSCHOLAR_API_KEY") or "").strip(),
             ieee_api_key=(os.getenv("PAPERSEARCH_IEEE_API_KEY") or "").strip(),
             ieee_per_second_limit=max(int(ieee_per_second_limit), 1),
             ieee_daily_limit=max(int(ieee_daily_limit), 1),
@@ -303,6 +302,7 @@ class Settings:
             rank_model=(os.getenv("PAPERSEARCH_RANK_MODELNAME") or "").strip(),
             embed_model=(os.getenv("PAPERSEARCH_EMBED_MODELNAME") or "").strip(),
             rerank_model=(os.getenv("PAPERSEARCH_RERANK_MODELNAME") or "").strip(),
+            rerank_url=(os.getenv("PAPERSEARCH_RERANK_URL") or os.getenv("RERANK_URL") or "").strip(),
             llm_max_concurrency=llm_max_concurrency,
             llm_max_retries=_env_int("PAPERSEARCH_LLM_MAX_RETRIES", 5),
             llm_retry_base_delay=_env_float("PAPERSEARCH_LLM_RETRY_BASE_DELAY", 1.0),

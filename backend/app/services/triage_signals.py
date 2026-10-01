@@ -248,11 +248,11 @@ async def _openalex_triage_lookup(
     from app.services.citation_graph import (
         _OPENALEX_SEM,
         _get_json,
-        _oa_mailto_param,
+        _oa_auth_params,
     )
     from app.services.paper_search import jaccard_similarity, normalize_whitespace
 
-    base = {**_oa_mailto_param(), "select": _OA_TRIAGE_SELECT}
+    base = {**_oa_auth_params(), "select": _OA_TRIAGE_SELECT}
 
     if doi:
         data = await _get_json(
@@ -654,7 +654,7 @@ async def load_cached_signals(paper_id: str, *, ttl_hours: int) -> TriageSignals
 
     row = await db.fetch_one(
         "SELECT signals_json, fetched_at,"
-        "       (julianday('now') - julianday(fetched_at)) * 24.0 AS age_hours"
+        "       EXTRACT(EPOCH FROM now() - fetched_at) / 3600.0 AS age_hours"
         " FROM paper_signals WHERE paper_id = ?",
         (paper_id,),
     )
@@ -677,9 +677,12 @@ async def store_signals(paper_id: str, signals: TriageSignals) -> None:
 
     try:
         await db.execute(
-            "INSERT OR REPLACE INTO paper_signals"
+            "INSERT INTO paper_signals"
             " (paper_id, signals_json, cited_by_count, is_retracted, fetched_at)"
-            " VALUES (?, ?, ?, ?, datetime('now'))",
+            " VALUES (?, ?, ?, ?, now())"
+            " ON CONFLICT (paper_id) DO UPDATE SET signals_json = excluded.signals_json,"
+            " cited_by_count = excluded.cited_by_count,"
+            " is_retracted = excluded.is_retracted, fetched_at = excluded.fetched_at",
             (
                 paper_id,
                 signals.model_dump_json(),

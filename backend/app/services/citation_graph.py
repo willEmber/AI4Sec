@@ -2,8 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import os
-import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -16,6 +14,17 @@ from app.services.paper_search import (
     load_env_file,
     normalize_whitespace,
     openalex_abstract_from_inverted_index,
+)
+from app.services.paper_search.credentials import openalex_auth_params, s2_headers
+from app.services.paper_search.platforms.openalex import (
+    extract_arxiv_id as _oa_extract_arxiv_id,
+    extract_oa_pdf_url as _oa_extract_oa_pdf_url,
+    extract_venue as _oa_extract_venue,
+)
+from app.services.paper_search.ratelimit import (
+    OPENALEX_BUDGET,
+    S2_LIMITER,
+    is_quota_response,
 )
 
 logger = logging.getLogger("scholar.citation_graph")
@@ -42,6 +51,13 @@ class PaperMetadata:
     authors: str = ""
     abstract_text: str = ""
     cited_by_count: int = 0
+    # Which index `cited_by_count` came from: counts differ between them.
+    citation_source: str = ""
+    influential_citation_count: int | None = None
+    publication_date: str = ""
+    oa_pdf_url: str = ""
+    is_retracted: bool | None = None
+    tldr: str = ""
     # OpenAlex work IDs this paper references (bibliographic coupling input)
     referenced_works: list[str] = field(default_factory=list)
     # S2 citation-edge signals (only set on citations/references responses)
@@ -53,25 +69,21 @@ class PaperMetadata:
 # HTTP helpers
 # ---------------------------------------------------------------------------
 
+_OA_BASE = "https://api.openalex.org"
+
 _OPENALEX_SEM = asyncio.Semaphore(10)
 _S2_SEM = asyncio.Semaphore(1)
 
 _RETRY_STATUSES = {429, 500, 502, 503, 504}
 
-# Time-based rate limiter for Semantic Scholar API (max ~1 req/1.1s)
-_s2_last_request: float = 0.0
-_s2_throttle_lock = asyncio.Lock()
-
 
 async def _s2_throttle() -> None:
-    """Enforce minimum 1.1s between S2 API requests to avoid 429s."""
-    global _s2_last_request
-    async with _s2_throttle_lock:
-        now = asyncio.get_event_loop().time()
-        wait = 1.1 - (now - _s2_last_request)
-        if wait > 0:
-            await asyncio.sleep(wait)
-        _s2_last_request = asyncio.get_event_loop().time()
+    """Take the next slot in the process-wide S2 lane (1 req/s across endpoints).
+
+    Shared with the search adapter and every other S2 caller; a limiter per
+    module would let two of them together exceed the key's allowance.
+    """
+    await S2_LIMITER.wait()
 
 
 async def _get_json(
@@ -83,13 +95,30 @@ async def _get_json(
     semaphore: asyncio.Semaphore | None = None,
     max_retries: int = 3,
 ) -> dict[str, Any] | None:
-    """GET request with retry/backoff. Returns None on failure."""
+    """GET request with retry/backoff. Returns None on failure.
+
+    OpenAlex requests also keep the shared daily budget current: once it is
+    spent, they return None at once instead of retrying into a 429 that will
+    not clear until the reset.
+    """
     sem = semaphore or asyncio.Semaphore(999)
+    is_openalex = url.startswith(_OA_BASE)
+    if is_openalex and OPENALEX_BUDGET.exhausted():
+        return None
     for attempt in range(1, max_retries + 1):
         try:
             async with sem:
                 resp = await client.get(url, params=params, headers=headers)
+            if is_openalex:
+                if is_quota_response(resp.status_code, resp.headers):
+                    OPENALEX_BUDGET.mark_exhausted(resp.headers)
+                    logger.warning("OpenAlex daily budget exhausted; skipping OpenAlex until reset")
+                    return None
+                OPENALEX_BUDGET.observe(resp.headers)
             if resp.status_code == 404:
+                return None
+            if resp.status_code in (401, 403) and "semanticscholar" in url:
+                logger.warning("Semantic Scholar rejected the API key (HTTP %s); check S2_API_KEY", resp.status_code)
                 return None
             if resp.status_code in _RETRY_STATUSES:
                 delay = min(2 ** attempt, 10)
@@ -140,20 +169,16 @@ async def _post_json(
 # OpenAlex
 # ---------------------------------------------------------------------------
 
-_OA_BASE = "https://api.openalex.org"
-_OA_SELECT = "id,title,publication_year,primary_location,locations,authorships,cited_by_count,abstract_inverted_index,ids,referenced_works,related_works"
-
-# Preprint servers: never the venue we want when a published version exists
-_OA_PREPRINT_RE = re.compile(
-    r"arxiv|preprint|biorxiv|medrxiv|ssrn|research square|repec", re.IGNORECASE
+_OA_SELECT = (
+    "id,doi,title,publication_year,publication_date,type,primary_location,locations,"
+    "best_oa_location,open_access,authorships,cited_by_count,abstract_inverted_index,ids,"
+    "is_retracted,referenced_works,related_works"
 )
 
 
-def _oa_mailto_param() -> dict[str, str]:
-    email = _ps_settings.pick_openalex_mailto()
-    if email:
-        return {"mailto": email}
-    return {}
+def _oa_auth_params() -> dict[str, str]:
+    """`api_key` when one is configured; OpenAlex ignores `mailto` now."""
+    return openalex_auth_params(_ps_settings.pick_openalex_mailto())
 
 
 def _oa_extract_doi(ids: dict[str, Any] | None) -> str:
@@ -163,52 +188,6 @@ def _oa_extract_doi(ids: dict[str, Any] | None) -> str:
     if doi.startswith("https://doi.org/"):
         doi = doi[len("https://doi.org/"):]
     return doi.strip().lower()
-
-
-def _oa_extract_arxiv(ids: dict[str, Any] | None) -> str:
-    if not ids:
-        return ""
-    # OpenAlex stores arXiv as "https://arxiv.org/abs/XXXX.XXXXX"
-    arxiv = ids.get("openalex", "") or ""  # not here
-    # Check the ids dict for arxiv
-    for key in ("arxiv", "pmid", "pmcid"):
-        pass
-    # Actually OpenAlex puts arXiv IDs in ids.openalex or we extract from DOI
-    return ""
-
-
-def _oa_extract_venue(work: dict[str, Any]) -> str:
-    """Venue of the published version, not a preprint server or repository.
-
-    For arXiv-first papers OpenAlex's primary_location is arXiv, which used
-    to make every top-conference paper score as a preprint. But "any
-    non-preprint location" is not enough either: OpenAlex lists institutional
-    repositories (HAL, LA Referencia, Apollo, UvA-DARE, …) as locations, and
-    those beat the real journal/conference by list order. OpenAlex marks all
-    of them — arXiv included — with source.type == "repository", so filter by
-    type first and keep the name regex as a backstop for untyped sources.
-    """
-    def _loc_source(loc: dict[str, Any] | None) -> tuple[str, str]:
-        source = (loc or {}).get("source") or {}
-        name = normalize_whitespace(source.get("display_name", "") or "")
-        stype = (source.get("type") or "").strip().lower()
-        return name, stype
-
-    def _is_published_outlet(name: str, stype: str) -> bool:
-        if not name or stype == "repository":
-            return False
-        return not _OA_PREPRINT_RE.search(name)
-
-    primary_name, primary_type = _loc_source(work.get("primary_location"))
-    if _is_published_outlet(primary_name, primary_type):
-        return primary_name
-
-    for loc in work.get("locations") or []:
-        name, stype = _loc_source(loc)
-        if _is_published_outlet(name, stype):
-            return name
-
-    return primary_name
 
 
 def _oa_extract_authors(work: dict[str, Any], limit: int = 5) -> str:
@@ -232,15 +211,21 @@ def _oa_work_to_metadata(work: dict[str, Any]) -> PaperMetadata:
         for rid in (work.get("referenced_works") or [])
     ]
 
+    retracted = work.get("is_retracted")
     return PaperMetadata(
         title=normalize_whitespace(work.get("title", "") or ""),
         doi=doi,
+        arxiv_id=_oa_extract_arxiv_id(work),
         openalex_id=openalex_id,
         year=work.get("publication_year") or 0,
         venue=_oa_extract_venue(work),
         authors=_oa_extract_authors(work),
         abstract_text=abstract,
         cited_by_count=work.get("cited_by_count") or 0,
+        citation_source="openalex",
+        publication_date=normalize_whitespace(work.get("publication_date") or ""),
+        oa_pdf_url=_oa_extract_oa_pdf_url(work),
+        is_retracted=bool(retracted) if retracted is not None else None,
         referenced_works=referenced,
     )
 
@@ -261,7 +246,7 @@ async def openalex_resolve_id(
     arxiv_id: str = "",
 ) -> str | None:
     """Resolve to an OpenAlex work ID (e.g., 'W1234567890')."""
-    params = _oa_mailto_param()
+    params = _oa_auth_params()
 
     # Try DOI first
     if doi:
@@ -298,13 +283,24 @@ async def openalex_get_work(
     openalex_id: str,
 ) -> dict[str, Any] | None:
     """Fetch a full work record."""
-    params = {**_oa_mailto_param(), "select": _OA_SELECT}
+    params = {**_oa_auth_params(), "select": _OA_SELECT}
     return await _get_json(
         client,
         f"{_OA_BASE}/works/{openalex_id}",
         params=params,
         semaphore=_OPENALEX_SEM,
     )
+
+
+async def openalex_get_metadata(
+    client: httpx.AsyncClient,
+    openalex_id: str,
+) -> PaperMetadata | None:
+    """Fetch one work as normalised metadata rather than a raw record."""
+    work = await openalex_get_work(client, openalex_id)
+    if not work:
+        return None
+    return _oa_work_to_metadata(work)
 
 
 async def openalex_get_referenced_works(
@@ -332,7 +328,7 @@ async def openalex_get_cited_by(
 ) -> list[PaperMetadata]:
     """Get works that cite the given paper, sorted by citation count."""
     params = {
-        **_oa_mailto_param(),
+        **_oa_auth_params(),
         "filter": f"cites:{openalex_id}",
         "per_page": str(min(limit, 200)),
         "sort": "cited_by_count:desc",
@@ -364,7 +360,7 @@ async def openalex_get_recent_cited_by(
     since `since_year` (still sorted by citations) fixes the supply side.
     """
     params = {
-        **_oa_mailto_param(),
+        **_oa_auth_params(),
         "filter": f"cites:{openalex_id},from_publication_date:{since_year}-01-01",
         "per_page": str(min(limit, 200)),
         "sort": "cited_by_count:desc",
@@ -411,7 +407,7 @@ async def openalex_batch_fetch_by_doi(
         batch = clean[i : i + batch_size]
         filter_str = "|".join(batch)
         params = {
-            **_oa_mailto_param(),
+            **_oa_auth_params(),
             "filter": f"doi:{filter_str}",
             "per_page": str(len(batch)),
             "select": _OA_SELECT,
@@ -439,7 +435,7 @@ async def openalex_search_one(
     if not title or len(title.strip()) < 10:
         return None
     params = {
-        **_oa_mailto_param(),
+        **_oa_auth_params(),
         "search": title[:300],
         "per_page": "1",
         "select": _OA_SELECT,
@@ -473,7 +469,7 @@ async def _oa_batch_fetch(
         batch = openalex_ids[i : i + batch_size]
         filter_str = "|".join(batch)
         params = {
-            **_oa_mailto_param(),
+            **_oa_auth_params(),
             "filter": f"openalex:{filter_str}",
             "per_page": str(len(batch)),
             "select": _OA_SELECT,
@@ -495,14 +491,20 @@ async def _oa_batch_fetch(
 # ---------------------------------------------------------------------------
 
 _S2_BASE = "https://api.semanticscholar.org"
-_S2_FIELDS = "title,abstract,year,venue,authors,externalIds,citationCount"
+_S2_FIELDS = (
+    "title,abstract,year,venue,authors,externalIds,citationCount,"
+    "influentialCitationCount,publicationDate,openAccessPdf"
+)
+# Everything the metadata tool reports; batch requests only.
+S2_METADATA_FIELDS = (
+    "title,abstract,year,venue,publicationVenue,authors,externalIds,citationCount,"
+    "influentialCitationCount,referenceCount,publicationDate,isOpenAccess,openAccessPdf,"
+    "fieldsOfStudy,publicationTypes,tldr"
+)
 
 
 def _s2_headers() -> dict[str, str]:
-    key = os.getenv("PAPERSEARCH_SEMANTICSCHOLAR_API_KEY", "").strip()
-    if key:
-        return {"x-api-key": key}
-    return {}
+    return s2_headers()
 
 
 def _s2_extract_ids(external_ids: dict[str, Any] | None) -> tuple[str, str]:
@@ -524,6 +526,8 @@ def _s2_paper_to_metadata(paper: dict[str, Any]) -> PaperMetadata:
         a.get("name", "") for a in authors_list[:5] if a.get("name")
     )
 
+    influential = paper.get("influentialCitationCount")
+    tldr = paper.get("tldr") or {}
     return PaperMetadata(
         title=normalize_whitespace(paper.get("title", "") or ""),
         doi=doi,
@@ -534,6 +538,11 @@ def _s2_paper_to_metadata(paper: dict[str, Any]) -> PaperMetadata:
         authors=authors_str,
         abstract_text=normalize_whitespace(paper.get("abstract", "") or ""),
         cited_by_count=paper.get("citationCount") or 0,
+        citation_source="semanticscholar",
+        influential_citation_count=int(influential) if isinstance(influential, int) else None,
+        publication_date=normalize_whitespace(paper.get("publicationDate") or ""),
+        oa_pdf_url=normalize_whitespace(((paper.get("openAccessPdf") or {}).get("url")) or ""),
+        tldr=normalize_whitespace(tldr.get("text") or "") if isinstance(tldr, dict) else "",
     )
 
 

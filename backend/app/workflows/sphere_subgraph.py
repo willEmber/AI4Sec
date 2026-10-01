@@ -550,7 +550,9 @@ async def _extract_search_queries(
             {"role": "system", "content": _QUERY_EXTRACTION_SYSTEM},
             {"role": "user", "content": context},
         ]
-        response = await llm.chat(messages, model=model, temperature=0.3, max_tokens=512)
+        # Short JSON answer, but reasoning shares this ceiling — see the budget
+        # note in snap_subgraph; 512 leaves no room for the visible list.
+        response = await llm.chat(messages, model=model, temperature=0.3, max_tokens=4096)
         response = _strip_json_fences(response)
         queries = json.loads(response)
         if isinstance(queries, list) and all(isinstance(q, str) for q in queries):
@@ -750,27 +752,12 @@ async def step_expand_graph_candidates(
     # keywords with the center paper but have no citation-graph link; they must
     # clear the quality + relevance gates later before they can be reported.
     try:
-        from app.services.paper_search import (
-            Settings as PSSettings,
-            load_env_file,
-            search_papers,
-        )
+        from app.services.paper_search import search_papers
+        from app.services.search_settings import backend_search_settings
 
-        # Ensure .env is loaded so PAPERSEARCH_* vars are available.
-        load_env_file(str(Path(__file__).resolve().parents[3] / ".env"))
-
-        # Load full settings from env (API keys, emails, etc.),
-        # then override LLM fields from backend config.
-        _cfg = get_settings()
-        _ps_base = PSSettings.from_env()
-        _ps_settings = PSSettings(
-            **{
-                **{f.name: getattr(_ps_base, f.name) for f in _ps_base.__dataclass_fields__.values()},
-                "llm_base_url": _cfg.llm_base_url,
-                "llm_api_key": _cfg.llm_api_key,
-                "rerank_model": _cfg.rerank_model,
-            }
-        )
+        # API keys and emails from the environment, rerank model from the
+        # backend config — the same settings the agent's search tool uses.
+        _ps_settings = backend_search_settings()
 
         per_query_limit = 15
         _search_sem = asyncio.Semaphore(2)  # max 2 concurrent searches
@@ -1782,13 +1769,38 @@ async def _persist_sphere(sphere: SphereState, run_id: str) -> None:
         for n in sphere.nodes.values()
     ]
     await db.execute_many(
-        """INSERT OR REPLACE INTO sphere_nodes
+        """INSERT INTO sphere_nodes
         (node_id, run_id, doi, arxiv_id, openalex_id, s2_paper_id,
          title, year, venue, authors, abstract_text, cited_by_count,
          pdf_path, mineru_parsed, source, score_total, layer, cluster_id,
          tier, relation_type, relevance, relation_reason,
          quality_score, sci_rank, ccf_rank, influential)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT (node_id, run_id) DO UPDATE SET
+         doi = excluded.doi,
+         arxiv_id = excluded.arxiv_id,
+         openalex_id = excluded.openalex_id,
+         s2_paper_id = excluded.s2_paper_id,
+         title = excluded.title,
+         year = excluded.year,
+         venue = excluded.venue,
+         authors = excluded.authors,
+         abstract_text = excluded.abstract_text,
+         cited_by_count = excluded.cited_by_count,
+         pdf_path = excluded.pdf_path,
+         mineru_parsed = excluded.mineru_parsed,
+         source = excluded.source,
+         score_total = excluded.score_total,
+         layer = excluded.layer,
+         cluster_id = excluded.cluster_id,
+         tier = excluded.tier,
+         relation_type = excluded.relation_type,
+         relevance = excluded.relevance,
+         relation_reason = excluded.relation_reason,
+         quality_score = excluded.quality_score,
+         sci_rank = excluded.sci_rank,
+         ccf_rank = excluded.ccf_rank,
+         influential = excluded.influential""",
         node_rows,
     )
 
@@ -2226,7 +2238,7 @@ async def step_synthesize_landscape(
                         {"role": "system", "content": _localize(_CLUSTER_NAMER_SYSTEM)},
                         {"role": "user", "content": "\n\n".join(lines)},
                     ],
-                    model=model, temperature=0.2, max_tokens=2048,
+                    model=model, temperature=0.2, max_tokens=8192,
                 )
                 data = json.loads(_strip_json_fences(resp))
                 themes: list[ThemeCluster] = []

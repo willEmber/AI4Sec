@@ -404,70 +404,48 @@ def _paper_node_from_row(row: dict[str, Any]) -> PaperNode:
     )
 
 
-async def ensure_paper_node_fts() -> bool:
-    try:
-        await db.execute(
-            "CREATE VIRTUAL TABLE IF NOT EXISTS paper_node_fts "
-            "USING fts5(node_id UNINDEXED, paper_id UNINDEXED, title_path, text_for_search)"
-        )
-        return True
-    except Exception as exc:
-        logger.warning("qa retrieval: FTS5 unavailable; continuing without paper_node_fts: %s", exc)
-        return False
-
-
 async def store_paper_nodes(paper_ir: PaperIR) -> int:
+    """Replace a paper's nodes. One transaction, so a reader never sees it half-built.
+
+    Full-text search needs no separate step: `paper_nodes.search_tsv` is a
+    generated column, so the index follows the rows it was generated from.
+    """
     nodes = build_paper_nodes(paper_ir)
-    await db.execute("DELETE FROM paper_nodes WHERE paper_id = ?", (paper_ir.paper_id,))
-    if not nodes:
-        return 0
-
-    await db.execute_many(
-        """
-        INSERT INTO paper_nodes (
-            node_id, paper_id, parent_id, depth, node_type, block_type, sub_type,
-            title, title_path, page_start, page_end, block_start, block_end,
-            text, text_for_search, order_idx
+    async with db.transaction() as tx:
+        await tx.execute("DELETE FROM paper_nodes WHERE paper_id = ?", (paper_ir.paper_id,))
+        if not nodes:
+            return 0
+        await tx.execute_many(
+            """
+            INSERT INTO paper_nodes (
+                node_id, paper_id, parent_id, depth, node_type, block_type, sub_type,
+                title, title_path, page_start, page_end, block_start, block_end,
+                text, text_for_search, order_idx
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            [
+                (
+                    node.node_id,
+                    node.paper_id,
+                    node.parent_id,
+                    node.depth,
+                    node.node_type,
+                    node.block_type,
+                    node.sub_type,
+                    node.title,
+                    node.title_path,
+                    node.page_start,
+                    node.page_end,
+                    node.block_start,
+                    node.block_end,
+                    node.text,
+                    node.text_for_search,
+                    node.order_idx,
+                )
+                for node in nodes
+            ],
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """,
-        [
-            (
-                node.node_id,
-                node.paper_id,
-                node.parent_id,
-                node.depth,
-                node.node_type,
-                node.block_type,
-                node.sub_type,
-                node.title,
-                node.title_path,
-                node.page_start,
-                node.page_end,
-                node.block_start,
-                node.block_end,
-                node.text,
-                node.text_for_search,
-                node.order_idx,
-            )
-            for node in nodes
-        ],
-    )
-
-    if await ensure_paper_node_fts():
-        try:
-            await db.execute("DELETE FROM paper_node_fts WHERE paper_id = ?", (paper_ir.paper_id,))
-            await db.execute_many(
-                "INSERT INTO paper_node_fts (node_id, paper_id, title_path, text_for_search) VALUES (?, ?, ?, ?)",
-                [
-                    (node.node_id, node.paper_id, node.title_path, node.text_for_search)
-                    for node in nodes
-                    if node.node_type == "chunk"
-                ],
-            )
-        except Exception as exc:
-            logger.warning("qa retrieval: failed to refresh paper_node_fts for %s: %s", paper_ir.paper_id, exc)
-
     return len(nodes)
 
 
@@ -487,11 +465,12 @@ async def load_paper_nodes(paper_id: str) -> list[PaperNode]:
 
 
 def _fts_query(tokens: list[str]) -> str:
+    """A `websearch_to_tsquery` string matching any of the question's terms."""
     terms = [
         token for token in tokens
         if re.fullmatch(r"[A-Za-z0-9_-]{3,}", token)
     ][:10]
-    return " OR ".join(f'"{term}"' for term in terms)
+    return " or ".join(f'"{term}"' for term in terms)
 
 
 async def _search_fts_node_ids(paper_id: str, question: str) -> set[str]:
@@ -503,16 +482,59 @@ async def _search_fts_node_ids(paper_id: str, question: str) -> set[str]:
         rows = await db.fetch_all(
             """
             SELECT node_id
-            FROM paper_node_fts
-            WHERE paper_node_fts MATCH ? AND paper_id = ?
+            FROM paper_nodes
+            WHERE paper_id = ? AND node_type = 'chunk'
+              AND search_tsv @@ websearch_to_tsquery('simple', ?)
             LIMIT 80
             """,
-            (query, paper_id),
+            (paper_id, query),
         )
     except Exception as exc:
         logger.debug("qa retrieval: FTS query skipped for %s: %s", paper_id, exc)
         return set()
     return {row["node_id"] for row in rows}
+
+
+async def rank_paper_chunks(
+    paper_id: str,
+    question: str,
+    *,
+    limit: int = 8,
+) -> list[tuple[int, PaperNode]]:
+    """Ranked evidence chunks for a question, best first, with their scores.
+
+    `retrieve_qa_context_for_paper` returns one formatted blob, which suits a
+    single-shot prompt but gives an agent nothing to cite. This returns the
+    discrete hits instead, so each one can become a piece of evidence with its
+    own locator. Scoring and the FTS boost are shared with the context path, so
+    the two never disagree about what is relevant.
+    """
+    nodes = await load_paper_nodes(paper_id)
+    if not nodes:
+        return []
+
+    boosted_ids = await _search_fts_node_ids(paper_id, question)
+    tokens = _tokenize(question)
+    intent = _detect_intent(question, tokens)
+    chunks = [
+        node
+        for node in nodes
+        if node.node_type == "chunk"
+        and node.block_type in _SEARCHABLE_BLOCK_TYPES
+        and node.text.strip()
+    ]
+    scored = [
+        (_score_node(node, tokens, intent, boosted_ids), node) for node in chunks
+    ]
+    scored = [(score, node) for score, node in scored if score > 0]
+    scored.sort(key=lambda item: (-item[0], item[1].page_start, item[1].order_idx))
+    return scored[:limit]
+
+
+async def load_section_nodes(paper_id: str) -> list[PaperNode]:
+    """Section nodes only — the outline, without the chunk level under it."""
+    nodes = await load_paper_nodes(paper_id)
+    return [node for node in nodes if node.node_type in {"paper", "section"}]
 
 
 async def retrieve_qa_context_for_paper(

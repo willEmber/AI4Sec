@@ -6,6 +6,7 @@ import {
   IconSnap,
   IconLens,
   IconSphere,
+  IconSparkles,
   IconArrowRight,
 } from "@/components/icons";
 import type { ComponentType } from "react";
@@ -20,6 +21,8 @@ const MODES: {
   { key: "lens", titleKey: "home.mode.lens.title", descKey: "home.mode.lens.desc", Icon: IconLens },
   { key: "sphere", titleKey: "home.mode.sphere.title", descKey: "home.mode.sphere.desc", Icon: IconSphere },
 ];
+
+const CAPABILITIES = ["home.cap.multiturn", "home.cap.tools", "home.cap.context", "home.cap.memory"];
 
 export default function Home() {
   const { t } = useTranslation();
@@ -41,15 +44,31 @@ export default function Home() {
           {t("home.subtitle")}
         </p>
 
-        <div className="mt-9 flex items-center justify-center">
+        <div className="mt-9 flex flex-wrap items-center justify-center gap-3">
           <Link
-            href="/upload"
+            href="/chat"
             className="group inline-flex items-center gap-2 rounded-xl bg-primary px-6 py-3.5 font-medium text-primary-foreground transition-colors hover:bg-primary-hover"
           >
+            <IconSparkles className="text-lg" />
             {t("home.cta")}
             <IconArrowRight className="text-lg transition-transform group-hover:translate-x-0.5" />
           </Link>
+          <Link
+            href="/upload"
+            className="inline-flex items-center gap-2 rounded-xl border border-border bg-card px-5 py-3.5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
+          >
+            {t("home.cta_classic")}
+          </Link>
         </div>
+
+        <ul className="mx-auto mt-8 flex max-w-2xl flex-wrap justify-center gap-x-5 gap-y-2 text-xs text-muted-foreground">
+          {CAPABILITIES.map((key) => (
+            <li key={key} className="inline-flex items-center gap-1.5">
+              <span className="h-1 w-1 rounded-full bg-primary/60" />
+              {t(key)}
+            </li>
+          ))}
+        </ul>
       </section>
 
       {/* Modes */}
@@ -63,9 +82,10 @@ export default function Home() {
 
         <div className="grid gap-5 sm:grid-cols-3">
           {MODES.map(({ key, titleKey, descKey, Icon }) => (
-            <div
+            <Link
               key={key}
-              className="lift rounded-2xl border border-border bg-card p-6 soft-shadow"
+              href={`/chat?mode=${key}`}
+              className="lift group rounded-2xl border border-border bg-card p-6 soft-shadow"
             >
               <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-accent text-xl text-primary">
                 <Icon />
@@ -74,7 +94,11 @@ export default function Home() {
               <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
                 {t(descKey)}
               </p>
-            </div>
+              <span className="mt-4 inline-flex items-center gap-1 text-xs font-medium text-primary">
+                {t("home.mode.start")}
+                <IconArrowRight className="transition-transform group-hover:translate-x-0.5" />
+              </span>
+            </Link>
           ))}
         </div>
       </section>

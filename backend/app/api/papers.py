@@ -4,9 +4,10 @@ import hashlib
 import re
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException, Request, UploadFile
+from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse
 
+from app.api.deps import principal_or_new
 from app.config import get_settings
 from app.db import database as db
 from app.rate_limit import limiter
@@ -30,7 +31,14 @@ _IMAGE_MEDIA_TYPES = {
 
 @router.post("/papers/upload", response_model=PaperUploadResponse)
 @limiter.limit("5/minute")
-async def upload_paper(request: Request, file: UploadFile):
+async def upload_paper(
+    request: Request,
+    file: UploadFile,
+    # Who uploads is not recorded on the paper — files are shared by content —
+    # but uploading spends parse quota, so it needs a caller like any other
+    # costly action: a login once anonymous use is turned off.
+    _principal_id: str = Depends(principal_or_new),
+):
     if not file.filename or not file.filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Only PDF files are accepted")
 

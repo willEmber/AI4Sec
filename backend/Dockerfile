@@ -18,6 +18,9 @@ RUN uv sync --frozen --no-dev
 
 # Copy application code (paper_search and publication_rank live under app/services/)
 COPY backend/app ./app
+# One-off maintenance, e.g. `docker compose run --rm backend
+# .venv/bin/python -m scripts.migrate_sqlite_to_postgres`.
+COPY backend/scripts ./scripts
 COPY backend/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh \
     && chown -R scholar:scholar /scholar/backend

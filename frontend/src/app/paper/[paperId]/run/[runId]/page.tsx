@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { useParams } from "next/navigation";
 import { getRun, getRunOutput, getPaperPdfUrl, getPaper, getZoteroBundleUrl, getMarkdownExportUrl } from "@/lib/api";
 import { useRunStream } from "@/hooks/useRunStream";
@@ -12,7 +13,7 @@ import RankBadges from "@/components/RankBadges";
 import SphereReport from "@/components/sphere/SphereReport";
 import SnapReport from "@/components/snap/SnapReport";
 import LensReport from "@/components/lens/LensReport";
-import { IconCards, IconCheck, IconDocument, IconDownload } from "@/components/icons";
+import { IconCards, IconCheck, IconDocument, IconDownload, IconSparkles } from "@/components/icons";
 import { parseSphereData } from "@/lib/sphere";
 import { parseSnapData } from "@/lib/snap";
 import { parseLensData } from "@/lib/lens";
@@ -230,6 +231,16 @@ export default function RunPage() {
               ))}
             </div>
           )}
+          {/* The report answers what it was asked; the agent answers the rest,
+              reading the same paper. A report made inside a conversation
+              leads back to that conversation rather than starting another. */}
+          <Link
+            href={run?.agent_session_id ? `/chat/${run.agent_session_id}` : `/chat?paper=${paperId}`}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-sm transition-colors hover:bg-muted"
+          >
+            <IconSparkles className="text-[15px]" />
+            {run?.agent_session_id ? t("run.back_to_chat") : t("run.ask_agent")}
+          </Link>
           {markdown && (
             <button
               onClick={handleExportMarkdown}
