@@ -17,6 +17,9 @@ export interface ToolActivity {
   summary?: Record<string, unknown>;
   /** Progress steps, latest status per step, in the order they first appeared. */
   steps?: ToolStep[];
+  /** Event timestamps, for how long the call took. */
+  startedAt?: string;
+  endedAt?: string;
 }
 
 /**
@@ -42,6 +45,7 @@ export function applyToolEvent(
         tool: String(payload.tool || ""),
         status: "running",
         evidenceCount: 0,
+        startedAt: event.timestamp,
       },
     ];
   }
@@ -86,6 +90,8 @@ export function applyToolEvent(
     // Steps are kept: once a report is done, the reader may still want to see
     // what it went through.
     steps: index >= 0 ? prev[index].steps : undefined,
+    startedAt: index >= 0 ? prev[index].startedAt : undefined,
+    endedAt: event.timestamp,
   };
   if (index < 0) return [...prev, entry];
   const next = [...prev];
@@ -144,4 +150,131 @@ export function compactionFromEvent(event: AgentEvent): CompactionNotice | null 
     keptMessages: Number(p.kept_messages || 0),
     tokensBefore: Number(p.tokens_before || 0),
   };
+}
+
+/**
+ * One entry of a live turn, in the order it happened.
+ *
+ * A turn is rarely "read, then answer": the model says what it is about to
+ * check, calls a tool, says what it found, calls another. Keeping the order is
+ * what lets the reader follow that, instead of seeing every tool first and all
+ * the prose glued together after them. Tool entries point at `tools` by call
+ * id, so `applyToolEvent` stays the one place a tool's state is decided.
+ */
+export type TimelineItem =
+  | { kind: "text"; key: string; text: string }
+  | { kind: "tool"; key: string; callId: string }
+  | { kind: "artifact"; key: string; artifact: SessionArtifact }
+  | { kind: "compaction"; key: string; notice: CompactionNotice };
+
+/** Everything one turn has shown so far. */
+export interface TurnState {
+  /** All answer text, concatenated — what the server will persist. */
+  answer: string;
+  tools: ToolActivity[];
+  timeline: TimelineItem[];
+  artifacts: SessionArtifact[];
+  compactions: CompactionNotice[];
+}
+
+export const EMPTY_TURN: TurnState = {
+  answer: "",
+  tools: [],
+  timeline: [],
+  artifacts: [],
+  compactions: [],
+};
+
+/** Fold one event into a turn. Events that do not change what is shown return `state`. */
+export function applyTurnEvent(state: TurnState, event: AgentEvent): TurnState {
+  const payload = event.payload || {};
+
+  switch (event.type) {
+    case "message.delta": {
+      const text = String(payload.text || "");
+      if (!text) return state;
+      const last = state.timeline.at(-1);
+      const timeline =
+        last?.kind === "text"
+          ? [...state.timeline.slice(0, -1), { ...last, text: last.text + text }]
+          : [...state.timeline, { kind: "text" as const, key: `text-${event.seq}`, text }];
+      return { ...state, answer: state.answer + text, timeline };
+    }
+
+    case "tool.started":
+    case "tool.progress":
+    case "tool.completed":
+    case "tool.failed": {
+      const tools = applyToolEvent(state.tools, event);
+      if (tools === state.tools) return state;
+      // A call enters the timeline when it is first seen — normally at
+      // `tool.started`, or at its result when the start never arrived.
+      const placed = new Set(
+        state.timeline.flatMap((item) => (item.kind === "tool" ? [item.callId] : [])),
+      );
+      const arrivals = tools
+        .filter((tool) => !placed.has(tool.callId))
+        .map((tool) => ({ kind: "tool" as const, key: `tool-${tool.callId}`, callId: tool.callId }));
+      return {
+        ...state,
+        tools,
+        timeline: arrivals.length ? [...state.timeline, ...arrivals] : state.timeline,
+      };
+    }
+
+    case "artifact.created": {
+      const artifact = artifactFromEvent(event);
+      if (!artifact) return state;
+      return {
+        ...state,
+        artifacts: [...state.artifacts, artifact],
+        timeline: [...state.timeline, { kind: "artifact", key: `artifact-${event.seq}`, artifact }],
+      };
+    }
+
+    case "context.compacted": {
+      const notice = compactionFromEvent(event);
+      if (!notice) return state;
+      return {
+        ...state,
+        compactions: [...state.compactions, notice],
+        timeline: [...state.timeline, { kind: "compaction", key: `compaction-${event.seq}`, notice }],
+      };
+    }
+
+    default:
+      return state;
+  }
+}
+
+/**
+ * Milliseconds since the epoch for a server timestamp, or NaN.
+ *
+ * Replayed events carry the database's UTC `YYYY-MM-DD HH:MM:SS`, which
+ * `Date.parse` would read as local time; live ones may carry ISO 8601.
+ */
+export function parseServerTime(value: string | null | undefined): number {
+  if (!value) return NaN;
+  let iso = value.trim().replace(" ", "T");
+  if (!/(Z|[+-]\d{2}:?\d{2})$/.test(iso)) iso += "Z";
+  return Date.parse(iso);
+}
+
+/** How long something took, in ms, when both ends are known. */
+export function elapsedMs(start?: string | null, end?: string | null): number | null {
+  const a = parseServerTime(start);
+  const b = parseServerTime(end);
+  if (Number.isNaN(a) || Number.isNaN(b) || b < a) return null;
+  return b - a;
+}
+
+/** `850ms` → "<1s", `4200` → "4s", `135000` → "2m 15s". */
+export function formatDuration(ms: number | null): string {
+  if (ms == null) return "";
+  if (ms < 1000) return "<1s";
+  const seconds = Math.round(ms / 1000);
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  const rest = seconds % 60;
+  return rest ? `${minutes}m ${rest}s` : `${minutes}m`;
 }

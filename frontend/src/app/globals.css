@@ -215,6 +215,16 @@
   margin: 0.75rem 0;
   padding-left: 1.5rem;
 }
+/* Tailwind's preflight strips list markers; Markdown lists need them back. */
+.markdown-body ul {
+  list-style: disc;
+}
+.markdown-body ol {
+  list-style: decimal;
+}
+.markdown-body ul ul {
+  list-style: circle;
+}
 .markdown-body li {
   margin: 0.3rem 0;
   line-height: 1.7;
@@ -222,12 +232,15 @@
 .markdown-body li::marker {
   color: var(--muted-foreground);
 }
+.markdown-body .md-table-wrap {
+  margin: 1.25rem 0;
+  overflow-x: auto;
+  border-radius: 0.5rem;
+}
 .markdown-body table {
   border-collapse: collapse;
   width: 100%;
-  margin: 1.25rem 0;
   font-size: 0.875rem;
-  overflow: hidden;
 }
 .markdown-body th,
 .markdown-body td {
@@ -283,6 +296,78 @@
   border: 1px solid var(--border);
 }
 
+/* Conversation answers: the same Markdown, set tighter. A chat turn is read
+   in a narrow column between other turns, so report-sized headings and gaps
+   make a three-paragraph answer look like a document. */
+.markdown-chat {
+  font-size: 0.925rem;
+  line-height: 1.75;
+  overflow-wrap: anywhere;
+}
+.markdown-chat > *:last-child {
+  margin-bottom: 0;
+}
+.markdown-chat h1 {
+  font-size: 1.25rem;
+  margin: 1.3rem 0 0.6rem;
+}
+.markdown-chat h2 {
+  font-size: 1.12rem;
+  margin: 1.25rem 0 0.55rem;
+  padding-bottom: 0.25rem;
+}
+.markdown-chat h3 {
+  font-size: 1rem;
+  margin: 1.1rem 0 0.4rem;
+}
+.markdown-chat h4 {
+  font-size: 0.95rem;
+  margin: 0.9rem 0 0.35rem;
+}
+.markdown-chat p {
+  margin: 0.6rem 0;
+}
+.markdown-chat ul,
+.markdown-chat ol {
+  margin: 0.55rem 0;
+  padding-left: 1.35rem;
+}
+.markdown-chat li {
+  margin: 0.2rem 0;
+}
+.markdown-chat li > p {
+  margin: 0.2rem 0;
+}
+.markdown-chat .md-table-wrap {
+  margin: 0.9rem 0;
+  border: 1px solid var(--border);
+}
+.markdown-chat table {
+  font-size: 0.82rem;
+}
+.markdown-chat .md-table-wrap th,
+.markdown-chat .md-table-wrap td {
+  border-width: 0 0 1px 1px;
+  padding: 0.45rem 0.7rem;
+}
+.markdown-chat .md-table-wrap th:first-child,
+.markdown-chat .md-table-wrap td:first-child {
+  border-left-width: 0;
+}
+.markdown-chat .md-table-wrap tr:last-child td {
+  border-bottom-width: 0;
+}
+.markdown-chat pre {
+  margin: 0.8rem 0;
+  font-size: 0.8rem;
+}
+.markdown-chat blockquote {
+  margin: 0.8rem 0;
+}
+.markdown-chat .katex-display {
+  margin: 0.8rem 0;
+}
+
 /* KaTeX */
 .katex-display {
   margin: 1.25rem 0;
@@ -322,6 +407,39 @@
 }
 .sphere-flash {
   animation: sphere-flash 1.6s ease-out;
+}
+
+/* A blinking caret after text that is still streaming in. */
+@keyframes caret-blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0;
+  }
+}
+.streaming-caret .markdown-body > *:last-child::after {
+  content: "";
+  display: inline-block;
+  width: 0.45em;
+  height: 1em;
+  margin-left: 0.15em;
+  vertical-align: -0.15em;
+  border-radius: 1px;
+  background: var(--primary);
+  animation: caret-blink 1s steps(1) infinite;
+}
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+.animate-fade-in {
+  animation: fade-in 0.25s ease-out both;
 }
 
 /* Horizontal rails (e.g. the sphere section nav) that scroll without a bar. */

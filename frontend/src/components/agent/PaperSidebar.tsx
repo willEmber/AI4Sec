@@ -5,7 +5,14 @@ import Link from "next/link";
 import { useTranslation } from "@/lib/i18n";
 import type { AgentProject, AgentSession, SessionPaper } from "@/lib/agent";
 import MemoryPanel from "@/components/agent/MemoryPanel";
-import { IconPlus, IconUpload } from "@/components/icons";
+import {
+  IconBook,
+  IconChat,
+  IconPanelLeftClose,
+  IconPanelLeftOpen,
+  IconPlus,
+  IconUpload,
+} from "@/components/icons";
 
 // Readable and not-yet-readable must be distinguishable at a glance, not only
 // by reading the label: which papers an answer could actually have drawn on is
@@ -34,6 +41,9 @@ interface Props {
   projectPapers?: SessionPaper[];
   /** Attach one of `projectPapers` (by paper_id) to this session. */
   onAddProjectPaper?: (paperId: string) => Promise<void>;
+  /** Folded to a narrow icon rail. */
+  collapsed?: boolean;
+  onToggleCollapse?: () => void;
 }
 
 /**
@@ -57,6 +67,8 @@ export default function PaperSidebar({
   project = null,
   projectPapers = [],
   onAddProjectPaper,
+  collapsed = false,
+  onToggleCollapse,
 }: Props) {
   const { t } = useTranslation();
   const inputRef = useRef<HTMLInputElement>(null);
@@ -103,34 +115,106 @@ export default function PaperSidebar({
     [onUpload, t],
   );
 
+  const fileInput = onUpload ? (
+    <input
+      ref={inputRef}
+      type="file"
+      accept=".pdf,application/pdf"
+      className="hidden"
+      onChange={(e) => void handleFile(e.target.files?.[0])}
+    />
+  ) : null;
+  const newChatHref = project ? `/chat?new=1&project=${project.project_id}` : "/chat?new=1";
+  const readable = papers.filter((p) => p.paper_id).length;
+
+  // Folded: the actions a reader reaches for most, and a way back.
+  if (collapsed) {
+    const rail =
+      "flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-card hover:text-foreground disabled:opacity-50";
+    return (
+      <aside className="flex h-full w-12 shrink-0 flex-col items-center gap-1 border-r border-border bg-muted/40 py-2">
+        {fileInput}
+        <button type="button" onClick={onToggleCollapse} title={t("chat.sidebar.expand")} className={rail}>
+          <IconPanelLeftOpen className="text-[17px]" />
+        </button>
+        <div className="my-1 h-px w-6 bg-border" />
+        <Link href={newChatHref} title={t("chat.sessions.new")} className={rail}>
+          <IconPlus className="text-[17px]" />
+        </Link>
+        {onUpload && (
+          <button
+            type="button"
+            disabled={uploading}
+            onClick={() => inputRef.current?.click()}
+            title={t("chat.papers.upload")}
+            className={rail}
+          >
+            {uploading ? (
+              <span className="inline-block h-4 w-4 animate-spin rounded-full border-[1.5px] border-border border-t-primary" />
+            ) : (
+              <IconUpload className="text-[17px]" />
+            )}
+          </button>
+        )}
+        <button
+          type="button"
+          onClick={onToggleCollapse}
+          title={t("chat.header.papers", { count: readable })}
+          className={`${rail} relative`}
+        >
+          <IconBook className="text-[17px]" />
+          {papers.length > 0 && (
+            <span className="absolute right-0.5 top-0.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-primary px-[3px] text-[0.55rem] font-semibold text-primary-foreground">
+              {papers.length}
+            </span>
+          )}
+        </button>
+        <button
+          type="button"
+          onClick={onToggleCollapse}
+          title={project ? t("chat.sessions.heading_project") : t("chat.sessions.heading")}
+          className={rail}
+        >
+          <IconChat className="text-[17px]" />
+        </button>
+      </aside>
+    );
+  }
+
   return (
     <aside className="flex h-full w-64 shrink-0 flex-col border-r border-border bg-muted/40">
-      <div className="flex items-center justify-between border-b border-border px-4 py-3">
-        <h2 className="text-[0.7rem] font-semibold uppercase tracking-wider text-muted-foreground">
-          {t("chat.papers.heading")}
-        </h2>
+      <div className="flex items-center justify-between gap-2 border-b border-border px-3 py-2.5">
+        <div className="flex min-w-0 items-center gap-1">
+          {onToggleCollapse && (
+            <button
+              type="button"
+              onClick={onToggleCollapse}
+              title={t("chat.sidebar.collapse")}
+              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-card hover:text-foreground"
+            >
+              <IconPanelLeftClose className="text-[15px]" />
+            </button>
+          )}
+          <h2 className="truncate text-[0.7rem] font-semibold uppercase tracking-wider text-muted-foreground">
+            {t("chat.papers.heading")}
+          </h2>
+        </div>
         {onUpload && (
           <>
-            <input
-              ref={inputRef}
-              type="file"
-              accept=".pdf,application/pdf"
-              className="hidden"
-              onChange={(e) => void handleFile(e.target.files?.[0])}
-            />
+            {fileInput}
             <button
               type="button"
               disabled={uploading}
               onClick={() => inputRef.current?.click()}
               title={t("chat.papers.upload")}
-              className="inline-flex items-center gap-1 rounded-md border border-border bg-card px-2 py-1 text-[0.7rem] text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50"
+              aria-label={t("chat.papers.upload")}
+              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-border bg-card text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50"
             >
               {uploading ? (
                 <span className="inline-block h-3 w-3 animate-spin rounded-full border-[1.5px] border-border border-t-primary" />
               ) : (
-                <IconUpload className="text-[12px]" />
+                <IconUpload className="text-[13px]" />
               )}
-              {uploading ? t("chat.papers.uploading") : t("chat.papers.upload")}
             </button>
           </>
         )}
@@ -213,7 +297,7 @@ export default function PaperSidebar({
           {project ? t("chat.sessions.heading_project") : t("chat.sessions.heading")}
         </h2>
         <Link
-          href={project ? `/chat?new=1&project=${project.project_id}` : "/chat?new=1"}
+          href={newChatHref}
           title={t("chat.sessions.new")}
           className="inline-flex items-center gap-1 rounded-md border border-border bg-card px-2 py-1 text-[0.7rem] text-muted-foreground transition-colors hover:text-foreground"
         >

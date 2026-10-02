@@ -3,16 +3,16 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ALL_EVENT_TYPES, getEventStreamUrl } from "@/lib/agent";
 import type { AgentEvent, SessionArtifact } from "@/lib/agent";
-import {
-  applyToolEvent,
-  artifactFromEvent,
-  compactionFromEvent,
-} from "@/lib/agentEvents";
-import type { CompactionNotice, ToolActivity } from "@/lib/agentEvents";
+import { EMPTY_TURN, applyTurnEvent } from "@/lib/agentEvents";
+import type { CompactionNotice, TimelineItem, ToolActivity, TurnState } from "@/lib/agentEvents";
 
 export type { ToolActivity };
 
 interface UseAgentStreamReturn {
+  /** The run this stream follows ("" before the first start). */
+  runId: string;
+  /** Text, tool calls, reports and compactions in the order they happened. */
+  timeline: TimelineItem[];
   /** Answer text assembled from message.delta events. */
   answer: string;
   tools: ToolActivity[];
@@ -48,10 +48,8 @@ interface UseAgentStreamReturn {
  * legitimately overlaps whatever arrived live just before the drop.
  */
 export function useAgentStream(): UseAgentStreamReturn {
-  const [answer, setAnswer] = useState("");
-  const [tools, setTools] = useState<ToolActivity[]>([]);
-  const [artifacts, setArtifacts] = useState<SessionArtifact[]>([]);
-  const [compactions, setCompactions] = useState<CompactionNotice[]>([]);
+  const [runId, setRunId] = useState("");
+  const [turn, setTurn] = useState<TurnState>(EMPTY_TURN);
   const [isStreaming, setIsStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [errorCode, setErrorCode] = useState("");
@@ -83,35 +81,15 @@ export function useAgentStream(): UseAgentStreamReturn {
     seqRef.current = event.seq;
     const payload = event.payload || {};
 
+    // Text, tools, reports and compactions: one fold, whose tool part is the
+    // same reducer the restored view uses, so a turn looks the same while it
+    // runs and after it is reopened.
+    setTurn((prev) => applyTurnEvent(prev, event));
+
     switch (event.type) {
-      case "message.delta":
-        setAnswer((prev) => prev + String(payload.text || ""));
-        break;
-
-      case "tool.started":
-      case "tool.progress":
-      case "tool.completed":
-      case "tool.failed":
-        // Same reducer the restored view uses, so a turn looks the same while
-        // it runs and after it is reopened.
-        setTools((prev) => applyToolEvent(prev, event));
-        break;
-
       case "paper.added":
         setPapersChanged((n) => n + 1);
         break;
-
-      case "artifact.created": {
-        const artifact = artifactFromEvent(event);
-        if (artifact) setArtifacts((prev) => [...prev, artifact]);
-        break;
-      }
-
-      case "context.compacted": {
-        const notice = compactionFromEvent(event);
-        if (notice) setCompactions((prev) => [...prev, notice]);
-        break;
-      }
 
       case "memory.saved":
         setMemoriesChanged((n) => n + 1);
@@ -195,10 +173,8 @@ export function useAgentStream(): UseAgentStreamReturn {
       teardown();
       seqRef.current = 0;
       runIdRef.current = runId;
-      setAnswer("");
-      setTools([]);
-      setArtifacts([]);
-      setCompactions([]);
+      setRunId(runId);
+      setTurn(EMPTY_TURN);
       setEvidenceIds([]);
       setError(null);
       setErrorCode("");
@@ -217,10 +193,12 @@ export function useAgentStream(): UseAgentStreamReturn {
   useEffect(() => teardown, [teardown]);
 
   return {
-    answer,
-    tools,
-    artifacts,
-    compactions,
+    runId,
+    timeline: turn.timeline,
+    answer: turn.answer,
+    tools: turn.tools,
+    artifacts: turn.artifacts,
+    compactions: turn.compactions,
     isStreaming,
     error,
     errorCode,

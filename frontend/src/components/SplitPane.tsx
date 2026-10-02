@@ -13,6 +13,11 @@ interface SplitPaneProps {
   onToggleCollapse?: () => void;
   collapseTitle?: string;
   expandTitle?: string;
+  /**
+   * Show the collapse button on the divider. Off when the right pane carries
+   * its own close control, so there are not two buttons side by side.
+   */
+  dividerToggle?: boolean;
 }
 
 export default function SplitPane({
@@ -23,6 +28,7 @@ export default function SplitPane({
   onToggleCollapse,
   collapseTitle,
   expandTitle,
+  dividerToggle = true,
 }: SplitPaneProps) {
   const [leftWidth, setLeftWidth] = useState(defaultLeftWidth);
   const dragging = useRef(false);
@@ -81,7 +87,7 @@ export default function SplitPane({
           <div className="absolute inset-y-0 -left-2 -right-2 z-10" />
           {/* Visible grip */}
           <div className="absolute left-1/2 top-1/2 h-9 w-1 -translate-x-1/2 -translate-y-1/2 rounded-full bg-border transition-colors group-hover:bg-primary" />
-          {onToggleCollapse && (
+          {onToggleCollapse && dividerToggle && (
             <button
               onMouseDown={(e) => e.stopPropagation()}
               onClick={onToggleCollapse}

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { ReactNode } from "react";
 import { Document, Page, pdfjs } from "react-pdf";
 import "react-pdf/dist/esm/Page/AnnotationLayer.css";
 import "react-pdf/dist/esm/Page/TextLayer.css";
@@ -27,17 +28,41 @@ interface PdfViewerProps {
    * document (acceptance case A07).
    */
   jumpToken?: number;
+  /** Rendered at the start of the toolbar, e.g. a paper switcher. */
+  toolbarStart?: ReactNode;
+  /** Rendered at the end of the toolbar, e.g. a collapse button. */
+  toolbarEnd?: ReactNode;
 }
 
 const TOOLBAR_BTN =
   "inline-flex h-8 w-8 items-center justify-center rounded-lg border border-border text-foreground transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-35 disabled:hover:bg-transparent";
 
-export default function PdfViewer({ url, targetPage, jumpToken }: PdfViewerProps) {
+export default function PdfViewer({
+  url,
+  targetPage,
+  jumpToken,
+  toolbarStart,
+  toolbarEnd,
+}: PdfViewerProps) {
   const { t } = useTranslation();
   const [numPages, setNumPages] = useState<number>(0);
   const [currentPage, setCurrentPage] = useState(1);
   const [scale, setScale] = useState(1.0);
   const containerRef = useRef<HTMLDivElement>(null);
+  // 100% means "as wide as the pane", so a page fits however the pane was
+  // resized; zoom scales from there.
+  const [fitWidth, setFitWidth] = useState(0);
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const observer = new ResizeObserver(([entry]) => {
+      // contentRect excludes the padding; floored so sub-pixel jitter does not re-render the page.
+      setFitWidth(Math.max(200, Math.floor(entry.contentRect.width)));
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
 
   const onDocumentLoadSuccess = useCallback(({ numPages }: { numPages: number }) => {
     setNumPages(numPages);
@@ -64,6 +89,7 @@ export default function PdfViewer({ url, targetPage, jumpToken }: PdfViewerProps
     <div className="flex h-full flex-col">
       {/* Toolbar */}
       <div className="flex shrink-0 items-center gap-2 border-b border-border bg-card/60 px-3 py-2 text-sm">
+        {toolbarStart}
         <button
           onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
           disabled={currentPage <= 1}
@@ -99,6 +125,7 @@ export default function PdfViewer({ url, targetPage, jumpToken }: PdfViewerProps
         >
           <IconPlus />
         </button>
+        {toolbarEnd}
       </div>
 
       {/* PDF content */}
@@ -111,6 +138,7 @@ export default function PdfViewer({ url, targetPage, jumpToken }: PdfViewerProps
           <div id={`pdf-page-${currentPage}`}>
             <Page
               pageNumber={currentPage}
+              width={fitWidth || undefined}
               scale={scale}
               className="mx-auto overflow-hidden rounded-lg shadow-[0_4px_24px_-8px_rgba(20,20,19,0.25)]"
               renderTextLayer={true}

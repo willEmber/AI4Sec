@@ -207,3 +207,150 @@ export function IconDocument(props: IconProps) {
     </Svg>
   );
 }
+
+/** Collapse the left-hand panel (e.g. hide the paper sidebar). */
+export function IconPanelLeftClose(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <rect x="3" y="4" width="18" height="16" rx="2" />
+      <path d="M9 4v16" />
+      <path d="m16 9-3 3 3 3" />
+    </Svg>
+  );
+}
+
+/** Expand the left-hand panel. */
+export function IconPanelLeftOpen(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <rect x="3" y="4" width="18" height="16" rx="2" />
+      <path d="M9 4v16" />
+      <path d="m13 9 3 3-3 3" />
+    </Svg>
+  );
+}
+
+export function IconCopy(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <rect x="9" y="9" width="11" height="11" rx="2" />
+      <path d="M5 15V6a2 2 0 0 1 2-2h9" />
+    </Svg>
+  );
+}
+
+export function IconArrowDown(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M12 5v14" />
+      <path d="m6 13 6 6 6-6" />
+    </Svg>
+  );
+}
+
+export function IconArrowUp(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M12 19V5" />
+      <path d="m6 11 6-6 6 6" />
+    </Svg>
+  );
+}
+
+/** Stop a running turn. */
+export function IconStop(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <rect x="6" y="6" width="12" height="12" rx="2" fill="currentColor" stroke="none" />
+    </Svg>
+  );
+}
+
+/** Search a database (distinct from Logic Lens, which is a report). */
+export function IconSearch(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <circle cx="10.5" cy="10.5" r="6" />
+      <path d="m20 20-5-5" />
+      <path d="M8 10.5h5" />
+    </Svg>
+  );
+}
+
+/** Reading a paper's text. */
+export function IconBook(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v15H6.5A2.5 2.5 0 0 0 4 20.5Z" />
+      <path d="M4 20.5A2.5 2.5 0 0 0 6.5 23H20v-5" />
+      <path d="M9 8h7M9 11.5h5" />
+    </Svg>
+  );
+}
+
+/** The open web. */
+export function IconGlobe(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M3.5 9h17M3.5 15h17" />
+      <path d="M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18" />
+    </Svg>
+  );
+}
+
+/** Something the agent keeps about the reader. */
+export function IconBookmark(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M6 3h12v18l-6-4-6 4Z" />
+    </Svg>
+  );
+}
+
+/** Earlier conversations. */
+export function IconHistory(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M3 12a9 9 0 1 0 3-6.7L3 8" />
+      <path d="M3 3v5h5" />
+      <path d="M12 7v5l3 2" />
+    </Svg>
+  );
+}
+
+/** A tool with no more specific icon. */
+export function IconTool(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M14.7 6.3a4 4 0 0 0-5.4 5.2L3 17.8V21h3.2l6.3-6.3a4 4 0 0 0 5.2-5.4l-2.6 2.6-2.5-.4-.4-2.5Z" />
+    </Svg>
+  );
+}
+
+/** A to-do list the agent keeps for itself. */
+export function IconListChecks(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="m3 6 1.5 1.5L7 5M3 13l1.5 1.5L7 12" />
+      <path d="M11 6.5h10M11 13.5h10M11 19.5h10" />
+    </Svg>
+  );
+}
+
+export function IconChat(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M21 12a8 8 0 0 1-11.6 7.1L4 20.5l1.4-4.9A8 8 0 1 1 21 12Z" />
+    </Svg>
+  );
+}
+
+export function IconAlert(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 7.5v5.5M12 16.5v.01" />
+    </Svg>
+  );
+}

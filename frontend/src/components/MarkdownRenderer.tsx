@@ -6,6 +6,8 @@ import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
 import rehypeRaw from "rehype-raw";
 import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
+import type { ReactNode } from "react";
+import { CITATION_PATTERN } from "@/lib/agent";
 import { useTranslation } from "@/lib/i18n";
 
 // Extend the default GitHub sanitize schema:
@@ -64,6 +66,17 @@ export function normalizeDisplayMath(content: string): string {
   return wrapped.replace(/@@mathcode(\d+)@@/g, (_match, i: string) => codeBlocks[Number(i)]);
 }
 
+// Agent answers cite evidence as `[ev_<20 hex>]`. Turned into links so the
+// citation survives Markdown parsing as one node the caller can render.
+const EVIDENCE_HREF_RE = /^#cite-ev-(ev_[0-9a-f]{20})$/;
+
+export function prepareEvidenceMarkdown(content: string): string {
+  return content.replace(
+    new RegExp(CITATION_PATTERN.source, "g"),
+    (_match, id: string) => `[${id}](#cite-ev-${id})`,
+  );
+}
+
 export function prepareCitationMarkdown(content: string): string {
   return content
     .replace(LEGACY_CITATION_SPAN_RE, "[p.$1]")
@@ -75,21 +88,31 @@ interface MarkdownRendererProps {
   content: string;
   onCitationClick?: (page: number) => void;
   onLibraryCitationClick?: (idx: number) => void;
+  /**
+   * Renders an agent `[ev_...]` citation. Without it those markers are left as
+   * text, which is what report pages want.
+   */
+  renderEvidence?: (evidenceId: string) => ReactNode;
+  /** `chat` is the tighter typography of a conversation turn. */
+  variant?: "report" | "chat";
 }
 
 export default function MarkdownRenderer({
   content,
   onCitationClick,
   onLibraryCitationClick,
+  renderEvidence,
+  variant = "report",
 }: MarkdownRendererProps) {
   const { t } = useTranslation();
 
   // Normalize display equations to block form first, then keep citations as
   // Markdown links so raw HTML never leaks into rendered answers.
-  const processed = prepareCitationMarkdown(normalizeDisplayMath(content));
+  let processed = prepareCitationMarkdown(normalizeDisplayMath(content));
+  if (renderEvidence) processed = prepareEvidenceMarkdown(processed);
 
   return (
-    <div className="markdown-body">
+    <div className={variant === "chat" ? "markdown-body markdown-chat" : "markdown-body"}>
       <ReactMarkdown
         remarkPlugins={[remarkGfm, remarkMath]}
         rehypePlugins={[rehypeRaw, [rehypeSanitize, sanitizeSchema], rehypeKatex]}
@@ -115,6 +138,11 @@ export default function MarkdownRenderer({
               );
             }
 
+            const evidenceMatch = renderEvidence ? EVIDENCE_HREF_RE.exec(href) : null;
+            if (evidenceMatch && renderEvidence) {
+              return <>{renderEvidence(evidenceMatch[1])}</>;
+            }
+
             const libMatch = LIB_CITATION_HREF_RE.exec(href);
             if (libMatch) {
               const idx = parseInt(libMatch[1], 10);
@@ -133,8 +161,23 @@ export default function MarkdownRenderer({
               );
             }
 
+            // Links out of the app open beside it: losing the conversation to
+            // follow a source is the wrong trade.
+            if (/^https?:\/\//i.test(href)) {
+              return (
+                <a {...props} target="_blank" rel="noopener noreferrer">
+                  {children}
+                </a>
+              );
+            }
             return <a {...props}>{children}</a>;
           },
+          // Wide tables scroll inside their own box instead of stretching the column.
+          table: ({ node, ...props }) => (
+            <div className="md-table-wrap">
+              <table {...props} />
+            </div>
+          ),
           span: ({ node, children, ...props }) => {
             const className = (props as Record<string, unknown>).className as string | undefined;
             const dataPage = (
