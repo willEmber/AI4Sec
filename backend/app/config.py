@@ -233,6 +233,12 @@ class AppSettings(BaseSettings):
     oauth_google_client_secret: str = Field(default="", alias="OAUTH_GOOGLE_CLIENT_SECRET")
     oauth_linuxdo_client_id: str = Field(default="", alias="OAUTH_LINUXDO_CLIENT_ID")
     oauth_linuxdo_client_secret: str = Field(default="", alias="OAUTH_LINUXDO_CLIENT_SECRET")
+    # A username/password login for one administrator account (multi_user
+    # only), offered once both are set — for local testing and personal
+    # deployments without an OAuth app. The account is unlimited by quotas;
+    # changing either value logs out every session it has.
+    admin_username: str = Field(default="", alias="ADMIN_USERNAME")
+    admin_password: str = Field(default="", alias="ADMIN_PASSWORD")
     # Per-principal daily agent quotas (UTC day), counted from agent_runs.
     # 0 means unlimited; single_user mode is never limited.
     quota_anon_daily_runs: int = Field(default=20, alias="QUOTA_ANON_DAILY_RUNS")

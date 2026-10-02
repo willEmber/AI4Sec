@@ -7,6 +7,9 @@ visitor was before logging in. The callback merges that principal into the
 account, which is how a conversation started before login is still there after
 it — and because the cookie is sealed, a callback cannot name somebody else's
 anonymous principal to merge.
+
+The configured administrator (`ADMIN_USERNAME` / `ADMIN_PASSWORD`) logs in with
+a password instead, at `POST /auth/admin/login`, and is merged the same way.
 """
 
 from __future__ import annotations
@@ -47,6 +50,11 @@ class LoginRequest(BaseModel):
     next: str = "/"
 
 
+class AdminLoginRequest(BaseModel):
+    username: str = ""
+    password: str = ""
+
+
 def safe_next(target: str) -> str:
     """A same-site path to return to; anything else becomes `/`.
 
@@ -70,6 +78,7 @@ async def providers() -> dict[str, Any]:
         "mode": settings.auth_mode,
         "allow_anonymous": settings.auth_allow_anonymous,
         "providers": _providers(),
+        "admin_login": accounts.admin_login_enabled(),
     }
 
 
@@ -90,6 +99,7 @@ async def me(
         "mode": settings.auth_mode,
         "allow_anonymous": settings.auth_allow_anonymous,
         "providers": _providers(),
+        "admin_login": accounts.admin_login_enabled(),
         "authenticated": False,
         "principal_id": None,
         "kind": None,
@@ -209,6 +219,43 @@ async def callback(
     )
     logger.info("Login via %s as %s", provider, principal_id)
     return response
+
+
+@router.post("/admin/login")
+@limiter.limit("10/minute")
+async def admin_login(
+    request: Request, response: Response, body: AdminLoginRequest
+) -> dict[str, bool]:
+    """Log in as the configured administrator. Sets the same session cookie an
+    OAuth login does, and brings the visitor's anonymous data along."""
+    if not accounts.admin_login_enabled():
+        raise HTTPException(
+            status_code=404,
+            detail={"code": "admin_login_disabled", "message": "Admin login is not configured."},
+        )
+    if not accounts.check_admin_credentials(body.username, body.password):
+        logger.warning("Failed admin login from %s", request.client.host if request.client else "?")
+        raise HTTPException(
+            status_code=401,
+            detail={"code": "invalid_credentials", "message": "Wrong username or password."},
+        )
+    principal_id = await accounts.ensure_admin_account()
+    user = await accounts.get_user(principal_id) if principal_id else None
+    if user is None or user["status"] != "active":
+        raise HTTPException(
+            status_code=403,
+            detail={"code": "account_disabled", "message": "This account has been disabled."},
+        )
+
+    caller = await resolve_caller(request)
+    if caller is not None and caller.kind == "anonymous":
+        await accounts.merge_anonymous(caller.principal_id, principal_id)
+    session_token = await accounts.create_login_session(
+        principal_id, user_agent=request.headers.get("user-agent", "")
+    )
+    set_auth_cookie(response, session_token, max_age=get_settings().auth_session_days * 86400)
+    logger.info("Admin login as %s", principal_id)
+    return {"ok": True}
 
 
 @router.post("/logout")

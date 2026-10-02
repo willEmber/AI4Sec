@@ -29,6 +29,8 @@ services:
       args:
         PYTHON_IMAGE: ${PYTHON_IMAGE:-python:3.13-slim}
     container_name: scholar-backend
+    # Every backend setting comes from .env, including the accounts block
+    # (AUTH_MODE, OAUTH_*, ADMIN_USERNAME / ADMIN_PASSWORD).
     env_file: .env
     environment:
       - CORS_ORIGINS=["http://localhost:3001","http://127.0.0.1:3001"]

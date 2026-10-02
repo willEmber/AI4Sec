@@ -65,9 +65,13 @@ async def lifespan(app: FastAPI):
         await ensure_local_principal()
         logger.info("Auth: single_user — every request is the local principal")
     else:
+        from app.services.accounts import admin_login_enabled, ensure_admin_account
         from app.services.oauth_providers import enabled_providers
 
+        await ensure_admin_account()
         providers = [p.id for p in enabled_providers()]
+        if admin_login_enabled():
+            providers.append("admin")
         logger.info(
             f"Auth: multi_user providers={providers or '(none)'} "
             f"anonymous={'on' if settings.auth_allow_anonymous else 'off'}"

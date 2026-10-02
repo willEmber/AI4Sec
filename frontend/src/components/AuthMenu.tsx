@@ -1,18 +1,25 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 
-import { getMe, logout, startLogin, takeAuthError, type AuthMe } from "@/lib/auth";
+import { AgentApiError } from "@/lib/agent";
+import { adminLogin, getMe, logout, startLogin, takeAuthError, type AuthMe } from "@/lib/auth";
 import { useTranslation } from "@/lib/i18n";
 
-const KNOWN_ERRORS = new Set(["denied", "account_disabled", "account_inactive"]);
+const KNOWN_ERRORS = new Set([
+  "denied",
+  "account_disabled",
+  "account_inactive",
+  "invalid_credentials",
+]);
 
 /**
  * Login / account control for the navbar.
  *
  * Hidden entirely in single_user mode, where nobody logs in. Signed out it
- * lists the configured providers; signed in it shows the avatar, today's
- * usage and logout.
+ * lists the configured providers and, when an administrator is configured,
+ * a username/password form; signed in it shows the avatar, today's usage and
+ * logout.
  */
 export function AuthMenu() {
   const { t } = useTranslation();
@@ -20,6 +27,8 @@ export function AuthMenu() {
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
   const rootRef = useRef<HTMLDivElement>(null);
 
   const refresh = useCallback(() => {
@@ -57,6 +66,27 @@ export function AuthMenu() {
       await startLogin(provider);
     } catch (err) {
       setError(String(err instanceof Error ? err.message : err));
+      setBusy(false);
+    }
+  };
+
+  const signInAsAdmin = async (e: FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
+    setError("");
+    try {
+      await adminLogin(username, password);
+      // The page was rendered for the anonymous visitor; reload it as the account.
+      window.location.reload();
+    } catch (err) {
+      const code = err instanceof AgentApiError ? err.code : "";
+      setError(
+        KNOWN_ERRORS.has(code)
+          ? t(`auth.error.${code}`)
+          : t("auth.error.generic", {
+              code: code || (err instanceof AgentApiError ? String(err.status) : "network"),
+            }),
+      );
       setBusy(false);
     }
   };
@@ -130,20 +160,58 @@ export function AuthMenu() {
                 {t("auth.logout")}
               </button>
             </>
-          ) : me.providers.length ? (
+          ) : me.providers.length || me.admin_login ? (
             <>
-              <div className="flex flex-col gap-2">
-                {me.providers.map((p) => (
+              {me.providers.length > 0 && (
+                <div className="flex flex-col gap-2">
+                  {me.providers.map((p) => (
+                    <button
+                      key={p.id}
+                      onClick={() => login(p.id)}
+                      disabled={busy}
+                      className="w-full rounded-lg border border-border px-3 py-2 text-left text-sm text-foreground transition-colors hover:bg-muted disabled:opacity-50"
+                    >
+                      {t("auth.continueWith", { provider: p.label })}
+                    </button>
+                  ))}
+                </div>
+              )}
+              {me.providers.length > 0 && me.admin_login && (
+                <div className="my-3 flex items-center gap-2 text-xs text-muted-foreground">
+                  <span className="h-px flex-1 bg-border" />
+                  {t("auth.or")}
+                  <span className="h-px flex-1 bg-border" />
+                </div>
+              )}
+              {me.admin_login && (
+                <form onSubmit={signInAsAdmin} className="flex flex-col gap-2">
+                  <p className="text-xs font-medium text-muted-foreground">{t("auth.adminLogin")}</p>
+                  <input
+                    value={username}
+                    onChange={(e) => setUsername(e.target.value)}
+                    placeholder={t("auth.username")}
+                    autoComplete="username"
+                    required
+                    className="w-full rounded-lg border border-border bg-background px-3 py-1.5 text-sm text-foreground outline-none focus:border-foreground/40"
+                  />
+                  <input
+                    type="password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder={t("auth.password")}
+                    autoComplete="current-password"
+                    required
+                    className="w-full rounded-lg border border-border bg-background px-3 py-1.5 text-sm text-foreground outline-none focus:border-foreground/40"
+                  />
                   <button
-                    key={p.id}
-                    onClick={() => login(p.id)}
-                    disabled={busy}
-                    className="w-full rounded-lg border border-border px-3 py-2 text-left text-sm text-foreground transition-colors hover:bg-muted disabled:opacity-50"
+                    type="submit"
+                    disabled={busy || !username || !password}
+                    className="w-full rounded-lg bg-foreground px-3 py-1.5 text-sm font-medium text-background transition-opacity hover:opacity-90 disabled:opacity-50"
                   >
-                    {t("auth.continueWith", { provider: p.label })}
+                    {t("auth.login")}
                   </button>
-                ))}
-              </div>
+                </form>
+              )}
               {me.kind === "anonymous" && (
                 <p className="mt-3 text-xs text-muted-foreground">{t("auth.anonymousHint")}</p>
               )}

@@ -27,6 +27,11 @@ const translations: Record<Locale, Record<string, string>> = {
     "auth.error.account_disabled": "This account has been disabled.",
     "auth.error.account_inactive": "The provider reports this account as inactive.",
     "auth.error.generic": "Login failed ({code}). Please try again.",
+    "auth.error.invalid_credentials": "Wrong username or password.",
+    "auth.adminLogin": "Administrator",
+    "auth.username": "Username",
+    "auth.password": "Password",
+    "auth.or": "or",
 
     // Landing page
     "home.title": "Read papers with an agent that shows its work",
@@ -540,6 +545,11 @@ const translations: Record<Locale, Record<string, string>> = {
     "auth.error.account_disabled": "该账号已被停用。",
     "auth.error.account_inactive": "登录提供方报告该账号未激活。",
     "auth.error.generic": "登录失败（{code}），请重试。",
+    "auth.error.invalid_credentials": "用户名或密码错误。",
+    "auth.adminLogin": "管理员登录",
+    "auth.username": "用户名",
+    "auth.password": "密码",
+    "auth.or": "或",
 
     // Landing page
     "home.title": "和一个会亮出证据的 Agent 一起读论文",

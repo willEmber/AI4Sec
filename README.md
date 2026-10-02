@@ -105,6 +105,7 @@ cp .env.example .env
 | `DIFY_API_BASE` | 知识库 RAG 与 Sphere 库内匹配（见上文） |
 | `R2_ACCOUNT_ID` / `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` / `R2_BUCKET` / `R2_ENDPOINT` / `R2_PUBLIC_BASE_URL` | 导出时把报告图片托管到对象存储（R2 / S3 兼容），替换为公共链接（见[导出](#导出export)）；需全部填写才生效，且 `R2_BUCKET` 必须是绑定 `R2_PUBLIC_BASE_URL` 域名的桶 |
 | `UNPAYWALL_EMAIL` / `CORE_API_KEY` / `ELSEVIER_API_KEY` / `ELSEVIER_INSTTOKEN` / `WILEY_TDM_TOKEN` | Research Sphere 抓取参考文献全文 |
+| `ADMIN_USERNAME` / `ADMIN_PASSWORD` | 用户名密码登录的管理员账号（`multi_user` 模式），免 OAuth 即可登录，适合本地测试与个人部署；不受每日额度限制，并可访问 `/api/admin/*` |
 | `ADMIN_API_TOKEN` | 为 `/api/admin/*` 启用 `X-Admin-Token` 鉴权 |
 | `ENABLE_DOCS` | 生产环境设为 `false`，关闭 Swagger / OpenAPI |
 

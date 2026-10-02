@@ -9,6 +9,9 @@ what changes is how a request proves which principal it is:
 - an anonymous credential (`identity.py`), only while anonymous use is allowed
   and only until the visitor logs in.
 
+Besides OAuth there is one password login: the administrator configured by
+`ADMIN_USERNAME` / `ADMIN_PASSWORD`, for local testing and personal deployments.
+
 Logging in moves an anonymous visitor's sessions, runs, memories and evidence
 to the account in one transaction, then marks the anonymous principal merged,
 which is what makes its old credential stop resolving.
@@ -17,6 +20,7 @@ which is what makes its old credential stop resolving.
 from __future__ import annotations
 
 import hashlib
+import hmac
 import json
 import logging
 import secrets
@@ -39,6 +43,12 @@ _RENEW_AFTER_SECONDS = 3600
 # Tables whose `owner_id` moves with a merge. `runs` (classic mode reports) is
 # handled beside them because its column is nullable.
 _OWNED_TABLES = ("agent_sessions", "agent_runs", "agent_memories", "evidence", "agent_projects")
+
+# The configured administrator is one `user_identities` row. Its subject is
+# fixed rather than the username, so renaming the admin keeps its data.
+ADMIN_PROVIDER = "admin"
+_ADMIN_SUBJECT = "admin"
+_SCRYPT = {"n": 2**14, "r": 8, "p": 1}
 
 
 class AccountDisabled(Exception):
@@ -209,6 +219,126 @@ async def ensure_local_principal() -> str:
     return LOCAL_PRINCIPAL_ID
 
 
+# ── the configured administrator ────────────────────────────────────────────
+
+
+def admin_login_enabled() -> bool:
+    settings = get_settings()
+    return (
+        settings.auth_mode == "multi_user"
+        and bool(settings.admin_username.strip())
+        and bool(settings.admin_password)
+    )
+
+
+def _digest(value: str) -> bytes:
+    return hashlib.sha256(value.encode("utf-8")).digest()
+
+
+def check_admin_credentials(username: str, password: str) -> bool:
+    """Whether a login form names the configured admin. Constant-time."""
+    if not admin_login_enabled():
+        return False
+    settings = get_settings()
+    # Both comparisons always run, so timing does not tell which one failed.
+    user_ok = hmac.compare_digest(_digest(username.strip()), _digest(settings.admin_username.strip()))
+    password_ok = hmac.compare_digest(_digest(password), _digest(settings.admin_password))
+    return user_ok and password_ok
+
+
+def _credential_material(username: str, password: str) -> bytes:
+    return f"{username.strip()}\0{password}".encode("utf-8")
+
+
+def _fingerprint(username: str, password: str) -> str:
+    """A salted scrypt of the configured credentials, so a read of the database
+    does not reveal the password but a restart can tell whether it changed."""
+    salt = secrets.token_bytes(16)
+    digest = hashlib.scrypt(_credential_material(username, password), salt=salt, **_SCRYPT)
+    return f"scrypt${salt.hex()}${digest.hex()}"
+
+
+def _fingerprint_matches(stored: str, username: str, password: str) -> bool:
+    try:
+        scheme, salt_hex, digest_hex = stored.split("$")
+        if scheme != "scrypt":
+            return False
+        digest = hashlib.scrypt(
+            _credential_material(username, password), salt=bytes.fromhex(salt_hex), **_SCRYPT
+        )
+    except ValueError:
+        return False
+    return hmac.compare_digest(digest.hex(), digest_hex)
+
+
+async def ensure_admin_account() -> str | None:
+    """Bring the admin account in line with the configuration; its principal id.
+
+    Creates it on first start and keeps its role `admin`. When the configured
+    username or password differs from the one its sessions were opened with —
+    or the admin login was switched off — every session it has is revoked:
+    changing a leaked password must also end the logins made with it.
+    Returns None when no admin is configured and none ever was.
+    """
+    settings = get_settings()
+    enabled = admin_login_enabled()
+    username = settings.admin_username.strip()
+    password = settings.admin_password
+    async with db.transaction() as tx:
+        # Replicas starting together would otherwise both create the account.
+        await tx.execute("SELECT pg_advisory_xact_lock(hashtextextended('scholar.admin', 0))")
+        row = await tx.fetch_one(
+            "SELECT principal_id, profile_json FROM user_identities WHERE provider = ? AND subject = ?",
+            (ADMIN_PROVIDER, _ADMIN_SUBJECT),
+        )
+        if row is None:
+            if not enabled:
+                return None
+            principal_id = f"pr_{uuid.uuid4().hex[:24]}"
+            profile_json = json.dumps({"credential": _fingerprint(username, password)})
+            await tx.execute(
+                "INSERT INTO agent_principals (principal_id, kind, label) VALUES (?, 'user', 'admin')",
+                (principal_id,),
+            )
+            await tx.execute(
+                "INSERT INTO users (principal_id, display_name, role) VALUES (?, ?, 'admin')",
+                (principal_id, username),
+            )
+            await tx.execute(
+                """INSERT INTO user_identities (provider, subject, principal_id, profile_json)
+                   VALUES (?, ?, ?, ?)""",
+                (ADMIN_PROVIDER, _ADMIN_SUBJECT, principal_id, profile_json),
+            )
+            logger.info("Created the admin account %s", principal_id)
+            return principal_id
+
+        principal_id = row["principal_id"]
+        try:
+            stored = str(json.loads(row["profile_json"] or "{}").get("credential") or "")
+        except ValueError:
+            stored = ""
+        unchanged = enabled and _fingerprint_matches(stored, username, password)
+        if not unchanged:
+            revoked = await tx.execute(
+                "UPDATE auth_sessions SET revoked_at = now() WHERE principal_id = ? AND revoked_at IS NULL",
+                (principal_id,),
+            )
+            if revoked:
+                logger.warning("Admin credentials changed: revoked %d admin login session(s)", revoked)
+        if not enabled:
+            return principal_id
+        if not unchanged:
+            await tx.execute(
+                "UPDATE user_identities SET profile_json = ? WHERE provider = ? AND subject = ?",
+                (json.dumps({"credential": _fingerprint(username, password)}), ADMIN_PROVIDER, _ADMIN_SUBJECT),
+            )
+        await tx.execute(
+            "UPDATE users SET role = 'admin', display_name = ? WHERE principal_id = ?",
+            (username, principal_id),
+        )
+    return principal_id
+
+
 # ── merging ─────────────────────────────────────────────────────────────────
 
 
@@ -270,6 +400,13 @@ class QuotaUsage:
         }
 
 
+async def is_admin(caller: Caller) -> bool:
+    if caller.kind != "user":
+        return False
+    row = await db.fetch_one("SELECT role FROM users WHERE principal_id = ?", (caller.principal_id,))
+    return row is not None and row["role"] == "admin"
+
+
 async def daily_usage(caller: Caller) -> QuotaUsage:
     """Agent turns and tokens since UTC midnight, against the caller's limits.
 
@@ -278,7 +415,7 @@ async def daily_usage(caller: Caller) -> QuotaUsage:
     the run count is what stops a burst.
     """
     settings = get_settings()
-    if settings.auth_mode == "single_user":
+    if settings.auth_mode == "single_user" or await is_admin(caller):
         runs_limit = tokens_limit = 0
     elif caller.kind == "user":
         runs_limit, tokens_limit = settings.quota_user_daily_runs, settings.quota_user_daily_tokens

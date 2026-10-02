@@ -171,6 +171,39 @@ class AccountServiceTests(unittest.IsolatedAsyncioTestCase):
         usage = await accounts.daily_usage(accounts.Caller(anon, "anonymous", "cookie"))
         self.assertEqual((usage.runs, usage.tokens), (1, 1234))
 
+    async def test_admin_account_follows_its_configuration(self) -> None:
+        from app.db import database as db
+        from app.services import accounts
+
+        self.assertIsNone(await accounts.ensure_admin_account())   # never configured
+        _set_env(self, ADMIN_USERNAME="root", ADMIN_PASSWORD="pw-1")
+        self.assertTrue(accounts.check_admin_credentials(" root ", "pw-1"))
+        self.assertFalse(accounts.check_admin_credentials("root", "pw-2"))
+        self.assertFalse(accounts.check_admin_credentials("other", "pw-1"))
+
+        admin = await accounts.ensure_admin_account()
+        self.assertEqual((await accounts.get_user(admin))["role"], "admin")
+        stored = await db.fetch_one("SELECT profile_json FROM user_identities WHERE principal_id = ?", (admin,))
+        self.assertNotIn("pw-1", stored["profile_json"])
+        token = await accounts.create_login_session(admin)
+        usage = await accounts.daily_usage(accounts.Caller(admin, "user", "cookie"))
+        self.assertEqual((usage.runs_limit, usage.tokens_limit), (0, 0))
+
+        # A restart with the same configuration keeps the session...
+        self.assertEqual(await accounts.ensure_admin_account(), admin)
+        self.assertEqual(await accounts.resolve_login_session(token), admin)
+        # ...a renamed admin is still the same account, but its logins end...
+        _set_env(self, ADMIN_USERNAME="boss")
+        self.assertEqual(await accounts.ensure_admin_account(), admin)
+        self.assertIsNone(await accounts.resolve_login_session(token))
+        self.assertEqual((await accounts.get_user(admin))["display_name"], "boss")
+        # ...and so do they when the admin login is switched off.
+        token = await accounts.create_login_session(admin)
+        _set_env(self, ADMIN_PASSWORD="")
+        self.assertFalse(accounts.admin_login_enabled())
+        await accounts.ensure_admin_account()
+        self.assertIsNone(await accounts.resolve_login_session(token))
+
 
 class _AppTestCase(unittest.TestCase):
     """Boots the app on a fresh schema with plain-http cookies."""
@@ -369,6 +402,49 @@ class LoginFlowTests(_AppTestCase):
             self.assertEqual(other.status_code, 401)
             forged = browser.get(f"/api/agent/runs/{run_id}/events", params={"ticket": ticket + "x"})
             self.assertEqual(forged.status_code, 401)
+
+
+class AdminLoginTests(_AppTestCase):
+    env = {
+        "ADMIN_USERNAME": "root",
+        "ADMIN_PASSWORD": "pw-1",
+        "ADMIN_API_TOKEN": "ops-token",
+        "QUOTA_USER_DAILY_RUNS": "1",
+    }
+
+    def test_password_login_takes_the_visitor_along(self) -> None:
+        self.assertTrue(self.client.get("/api/auth/providers").json()["admin_login"])
+        session_id = self.client.post("/api/agent/sessions", json={}).json()["session_id"]
+
+        wrong = self.client.post("/api/auth/admin/login", json={"username": "root", "password": "nope"})
+        self.assertEqual(wrong.status_code, 401)
+        self.assertEqual(wrong.json()["detail"]["code"], "invalid_credentials")
+
+        done = self.client.post("/api/auth/admin/login", json={"username": "root", "password": "pw-1"})
+        self.assertEqual(done.status_code, 200, done.text)
+        self.assertTrue(self.client.cookies.get("scholar_auth", "").startswith("st_"))
+        me = self.client.get("/api/auth/me").json()
+        self.assertTrue(me["authenticated"])
+        self.assertEqual((me["user"]["display_name"], me["user"]["role"]), ("root", "admin"))
+        self.assertEqual(me["quota"]["runs_limit"], 0)   # the user quota does not apply
+        listed = self.client.get("/api/agent/sessions").json()["sessions"]
+        self.assertEqual([s["session_id"] for s in listed], [session_id])
+
+    def test_admin_routes_open_to_the_admin_login(self) -> None:
+        with self._new_client() as visitor:
+            visitor.post("/api/agent/sessions", json={})   # an anonymous principal
+            self.assertEqual(visitor.get("/api/admin/rank-cache/stats").status_code, 401)
+            ok = visitor.get("/api/admin/rank-cache/stats", headers={"X-Admin-Token": "ops-token"})
+            self.assertEqual(ok.status_code, 200)
+        self.client.post("/api/auth/admin/login", json={"username": "root", "password": "pw-1"})
+        self.assertEqual(self.client.get("/api/admin/rank-cache/stats").status_code, 200)
+
+
+class AdminLoginOffTests(_AppTestCase):
+    def test_not_offered_without_configuration(self) -> None:
+        self.assertFalse(self.client.get("/api/auth/me").json()["admin_login"])
+        response = self.client.post("/api/auth/admin/login", json={"username": "", "password": ""})
+        self.assertEqual(response.status_code, 404)
 
 
 class QuotaTests(_AppTestCase):

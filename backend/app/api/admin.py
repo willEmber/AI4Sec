@@ -2,29 +2,44 @@
 
 These routes perform destructive cache operations. They are gated behind an
 optional ``ADMIN_API_TOKEN``: when that env var is set, every request must carry
-a matching ``X-Admin-Token`` header. When it is unset (the default) the routes
+a matching ``X-Admin-Token`` header or come from a logged-in admin account
+(``ADMIN_USERNAME`` / ``ADMIN_PASSWORD``). When it is unset (the default) the routes
 stay open so existing trusted/local deployments keep working — set the token
 before exposing the API to the public internet.
 """
 from __future__ import annotations
 
+import hmac
 import logging
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
 from pydantic import BaseModel
 
+from app.api.deps import resolve_caller
 from app.config import get_settings
 from app.rate_limit import limiter
+from app.services import accounts
 from app.services.publication_rank import RankCache
 
 logger = logging.getLogger("scholar.admin")
 
 
-async def require_admin_token(x_admin_token: str | None = Header(default=None)) -> None:
-    """Require a matching ``X-Admin-Token`` header when ADMIN_API_TOKEN is set."""
+async def require_admin_token(
+    request: Request, x_admin_token: str | None = Header(default=None)
+) -> None:
+    """Require a matching ``X-Admin-Token`` header or an admin login when
+    ADMIN_API_TOKEN is set."""
     expected = get_settings().admin_api_token
-    if expected and x_admin_token != expected:
-        raise HTTPException(status_code=401, detail="Admin token required")
+    if not expected:
+        return
+    if x_admin_token and hmac.compare_digest(x_admin_token.encode(), expected.encode()):
+        return
+    caller = await resolve_caller(request)
+    # In single_user mode every visitor is the local admin, so that alone must
+    # not open what the token is there to close.
+    if caller is not None and caller.via != "single_user" and await accounts.is_admin(caller):
+        return
+    raise HTTPException(status_code=401, detail="Admin token required")
 
 
 router = APIRouter(
