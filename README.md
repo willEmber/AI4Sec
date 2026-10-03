@@ -100,6 +100,7 @@ cp .env.example .env
 | 变量 | 启用的功能 |
 |---|---|
 | `EMBED_MODELNAME` / `RERANK_MODELNAME` | 问答 / 检索的向量召回与重排序 |
+| `MINERU_QUEUE_TIMEOUT_SECONDS` | 对话等待 MinerU 排队的上限，默认 300 秒；超过后返回“全文仍在准备”，后续对话复用原批次。设为 `0` 可关闭排队上限，整体解析上限仍生效 |
 | `EASYSCHOLAR_SECRET_KEY` | 期刊分级（SCI / CCF / CSCD 分区） |
 | `TAVILY_KEY` | 期刊分级的 Web 兜底检索 |
 | `DIFY_API_BASE` | 知识库 RAG 与 Sphere 库内匹配（见上文） |

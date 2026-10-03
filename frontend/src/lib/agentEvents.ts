@@ -4,6 +4,10 @@ import type { AgentEvent, SessionArtifact } from "@/lib/agent";
 export interface ToolStep {
   step: string;
   status: string;
+  phase?: string;
+  elapsed_s?: number;
+  extracted_pages?: number;
+  total_pages?: number;
 }
 
 /** One tool call as the reader sees it: what ran, how it ended, how much it found. */
@@ -61,8 +65,14 @@ export function applyToolEvent(
     const status = String(payload.status || "running");
     const steps = [...(prev[index].steps ?? [])];
     const existing = steps.findIndex((s) => s.step === step);
-    if (existing >= 0) steps[existing] = { step, status };
-    else steps.push({ step, status });
+    const updated: ToolStep = { ...(existing >= 0 ? steps[existing] : {}), step, status };
+    if (typeof payload.phase === "string") updated.phase = payload.phase;
+    for (const key of ["elapsed_s", "extracted_pages", "total_pages"] as const) {
+      const value = payload[key];
+      if (typeof value === "number" && Number.isFinite(value) && value >= 0) updated[key] = value;
+    }
+    if (existing >= 0) steps[existing] = updated;
+    else steps.push(updated);
     const next = [...prev];
     next[index] = { ...prev[index], steps };
     return next;

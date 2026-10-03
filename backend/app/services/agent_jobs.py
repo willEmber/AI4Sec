@@ -144,6 +144,22 @@ async def release_lease(job_id: str) -> None:
     )
 
 
+async def fail_exhausted_job(job_id: str) -> bool:
+    """Close abandoned work that cannot be claimed again, without touching a live lease."""
+    row = await db.execute_returning(
+        """UPDATE agent_jobs
+              SET status = 'failed', lease_owner = '', lease_expires_at = NULL,
+                  error_code = CASE WHEN error_code = '' THEN 'upstream_error' ELSE error_code END,
+                  error_msg = CASE WHEN error_msg = '' THEN 'Retry limit reached after an interrupted job' ELSE error_msg END,
+                  updated_at = now()
+            WHERE job_id = ? AND attempts >= ? AND status IN ('pending', 'running')
+              AND (status = 'pending' OR lease_expires_at IS NULL OR lease_expires_at < ?)
+           RETURNING job_id""",
+        (job_id, MAX_ATTEMPTS, _now().isoformat()),
+    )
+    return row is not None
+
+
 async def set_remote_id(job_id: str, remote_id: str) -> None:
     """Record the external task id, so a restart can query it instead of resubmitting."""
     await db.execute(
@@ -234,36 +250,38 @@ async def _claim(
     if existing["attempts"] >= MAX_ATTEMPTS:
         return None
 
-    attempts = existing["attempts"] + 1
     claimed = await db.execute_returning(
         """UPDATE agent_jobs
-              SET status = 'running', attempts = ?, lease_owner = ?,
+              SET status = 'running', attempts = attempts + 1, lease_owner = ?,
                   lease_expires_at = ?, run_id = ?, updated_at = now()
             WHERE job_id = ? AND status <> 'done'
-              AND (status <> 'running' OR lease_expires_at < ?)
-           RETURNING job_id""",
+              AND attempts < ?
+              AND (status <> 'running' OR lease_expires_at IS NULL OR lease_expires_at < ?)
+           RETURNING job_id, attempts""",
         (
-            attempts,
             owner,
             _lease_expiry(),
             run_id,
             existing["job_id"],
+            MAX_ATTEMPTS,
             _now().isoformat(),
         ),
     )
     if claimed is None:
         return None
-    return existing["job_id"], attempts
+    return existing["job_id"], int(claimed["attempts"])
 
 
 async def _finish(
     job_id: str, *, status: str, result: dict[str, Any] | None = None,
     error_code: str = "", error_msg: str = "",
+    refund_attempt: bool = False,
 ) -> None:
     await db.execute(
         """UPDATE agent_jobs
               SET status = ?, result_json = ?, error_code = ?, error_msg = ?,
                   lease_owner = '', lease_expires_at = NULL,
+                  attempts = GREATEST(0, attempts - ?),
                   updated_at = now()
             WHERE job_id = ?""",
         (
@@ -271,6 +289,7 @@ async def _finish(
             json.dumps(result or {}, ensure_ascii=False),
             error_code,
             error_msg[:500],
+            int(refund_attempt),
             job_id,
         ),
     )
@@ -282,6 +301,18 @@ def _stored_result(row: dict[str, Any]) -> dict[str, Any]:
     except (TypeError, ValueError):
         return {}
     return parsed if isinstance(parsed, dict) else {}
+
+
+async def _await_shared(task: asyncio.Task[dict[str, Any]], key: str) -> dict[str, Any]:
+    """Give joined callers the same failure contract as the job's owner."""
+    from app.services.mineru_adapter import MinerUPollTimeoutError
+
+    try:
+        return await asyncio.shield(task)
+    except Exception as exc:
+        row = await get_job(key)
+        code = ErrorCode.TIMEOUT if isinstance(exc, MinerUPollTimeoutError) else ErrorCode.UPSTREAM_ERROR
+        raise JobFailed(code, str(exc), attempts=row["attempts"] if row else 0) from exc
 
 
 async def run_once(
@@ -317,7 +348,7 @@ async def run_once(
     # Same work already in flight here: wait on it rather than duplicating it.
     inflight = _inflight.get(idempotency_key)
     if inflight is not None:
-        result = await asyncio.shield(inflight)
+        result = await _await_shared(inflight, idempotency_key)
         row = await get_job(idempotency_key)
         return JobHandle(
             job_id=row["job_id"] if row else "",
@@ -346,17 +377,24 @@ async def run_once(
                 result=_stored_result(row), reused=True,
                 attempts=row["attempts"], remote_id=row["remote_id"],
             )
-        if row is not None and row["attempts"] >= MAX_ATTEMPTS:
-            raise JobFailed(
-                ErrorCode.UPSTREAM_ERROR,
-                row["error_msg"] or f"{kind} failed {row['attempts']} times; not retrying",
-                attempts=row["attempts"],
-            )
+        if row is not None and row["attempts"] >= MAX_ATTEMPTS and (
+            row["status"] != "running" or not _lease_is_live(row["lease_expires_at"])
+        ):
+            await fail_exhausted_job(row["job_id"])
+            row = await get_job(idempotency_key)
+            if row is not None and row["status"] != "done" and (
+                row["status"] != "running" or not _lease_is_live(row["lease_expires_at"])
+            ):
+                raise JobFailed(
+                    ErrorCode.UPSTREAM_ERROR,
+                    row["error_msg"] or f"{kind} failed {row['attempts']} times; not retrying",
+                    attempts=row["attempts"],
+                )
         # Lost a race inside this process: the winner registered its task just
         # after our first check, so wait on that instead of reporting `running`.
         inflight = _inflight.get(idempotency_key)
         if inflight is not None:
-            result = await asyncio.shield(inflight)
+            result = await _await_shared(inflight, idempotency_key)
             return JobHandle(
                 job_id=row["job_id"] if row else "",
                 kind=kind,
@@ -402,12 +440,16 @@ async def run_once(
             # lease back with `remote_id` intact: the next attempt rejoins that
             # submission instead of paying for it again. Marking it `failed`
             # here would spend an attempt on something that never went wrong.
-            await release_lease(job_id)
+            await _finish(job_id, status="pending", refund_attempt=True)
             raise
         except Exception as exc:  # noqa: BLE001 — recorded, then re-raised
+            from app.services.mineru_adapter import MinerUPollTimeoutError
+
+            waiting = isinstance(exc, MinerUPollTimeoutError)
             await _finish(
-                job_id, status="failed",
-                error_code=ErrorCode.UPSTREAM_ERROR.value, error_msg=str(exc),
+                job_id, status="pending" if waiting else "failed",
+                error_code=ErrorCode.TIMEOUT.value if waiting else ErrorCode.UPSTREAM_ERROR.value,
+                error_msg=str(exc), refund_attempt=waiting,
             )
             raise
         await _finish(job_id, status="done", result=result)
@@ -418,6 +460,10 @@ async def run_once(
     try:
         result = await task
     except Exception as exc:  # noqa: BLE001
+        from app.services.mineru_adapter import MinerUPollTimeoutError
+
+        if isinstance(exc, MinerUPollTimeoutError):
+            raise JobFailed(ErrorCode.TIMEOUT, str(exc), attempts=attempts) from exc
         logger.warning("Job %s (%s) failed on attempt %s: %s", job_id, kind, attempts, exc)
         raise JobFailed(ErrorCode.UPSTREAM_ERROR, str(exc), attempts=attempts) from exc
     finally:

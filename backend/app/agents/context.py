@@ -156,6 +156,9 @@ class AgentContext:
     project_id: str = ""
     budget: RunBudget = field(default_factory=RunBudget)
     usage: BudgetUsage = field(default_factory=BudgetUsage)
+    # A queue timeout must not let the model spend this entire turn waiting on
+    # the same paper again through another tool. A new turn can collect it.
+    deferred_parses: set[str] = field(default_factory=set)
 
     def config(self) -> dict[str, Any]:
         """LangGraph config for this run: the thread is the session's thread."""

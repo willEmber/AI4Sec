@@ -202,8 +202,12 @@ function StepList({
       <ul className="space-y-0.5">
         {steps.map((step, i) => {
           const finished = step.status === "done" || step.status === "skipped";
-          const active = !finished && running && i === steps.length - 1;
+          const stopped = ["failed", "error", "waiting", "cancelled"].includes(step.status);
+          const active = !finished && !stopped && running && i === steps.length - 1;
           const label = t(`step.${step.step}`);
+          const phaseKey = step.status === "waiting" ? "chat.parse.waiting" : `chat.parse.phase.${step.phase}`;
+          const phaseLabel = !finished && step.phase ? t(phaseKey) : "";
+          const elapsed = step.elapsed_s == null ? "" : formatDuration(step.elapsed_s * 1000);
           return (
             <li
               key={step.step}
@@ -222,6 +226,15 @@ function StepList({
               )}
               <span className={step.status === "skipped" ? "line-through opacity-70" : ""}>
                 {label === `step.${step.step}` ? step.step : label}
+                {phaseLabel && phaseLabel !== phaseKey && (
+                  <span className="ml-1.5 text-muted-foreground">{phaseLabel}</span>
+                )}
+              </span>
+              <span className="ml-auto shrink-0 tabular-nums text-muted-foreground">
+                {Boolean(step.total_pages) && t("chat.parse.pages", {
+                  done: step.extracted_pages ?? 0, total: step.total_pages ?? 0,
+                })}
+                {elapsed && <span className="ml-1.5">{elapsed}</span>}
               </span>
             </li>
           );

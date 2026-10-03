@@ -43,6 +43,10 @@ class MinerUPollTimeoutError(TimeoutError):
         )
 
 
+class MinerUQueueTimeoutError(MinerUPollTimeoutError):
+    """The submitted batch is still queued, rather than a failed parse."""
+
+
 def _safe_zip_extract(zf: zipfile.ZipFile, dest: Path) -> None:
     """Extract a zip with path-traversal and zip-bomb protection.
 
@@ -204,6 +208,7 @@ def _update_parse_poll_sync(
     remote_batch_id: str = "",
     poll_count: int | None = None,
     state_counts: dict[str, int] | None = None,
+    progress: dict[str, Any] | None = None,
 ) -> None:
     if not parse_id:
         return
@@ -220,6 +225,9 @@ def _update_parse_poll_sync(
         assignments.append("last_state_counts = ?")
         params.append(json.dumps(state_counts, ensure_ascii=True))
         assignments.append("last_poll_at = now()")
+    if progress is not None:
+        assignments.append("progress_json = (progress_json::jsonb || ?::jsonb)::text")
+        params.append(json.dumps(progress, ensure_ascii=True))
 
     params.append(parse_id)
     # Runs on the polling thread, which has no event loop, so it cannot borrow
@@ -240,15 +248,19 @@ def _poll_until_done_sync(
     sleep_s: int = 6,
     timeout_s: int = 3600,
     *,
-    time_fn: Callable[[], float] = time.time,
+    time_fn: Callable[[], float] = time.monotonic,
     sleep_fn: Callable[[float], None] = time.sleep,
     on_poll: Callable[[dict[str, Any]], None] | None = None,
+    queue_timeout_s: int = 0,
 ) -> list[dict[str, Any]]:
     """Poll MinerU batch until all tasks are done or failed."""
     from collections import Counter
     t0 = time_fn()
     poll_count = 0
     last_state_counts: dict[str, int] = {}
+    queue_started: float | None = None
+    extracted_pages = 0
+    total_pages = 0
     while True:
         poll_count += 1
         data = client.get_batch_results(batch_id)
@@ -258,11 +270,22 @@ def _poll_until_done_sync(
             last_state_counts = dict(Counter(states))
             elapsed_s = time_fn() - t0
             if on_poll:
+                page_progress = [r.get("extract_progress") or {} for r in results]
+                if any(page_progress):
+                    extracted_pages = sum(p.get("extracted_pages") or 0 for p in page_progress)
+                    total_pages = sum(p.get("total_pages") or 0 for p in page_progress)
                 on_poll({
                     "batch_id": batch_id,
                     "poll_count": poll_count,
                     "state_counts": last_state_counts,
                     "elapsed_s": elapsed_s,
+                    "phase": next(
+                        (s for s in ("running", "converting", "pending", "waiting-file", "failed", "done")
+                         if last_state_counts.get(s)),
+                        "submitting",
+                    ),
+                    "extracted_pages": extracted_pages,
+                    "total_pages": total_pages,
                 })
             if poll_count % 5 == 1:  # Log every 5th poll to avoid spam
                 logger.info(
@@ -275,6 +298,15 @@ def _poll_until_done_sync(
                     f"{elapsed_s:.0f}s: {last_state_counts}"
                 )
                 return results
+            if all(s in ("pending", "waiting-file") for s in states):
+                if queue_started is None:
+                    queue_started = elapsed_s
+                if queue_timeout_s and elapsed_s - queue_started >= queue_timeout_s:
+                    raise MinerUQueueTimeoutError(
+                        batch_id, elapsed_s, poll_count, last_state_counts, queue_timeout_s
+                    )
+            else:
+                queue_started = None
         else:
             elapsed_s = time_fn() - t0
             if on_poll:
@@ -300,7 +332,7 @@ def _get_client() -> MinerUClient:
     return MinerUClient(token=settings.mineru_token)
 
 
-async def parse_pdf(paper_id: str, parse_id: str) -> Path:
+async def parse_pdf(paper_id: str, parse_id: str, *, queue_timeout_s: int = 0) -> Path:
     """Parse a single PDF via MinerU batch API. Returns the output directory."""
     settings = get_settings()
     paper_dir = settings.data_dir / "papers" / paper_id
@@ -317,7 +349,9 @@ async def parse_pdf(paper_id: str, parse_id: str) -> Path:
     )
 
     try:
-        result_dir = await asyncio.to_thread(_parse_pdf_sync, pdf_path, output_dir, paper_id, parse_id)
+        result_dir = await asyncio.to_thread(
+            _parse_pdf_sync, pdf_path, output_dir, paper_id, parse_id, queue_timeout_s
+        )
         await db.execute(
             "UPDATE mineru_parses SET status = 'done', output_dir = ?, updated_at = now() WHERE parse_id = ?",
             (str(result_dir), parse_id),
@@ -325,13 +359,15 @@ async def parse_pdf(paper_id: str, parse_id: str) -> Path:
         return result_dir
     except Exception as e:
         await db.execute(
-            "UPDATE mineru_parses SET status = 'failed', error_msg = ?, updated_at = now() WHERE parse_id = ?",
-            (str(e), parse_id),
+            "UPDATE mineru_parses SET status = ?, error_msg = ?, updated_at = now() WHERE parse_id = ?",
+            ("pending" if isinstance(e, MinerUPollTimeoutError) else "failed", str(e), parse_id),
         )
         raise
 
 
-def _parse_pdf_sync(pdf_path: Path, output_dir: Path, paper_id: str, parse_id: str) -> Path:
+def _parse_pdf_sync(
+    pdf_path: Path, output_dir: Path, paper_id: str, parse_id: str, queue_timeout_s: int = 0
+) -> Path:
     """Synchronous MinerU parsing."""
     t_total = time.perf_counter()
     settings = get_settings()
@@ -351,10 +387,11 @@ def _parse_pdf_sync(pdf_path: Path, output_dir: Path, paper_id: str, parse_id: s
     # Step 2: Upload PDF
     t0 = time.perf_counter()
     size_mb = pdf_path.stat().st_size / 1024 / 1024
+    _update_parse_poll_sync(parse_id, progress={"phase": "uploading"})
     _put_upload_sync(upload_urls[0], pdf_path)
     logger.info(f"[{paper_id}] MinerU upload: {time.perf_counter()-t0:.2f}s ({size_mb:.1f} MB)")
 
-    result_dir = _collect_batch_sync(client, batch_id, output_dir, paper_id, parse_id)
+    result_dir = _collect_batch_sync(client, batch_id, output_dir, paper_id, parse_id, queue_timeout_s)
     logger.info(f"[{paper_id}] MinerU TOTAL: {time.perf_counter()-t_total:.1f}s")
     return result_dir
 
@@ -365,6 +402,7 @@ def _collect_batch_sync(
     output_dir: Path,
     paper_id: str,
     parse_id: str,
+    queue_timeout_s: int = 0,
 ) -> Path:
     """Wait for an already-submitted batch and turn it into a local directory.
 
@@ -382,11 +420,13 @@ def _collect_batch_sync(
         batch_id,
         sleep_s=max(1, settings.mineru_poll_interval_seconds),
         timeout_s=max(1, settings.mineru_parse_timeout_seconds),
+        queue_timeout_s=queue_timeout_s,
         on_poll=lambda event: _update_parse_poll_sync(
             parse_id,
             remote_batch_id=batch_id,
             poll_count=int(event["poll_count"]),
             state_counts=event["state_counts"],
+            progress=event,
         ),
     )
     logger.info(f"[{paper_id}] MinerU poll: {time.perf_counter()-t0:.1f}s (remote processing)")
@@ -402,12 +442,14 @@ def _collect_batch_sync(
         # Fetch the finished artefact.
         t0 = time.perf_counter()
         zip_path = output_dir / f"{data_id}.zip"
+        _update_parse_poll_sync(parse_id, progress={"phase": "downloading"})
         _download_file_sync(zip_url, zip_path)
         zip_mb = zip_path.stat().st_size / 1024 / 1024
         logger.info(f"[{paper_id}] MinerU download: {time.perf_counter()-t0:.2f}s ({zip_mb:.1f} MB)")
 
         t0 = time.perf_counter()
         extract_dir = output_dir / data_id
+        _update_parse_poll_sync(parse_id, progress={"phase": "extracting"})
         if extract_dir.exists():
             shutil.rmtree(extract_dir)
         with zipfile.ZipFile(zip_path, "r") as zf:
@@ -419,7 +461,9 @@ def _collect_batch_sync(
     raise RuntimeError("No results from MinerU batch")
 
 
-async def resume_parse(paper_id: str, parse_id: str, batch_id: str) -> Path:
+async def resume_parse(
+    paper_id: str, parse_id: str, batch_id: str, *, queue_timeout_s: int = 0
+) -> Path:
     """Collect a batch that was submitted before this process existed.
 
     The submission is the part that costs: MinerU has the file and is working on
@@ -439,13 +483,13 @@ async def resume_parse(paper_id: str, parse_id: str, batch_id: str) -> Path:
     )
     try:
         result_dir = await asyncio.to_thread(
-            _collect_batch_sync, _get_client(), batch_id, output_dir, paper_id, parse_id
+            _collect_batch_sync, _get_client(), batch_id, output_dir, paper_id, parse_id, queue_timeout_s
         )
     except Exception as exc:
         await db.execute(
-            "UPDATE mineru_parses SET status = 'failed', error_msg = ?, "
+            "UPDATE mineru_parses SET status = ?, error_msg = ?, "
             "updated_at = now() WHERE parse_id = ?",
-            (str(exc), parse_id),
+            ("pending" if isinstance(exc, MinerUPollTimeoutError) else "failed", str(exc), parse_id),
         )
         raise
     await db.execute(
@@ -499,6 +543,7 @@ async def parse_pdf_batch(paper_ids: list[str], parse_ids: list[str]) -> list[Pa
                     remote_batch_id=batch_id,
                     poll_count=int(event["poll_count"]),
                     state_counts=event["state_counts"],
+                    progress=event,
                 )
 
         results = _poll_until_done_sync(

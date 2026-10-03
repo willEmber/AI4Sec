@@ -257,6 +257,46 @@ class JobRecoveryTests(AgentP2TestCase):
         outcome = await agent_worker.recover_stale_jobs()
         self.assertEqual(outcome["released"], [job_id])
 
+    async def test_exhausted_orphan_is_closed_and_not_swept_again(self) -> None:
+        from app.db import database as db
+        from app.services import agent_jobs, agent_worker
+
+        job_id = await self._running_job(kind="parse", key="parse:paper1:vlm", lease_offset="-60 seconds")
+        await db.execute("UPDATE agent_jobs SET attempts = ? WHERE job_id = ?", (agent_jobs.MAX_ATTEMPTS, job_id))
+        for _ in range(2):
+            outcome = await agent_worker.recover_stale_jobs()
+            self.assertEqual(outcome["resumed"], [])
+        row = await agent_jobs.get_job_by_id(job_id)
+        self.assertEqual(row["status"], "failed")
+        self.assertTrue(row["error_msg"])
+        self.assertIsNone(row["lease_expires_at"])
+        self.assertEqual(await agent_jobs.list_stale_jobs(), [])
+
+    async def test_retry_exhaustion_does_not_close_a_live_lease(self) -> None:
+        from app.db import database as db
+        from app.services import agent_jobs
+
+        job_id = await self._running_job(kind="parse", key="parse:paper1:vlm", lease_offset="60 seconds")
+        await db.execute("UPDATE agent_jobs SET attempts = ? WHERE job_id = ?", (agent_jobs.MAX_ATTEMPTS, job_id))
+        self.assertFalse(await agent_jobs.fail_exhausted_job(job_id))
+        self.assertEqual((await agent_jobs.get_job_by_id(job_id))["status"], "running")
+
+    async def test_queue_waiting_keeps_batch_and_does_not_spend_a_failure_attempt(self) -> None:
+        from app.services import agent_jobs
+        from app.services.mineru_adapter import MinerUQueueTimeoutError
+
+        async def work(job_id: str) -> dict[str, Any]:
+            await agent_jobs.set_remote_id(job_id, "parse-retained")
+            raise MinerUQueueTimeoutError("batch", 300, 51, {"pending": 1}, 300)
+
+        with self.assertRaises(agent_jobs.JobFailed) as caught:
+            await agent_jobs.run_once(kind="parse", idempotency_key="parse:queued", work=work)
+        self.assertEqual(caught.exception.code.value, "timeout")
+        row = await agent_jobs.get_job("parse:queued")
+        self.assertEqual(row["status"], "pending")
+        self.assertEqual(row["attempts"], 0)
+        self.assertEqual(row["remote_id"], "parse-retained")
+
 
 class ParseResumeTests(AgentP2TestCase):
     """The expensive half of a parse is collected, not paid for twice."""
@@ -307,7 +347,11 @@ class ParseResumeTests(AgentP2TestCase):
         ):
             result = await parse_service.run_parse_job(job_id=job_id, paper_id="paper1")
 
-        resume.assert_awaited_once_with("paper1", parse_id, "b-42")
+        from app.config import get_settings
+
+        resume.assert_awaited_once_with(
+            "paper1", parse_id, "b-42", queue_timeout_s=get_settings().mineru_queue_timeout_seconds
+        )
         submit.assert_not_awaited()
         self.assertTrue(result["resumed"])
         self.assertEqual(result["parse_id"], parse_id)
@@ -351,7 +395,7 @@ class ParseResumeTests(AgentP2TestCase):
 
         seen: dict[str, str] = {}
 
-        async def _capture(paper_id: str, parse_id: str) -> Path:
+        async def _capture(paper_id: str, parse_id: str, **_kwargs: Any) -> Path:
             row = await agent_jobs.get_job_by_id(job_id)
             seen["remote_id"] = row["remote_id"]
             return Path("/tmp/out")
@@ -396,7 +440,11 @@ class ParseResumeTests(AgentP2TestCase):
             # cannot stall recovery of everything behind it.
             await asyncio.gather(*list(agent_worker._resumes))
 
-        resume.assert_awaited_once_with("paper1", parse_id, "b-42")
+        from app.config import get_settings
+
+        resume.assert_awaited_once_with(
+            "paper1", parse_id, "b-42", queue_timeout_s=get_settings().mineru_queue_timeout_seconds
+        )
         self.assertEqual((await agent_jobs.get_job_by_id(job_id))["status"], "done")
 
     async def test_a_resumed_parse_leaves_the_paper_readable_in_its_session(self) -> None:

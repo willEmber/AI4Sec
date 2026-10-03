@@ -324,22 +324,19 @@ async def ensure_paper_parsed(runtime: ToolRuntime[AgentContext], paper_id: str)
     if stop is not None:
         return stop.to_json()
 
-    async def _work(job_id: str) -> dict[str, Any]:
-        # The body lives in parse_service because the recovery sweep runs the
-        # same one: "resume this parse" has to mean one thing, or a restart
-        # would resubmit work a tool call would have rejoined.
-        return await parse_service.run_parse_job(job_id=job_id, paper_id=paper_id)
-
     try:
-        handle = await agent_jobs.run_once(
-            kind="parse",
-            idempotency_key=parse_service.parse_idempotency_key(paper_id),
-            work=_work,
-            session_id=ctx.session_id,
-            run_id=ctx.run_id,
-            request={"paper_id": paper_id},
+        handle = await parse_service.run_agent_parse(
+            ctx, paper_id, tool_name="ensure_paper_parsed",
         )
     except agent_jobs.JobFailed as exc:
+        if exc.code == ErrorCode.TIMEOUT:
+            return ToolResult.partial(
+                {"paper_id": paper_id, "availability": Availability.PDF_READY.value},
+                note="MinerU has not finished within the waiting limit. The submitted batch is "
+                "retained and can be collected in a later turn without another upload. Do not "
+                "retry parsing in this turn; answer from available information and explain "
+                "that the full text is still being prepared.",
+            ).to_json()
         return ToolResult.unavailable(
             ErrorCode.PARSE_FAILED,
             f"Parsing failed: {exc.message}"[:400],

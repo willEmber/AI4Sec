@@ -66,6 +66,9 @@ class AppSettings(BaseSettings):
     mineru_token: str = Field(default="", alias="MINERU_TOKEN")
     mineru_model_version: str = Field(default="vlm", alias="MINERU_MODEL_VERSION")
     mineru_poll_interval_seconds: int = Field(default=6, alias="MINERU_POLL_INTERVAL_SECONDS")
+    # Stop blocking a conversation on a remote queue; the submitted batch is
+    # retained so a later turn can collect it without another paid submission.
+    mineru_queue_timeout_seconds: int = Field(default=300, ge=0, alias="MINERU_QUEUE_TIMEOUT_SECONDS")
     mineru_parse_timeout_seconds: int = Field(default=1800, alias="MINERU_PARSE_TIMEOUT_SECONDS")
     mineru_batch_timeout_seconds: int = Field(default=7200, alias="MINERU_BATCH_TIMEOUT_SECONDS")
 

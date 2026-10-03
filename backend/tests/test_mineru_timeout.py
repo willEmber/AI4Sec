@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -102,10 +103,13 @@ class MinerUProgressEventTests(unittest.IsolatedAsyncioTestCase):
                 remote_batch_id="batch-1",
                 poll_count=7,
                 state_counts={"running": 1},
+                progress={"phase": "running", "extracted_pages": 3, "total_pages": 8},
             )
 
+            _update_parse_poll_sync("parse-1", progress={"phase": "downloading"})
+
             row = await db.fetch_one(
-                "SELECT remote_batch_id, poll_count, last_state_counts, last_poll_at "
+                "SELECT remote_batch_id, poll_count, last_state_counts, last_poll_at, progress_json "
                 "FROM mineru_parses WHERE parse_id = ?",
                 ("parse-1",),
             )
@@ -115,6 +119,9 @@ class MinerUProgressEventTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(row["poll_count"], 7)
             self.assertEqual(row["last_state_counts"], '{"running": 1}')
             self.assertTrue(row["last_poll_at"])
+            snapshot = json.loads(row["progress_json"])
+            self.assertEqual(snapshot["phase"], "downloading")
+            self.assertEqual(snapshot["extracted_pages"], 3)
 
 
 if __name__ == "__main__":

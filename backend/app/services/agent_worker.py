@@ -125,6 +125,10 @@ async def recover_stale_jobs() -> dict[str, list[str]]:
     released: list[str] = []
     for job in await agent_jobs.list_stale_jobs():
         job_id = job["job_id"]
+        if job["attempts"] >= agent_jobs.MAX_ATTEMPTS:
+            if await agent_jobs.fail_exhausted_job(job_id):
+                logger.warning("Closed abandoned %s job %s at the retry limit", job["kind"], job_id)
+            continue
         if job["kind"] == "parse" and await _parse_is_resumable(job):
             task = asyncio.create_task(_resume_parse(job))
             _resumes.add(task)

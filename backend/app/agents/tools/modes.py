@@ -93,25 +93,18 @@ async def _ensure_parsed(ctx: AgentContext, paper_id: str, *, tool_name: str) ->
     if stop is not None:
         return stop
 
-    await _emit(
-        ctx,
-        EventType.TOOL_PROGRESS,
-        {"tool": tool_name, "step": "mineru_parse", "status": "running", "paper_id": paper_id},
-    )
-
-    async def _work(job_id: str) -> dict[str, Any]:
-        return await parse_service.run_parse_job(job_id=job_id, paper_id=paper_id)
-
     try:
-        handle = await agent_jobs.run_once(
-            kind="parse",
-            idempotency_key=parse_service.parse_idempotency_key(paper_id),
-            work=_work,
-            session_id=ctx.session_id,
-            run_id=ctx.run_id,
-            request={"paper_id": paper_id},
+        handle = await parse_service.run_agent_parse(
+            ctx, paper_id, tool_name=tool_name,
         )
     except agent_jobs.JobFailed as exc:
+        if exc.code == ErrorCode.TIMEOUT:
+            return ToolResult.partial(
+                {"paper_id": paper_id},
+                note="MinerU has not finished within the waiting limit. The submitted batch "
+                "is retained for a later turn; do not retry parsing or generate a full-text "
+                "report in this turn. Explain the wait and use available information.",
+            )
         return ToolResult.unavailable(
             ErrorCode.PARSE_FAILED, f"Parsing failed: {exc.message}"[:400]
         )
@@ -131,11 +124,6 @@ async def _ensure_parsed(ctx: AgentContext, paper_id: str, *, tool_name: str) ->
             literature_id=literature_id,
             availability=Availability.PARSED,
         )
-    await _emit(
-        ctx,
-        EventType.TOOL_PROGRESS,
-        {"tool": tool_name, "step": "mineru_parse", "status": "done", "paper_id": paper_id},
-    )
     return None
 
 
