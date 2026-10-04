@@ -44,7 +44,7 @@ export default function UploadPage() {
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Load the selectable models from the backend (THINKING_MODELNAME list) and
+  // Load the selectable models from the backend (its model registry) and
   // default the dropdown to the server-provided default.
   useEffect(() => {
     let cancelled = false;

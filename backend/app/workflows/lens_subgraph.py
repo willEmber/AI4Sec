@@ -26,6 +26,7 @@ from app.services.ir_extract import (
     section_text,
 )
 from app.services.lens_digest import generate_lens_digest
+from app.services.llm_gateway import get_registry
 from app.services.llm_service import get_llm_service
 from app.workflows.state import MainGraphState
 
@@ -385,10 +386,13 @@ async def run_logic_lens(state: MainGraphState) -> dict[str, Any]:
     # Two post-report passes, both best-effort and both reading material that
     # already exists, so they run concurrently: the evidence pool quotes the
     # paper context, the digest indexes the report we just produced.
+    # Both are utility calls: their output is parsed by code, so they stay on
+    # the base model whichever model wrote the report.
+    utility_model = get_registry().utility_model
     t_passes = time.perf_counter()
     digest, evidence_pool = await asyncio.gather(
         generate_lens_digest(
-            llm, markdown=markdown, model=model, log_label=f"[{paper_id}] lens"
+            llm, markdown=markdown, model=utility_model, log_label=f"[{paper_id}] lens"
         )
         if get_settings().lens_digest_enabled
         else _digest_disabled(),
@@ -396,7 +400,7 @@ async def run_logic_lens(state: MainGraphState) -> dict[str, Any]:
             llm,
             context=context,
             slots=LENS_SLOTS,
-            model=model,
+            model=utility_model,
             log_label=f"[{paper_id}] lens",
         ),
     )

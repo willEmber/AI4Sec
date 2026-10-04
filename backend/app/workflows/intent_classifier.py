@@ -7,6 +7,7 @@ import time
 from typing import Any
 
 from app.models.paper_ir import PaperIR
+from app.services.llm_gateway import get_registry
 from app.services.llm_service import get_llm_service
 from app.workflows.state import MainGraphState
 
@@ -96,7 +97,8 @@ async def classify_intent(state: MainGraphState) -> dict[str, Any]:
     )
 
     llm = get_llm_service()
-    model = state.get("llm_model", "")
+    # A utility call: routing must not depend on which model writes the answer.
+    model = get_registry().utility_model
     logger.info(f"[{paper_id}] classify_intent: calling LLM (model={model or '(default)'}, q={question[:80]!r})")
 
     intent = "qa"
@@ -110,10 +112,11 @@ async def classify_intent(state: MainGraphState) -> dict[str, Any]:
             ],
             model=model,
             temperature=0.0,
-            # The answer is a two-field JSON object, but the gateway requires
-            # enable_thinking on thinking models and reasoning is billed against
-            # the same ceiling — at 120 the model never reached the visible text.
+            # The answer is a two-field JSON object, but the model thinks first
+            # and reasoning is billed against the same ceiling — at 120 the
+            # model never reached the visible text.
             max_tokens=2048,
+            enable_thinking=False,
         )
         cleaned = _strip_json_fences(raw)
         parsed = json.loads(cleaned)

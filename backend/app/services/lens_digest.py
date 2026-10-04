@@ -369,6 +369,8 @@ async def generate_lens_digest(
                 model=model,
                 temperature=0.0,
                 max_tokens=max_tokens if attempt == 1 else int(max_tokens * 1.5),
+                # Utility call: thinking off (see `llm_gateway.registry`).
+                enable_thinking=False,
             )
         except Exception as exc:
             logger.warning("%s: digest call attempt %d failed: %s", log_label, attempt, exc)

@@ -13,6 +13,7 @@ import logging
 from fastapi import APIRouter, HTTPException, Request
 
 from app.config import get_settings
+from app.services.llm_gateway import get_registry
 from app.models.schemas import LibraryAskRequest, LibrarySearchRequest
 from app.rate_limit import limiter
 from app.services import corpus_qa, dify_client
@@ -122,7 +123,7 @@ async def library_ask(request: Request, req: LibraryAskRequest):
 
     # Mirror runs.py: only honour an explicitly-configured model; drop unknown
     # names to the default rather than forwarding an arbitrary/unauthorised model.
-    allowed_models = get_settings().thinking_models
+    allowed_models = get_registry().selectable_models()
     llm_model = (req.llm_model or "").strip()
     if llm_model and allowed_models and llm_model not in allowed_models:
         logger.warning("library_ask: rejected unknown llm_model=%r; using default", llm_model)

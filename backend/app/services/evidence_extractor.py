@@ -113,6 +113,8 @@ async def extract_evidence_pool(
             model=model,
             temperature=0.0,
             max_tokens=max_tokens,
+            # Utility call: thinking off (see `llm_gateway.registry`).
+            enable_thinking=False,
         )
     except Exception as exc:
         logger.warning("%s: evidence extraction LLM call failed: %s", log_label, exc)

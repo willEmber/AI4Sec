@@ -21,9 +21,10 @@ class AppSettings(BaseSettings):
     database_pool_min: int = Field(default=1, alias="DATABASE_POOL_MIN")
     database_pool_max: int = Field(default=10, alias="DATABASE_POOL_MAX")
 
-    # --- LLM (Qwen / DashScope MaaS Responses API) ---
-    # Compatible-mode base URL ending in /v1; client POSTs to {base}/responses
-    # with enable_thinking=true for every thinking model.
+    # --- LLM base gateway (Qwen / DashScope MaaS Responses API) ---
+    # Compatible-mode base URL ending in /v1; the client POSTs to
+    # {base}/responses. Thinking is on by default there; `enable_thinking`
+    # only switches it off.
     llm_base_url: str = Field(default="", alias="LLM_BASEURL")
     llm_api_key: str = Field(default="", alias="LLM_APIKEY")
     # May hold a comma-separated list of selectable models, e.g.
@@ -32,6 +33,17 @@ class AppSettings(BaseSettings):
     thinking_model: str = Field(default="", alias="THINKING_MODELNAME")
     embed_model: str = Field(default="", alias="EMBED_MODELNAME")
     rerank_model: str = Field(default="", alias="RERANK_MODELNAME")
+    # Model for utility calls (intent classification, digest and evidence
+    # extraction, rank extraction, context summarisation). Always served by the
+    # gateway above and never offered to readers; empty falls back to the first
+    # THINKING_MODELNAME entry.
+    base_model: str = Field(default="", alias="BASE_MODELNAME")
+
+    # Extension gateways and the chat models they add are declared in this
+    # file (default `backend/models.toml`; see `models.example.toml`). Rerank,
+    # embeddings and utility calls stay on the gateway above. Without the file
+    # there is only that gateway.
+    llm_registry_file: str = Field(default="", alias="LLM_REGISTRY_FILE")
 
     # --- Web search providers (app/services/web_search) ---
     # Each may hold one key or a comma-separated pool; the pool rotates past a

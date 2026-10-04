@@ -13,6 +13,7 @@ import re
 from typing import Any
 
 from app.config import get_settings
+from app.services.llm_gateway import get_registry
 from app.services.llm_service import LLMService
 
 from .publication_rank import (
@@ -149,8 +150,8 @@ class LLMRankClient:
         self.api_key = (
             api_key if api_key is not None else settings.llm_api_key
         ).strip()
-        raw_model = model if model is not None else getattr(settings, "thinking_model", "")
-        # THINKING_MODELNAME may be a comma-separated list; use the first entry.
+        # Extraction is a utility call, so it runs on the base model.
+        raw_model = model if model is not None else get_registry().utility_model
         self.model = next(
             (m.strip() for m in (raw_model or "").split(",") if m.strip()), ""
         )
@@ -204,7 +205,7 @@ class LLMRankClient:
                 model=self.model,
                 temperature=0.1,
                 max_tokens=4096,
-                enable_thinking=True,
+                enable_thinking=False,
                 tools=None,
             )
         except Exception as e:

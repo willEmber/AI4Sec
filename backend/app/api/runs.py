@@ -13,6 +13,7 @@ from langgraph.graph.state import CompiledStateGraph
 
 from app.api.deps import optional_caller, principal_or_new
 from app.config import get_settings
+from app.services.llm_gateway import get_registry
 from app.db import database as db
 from app.rate_limit import limiter
 from app.models.schemas import RecentRunResponse, RunCreate, RunOutputResponse, RunResponse
@@ -87,12 +88,12 @@ async def create_run(
     question = (req.question or "").strip()[:_MAX_QUESTION_LEN]
     owner_token = (req.owner_token or "").strip()[:_MAX_OWNER_TOKEN_LEN]
 
-    # Only allow models the operator explicitly configured (THINKING_MODELNAME).
+    # Only allow models the operator explicitly configured (the model registry).
     # An unknown model name is dropped to the default rather than forwarded to
     # the LLM backend, so a caller can't point a run at an arbitrary/unauthorised
     # (e.g. far more expensive) model. When no list is configured we can't
     # validate, so pass through unchanged.
-    allowed_models = get_settings().thinking_models
+    allowed_models = get_registry().selectable_models()
     llm_model = (req.llm_model or "").strip()
     if llm_model and allowed_models and llm_model not in allowed_models:
         logger.warning(f"[run] Rejected unknown llm_model={llm_model!r}; using default")

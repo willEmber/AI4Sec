@@ -17,6 +17,9 @@ export interface PaperUploadResponse {
 export interface ModelListResponse {
   models: string[];
   default: string;
+  // The subset verified for conversations; absent on an older backend.
+  agent_models?: string[];
+  agent_default?: string;
 }
 
 export interface RunResponse {

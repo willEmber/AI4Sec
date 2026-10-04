@@ -74,3 +74,6 @@ DEV_DOC/
 CLAUDE.md
 AGENTS.md
 test_ai_connection.py
+
+# Deployment-specific model registry (see backend/models.example.toml)
+backend/models.toml

@@ -115,7 +115,6 @@ class LLMRankClientConfigTests(unittest.TestCase):
         settings = SimpleNamespace(
             llm_base_url="https://example.test/compatible-mode/v1",
             llm_api_key="settings-key",
-            thinking_model="settings-model",
             tavily_api_key="tavily-key",
         )
 
@@ -123,6 +122,9 @@ class LLMRankClientConfigTests(unittest.TestCase):
             "app.services.publication_rank.llm_rank.get_settings",
             return_value=settings,
             create=True,
+        ), patch(
+            "app.services.publication_rank.llm_rank.get_registry",
+            return_value=SimpleNamespace(utility_model="settings-model"),
         ):
             client = LLMRankClient(
                 tavily_client=_FakeTavily(), llm_service=_FakeLLM(),

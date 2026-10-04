@@ -5,7 +5,7 @@ import logging
 
 from fastapi import APIRouter, Request
 
-from app.config import get_settings
+from app.services.llm_gateway import get_registry
 from app.db import database as db
 from app.models.schemas import (
     ModelListResponse,
@@ -21,16 +21,17 @@ logger = logging.getLogger("scholar.traffic")
 @router.get("/models", response_model=ModelListResponse)
 @limiter.limit("60/minute")
 async def list_models(request: Request) -> ModelListResponse:
-    """Return the selectable LLM models (from THINKING_MODELNAME) and the default.
+    """Return the selectable LLM models and the defaults, by name only.
 
-    THINKING_MODELNAME may be a comma-separated list, e.g.
-    ``qwen3.6-plus,qwen3.7-max``. The frontend renders these as a dropdown so the
-    user picks instead of typing a model name.
+    ``models`` is what the report modes offer; ``agent_models`` is the subset
+    verified for conversations. Which gateway serves a model is not exposed.
     """
-    settings = get_settings()
+    registry = get_registry()
     return ModelListResponse(
-        models=settings.thinking_models,
-        default=settings.default_thinking_model,
+        models=registry.selectable_models(),
+        default=registry.default_model,
+        agent_models=registry.agent_models(),
+        agent_default=registry.agent_default_model,
     )
 
 

@@ -57,6 +57,7 @@ from app.models.sphere_models import (
     make_node_id,
     tier_for_sources,
 )
+from app.services.llm_gateway import get_registry
 from app.services.llm_service import get_llm_service
 from app.services.paper_search import normalize_whitespace, title_fingerprint
 from app.services.sphere_scorer import is_preprint_venue, is_survey_title, normalize_venue
@@ -239,6 +240,7 @@ async def _parse_references_llm(
                     {"role": "user", "content": f"Parse these {len(chunk)} references:\n\n{listing}"},
                 ],
                 model=model, temperature=0.0, max_tokens=4096,
+                enable_thinking=False,  # utility call, see `llm_gateway.registry`
             )
             data = json.loads(_strip_json_fences(resp))
             if not isinstance(data, list):
@@ -297,7 +299,7 @@ async def step_init_from_pdf(
 
     # Parse titles/years via LLM (much more accurate than the regex heuristics);
     # regex remains the per-entry fallback when a batch fails.
-    model = state.get("llm_model", "")
+    model = get_registry().utility_model
     parsed: dict[int, dict[str, Any]] = {}
     if refs and model:
         parsed = await _parse_references_llm([r.get("raw", "") for r in refs], model, paper_id)
@@ -552,7 +554,10 @@ async def _extract_search_queries(
         ]
         # Short JSON answer, but reasoning shares this ceiling — see the budget
         # note in snap_subgraph; 512 leaves no room for the visible list.
-        response = await llm.chat(messages, model=model, temperature=0.3, max_tokens=4096)
+        response = await llm.chat(
+            messages, model=model, temperature=0.3, max_tokens=4096,
+            enable_thinking=False,  # utility call, see `llm_gateway.registry`
+        )
         response = _strip_json_fences(response)
         queries = json.loads(response)
         if isinstance(queries, list) and all(isinstance(q, str) for q in queries):
@@ -741,7 +746,7 @@ async def step_expand_graph_candidates(
     paper_ir = PaperIR.model_validate_json(state["paper_ir_json"])
     query_task = asyncio.create_task(
         _extract_search_queries(
-            paper_ir, center, state.get("llm_model", ""), run_id, paper_id,
+            paper_ir, center, get_registry().utility_model, run_id, paper_id,
         )
     )
     # Brief delay to let S2 rate limits recover; LLM extraction runs in parallel
@@ -1314,7 +1319,7 @@ async def step_relevance_gate(
     await _emit_progress(run_id, "relevance_gate", "running")
 
     paper_id = state["paper_id"]
-    model = state.get("llm_model", "")
+    model = get_registry().utility_model
     language = state.get("language", "en")
     config = sphere.config
     center = sphere.center_node
@@ -1368,6 +1373,7 @@ async def step_relevance_gate(
                         {"role": "user", "content": user},
                     ],
                     model=model, temperature=0.1, max_tokens=4096,
+                    enable_thinking=False,  # utility call, see `llm_gateway.registry`
                 )
             data = json.loads(_strip_json_fences(resp))
             if not isinstance(data, list):

@@ -63,6 +63,9 @@ class ModelListResponse(BaseModel):
     """Selectable LLM models offered to the frontend dropdown."""
     models: list[str]
     default: str
+    # The subset offered for conversations, and its default.
+    agent_models: list[str] = []
+    agent_default: str = ""
 
 
 class TrafficVisitResponse(BaseModel):

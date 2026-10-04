@@ -79,8 +79,11 @@ function ChatEntry() {
       .catch(() => setRuns([]));
     listModels()
       .then((res) => {
-        setModels(res.models);
-        setLlmModel(res.default || res.models[0] || "");
+        // Conversations offer only the models verified against the agent's
+        // tools, which can be fewer than the report modes list.
+        const offered = res.agent_models ?? res.models;
+        setModels(offered);
+        setLlmModel(res.agent_default || offered[0] || "");
       })
       .catch(() => setModels([]));
   }, []);

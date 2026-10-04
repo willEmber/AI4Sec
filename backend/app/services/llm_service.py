@@ -1,32 +1,26 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import random
 import time
-from typing import Any, AsyncIterator
+from typing import Any
 
 import httpx
 
-from app.config import get_settings
+from app.services.llm_gateway import RESPONSES, ModelProfile, Provider, get_registry
+from app.services.llm_gateway.adapters import ResponsesAdapter, adapter_for, usage_tokens
 
 logger = logging.getLogger("scholar.llm")
 
 # Maximum timeout cap for any single LLM request (seconds)
 _TIMEOUT_CAP = 900.0
 
-# Built-in Responses API tools documented for Qwen3.5+ / Qwen3.6+ / Qwen3.7+ / Qwen3.8
-WEB_SEARCH_TOOL: dict[str, str] = {"type": "web_search"}
-WEB_EXTRACTOR_TOOL: dict[str, str] = {"type": "web_extractor"}
-CODE_INTERPRETER_TOOL: dict[str, str] = {"type": "code_interpreter"}
-
-
 class LLMEmptyResponseError(RuntimeError):
     """The gateway accepted the request but returned no assistant text.
 
     ``reason`` carries the truncation cause when there is one. The common case
-    is ``max_output_tokens``: on the Responses API that budget covers reasoning
+    is the output ceiling: on both protocols that budget covers reasoning
     *and* visible output, so a thinking model can spend the whole allowance
     before emitting a single token. Callers must not retry at the same size —
     the failure is deterministic. Raising beats returning ``""`` because an
@@ -39,18 +33,14 @@ class LLMEmptyResponseError(RuntimeError):
 
 
 class LLMService:
-    """Async Qwen / DashScope MaaS Responses API client with retry and backoff.
+    """Async chat client over the model registry, with retry and backoff.
 
-    Uses the OpenAI-compatible Responses endpoint::
+    The model decides the gateway and the wire protocol (`llm_gateway`): the
+    base gateway speaks the Responses API, an extension gateway speaks
+    chat/completions. Retries, timeouts and the empty-answer rule are shared.
 
-        POST {base_url}/responses
-        {
-          "model": "...",
-          "input": [{"role": "...", "content": "..."}],
-          "enable_thinking": true,
-          "tools": [{"type": "web_search"}, ...],   # optional
-          ...
-        }
+    Constructed with an explicit ``base_url``, the service talks to that one
+    Responses endpoint for every model, as it did before there was a registry.
     """
 
     def __init__(
@@ -61,9 +51,10 @@ class LLMService:
         retry_base_delay: float = 1.0,
         retry_max_delay: float = 30.0,
     ):
-        settings = get_settings()
-        self.base_url = self._clean_str(base_url or settings.llm_base_url).rstrip("/")
-        self.api_key = self._clean_str(api_key or settings.llm_api_key)
+        base = get_registry().base
+        self._pinned = base_url is not None
+        self.base_url = self._clean_str(base_url if base_url is not None else base.base_url).rstrip("/")
+        self.api_key = self._clean_str(api_key if api_key is not None else base.api_key)
         self.max_retries = max_retries
         self.retry_base_delay = retry_base_delay
         self.retry_max_delay = retry_max_delay
@@ -73,111 +64,36 @@ class LLMService:
         """Strip whitespace / CRLF that often leaks from Windows .env files."""
         return (value or "").strip().strip("\r").strip()
 
-    def _headers(self) -> dict[str, str]:
+    @staticmethod
+    def _headers(provider: Provider) -> dict[str, str]:
         return {
             "Content-Type": "application/json",
-            "Authorization": f"Bearer {self.api_key}",
+            "Authorization": f"Bearer {provider.api_key}",
         }
 
-    def _resolve_model(self, model: str) -> str:
-        settings = get_settings()
-        # THINKING_MODELNAME may be a comma-separated list; the first entry is
-        # the default when the caller does not pick a specific model.
-        return self._clean_str(model) or settings.default_thinking_model
-
-    def _build_payload(
-        self,
-        *,
-        messages: list[dict[str, str]],
-        model: str,
-        temperature: float,
-        max_tokens: int,
-        stream: bool = False,
-        enable_thinking: bool = True,
-        tools: list[dict[str, Any]] | None = None,
-    ) -> dict[str, Any]:
-        """Build a Responses API body (MaaS / DashScope compatible-mode)."""
-        payload: dict[str, Any] = {
-            "model": model,
-            "input": messages,
-            "temperature": temperature,
-            # Required by Qwen thinking models on the MaaS Responses endpoint
-            # (qwen3.8-max, qwen3.7-plus/max, etc.).
-            "enable_thinking": bool(enable_thinking),
-        }
-        if tools:
-            payload["tools"] = tools
-        if max_tokens and max_tokens > 0:
-            # OpenAI Responses field name; DashScope compatible-mode accepts it.
-            payload["max_output_tokens"] = max_tokens
-        if stream:
-            payload["stream"] = True
-        return payload
+    def _profile(self, model: str) -> ModelProfile:
+        """The model's profile; empty picks the first configured model."""
+        if self._pinned:
+            pinned = Provider("pinned", self.base_url, self.api_key, RESPONSES)
+            name = self._clean_str(model) or get_registry().default_model
+            return ModelProfile(name=name, provider=pinned, sends_enable_thinking=True)
+        return get_registry().profile(self._clean_str(model))
 
     @staticmethod
     def _extract_output_text(data: dict[str, Any]) -> str:
-        """Pull final assistant text out of a Responses API payload.
-
-        Thinking models return a ``reasoning`` item before the ``message`` item;
-        tool calls (web_search etc.) may also appear. Only message text is returned.
-        """
-        content = ""
-        for item in data.get("output", []) or []:
-            if item.get("type") != "message":
-                continue
-            parts = item.get("content", []) or []
-            if isinstance(parts, str):
-                content += parts
-                break
-            for part in parts:
-                if not isinstance(part, dict):
-                    continue
-                ptype = part.get("type", "")
-                if ptype in {"output_text", "text"}:
-                    content += part.get("text", "") or ""
-                elif "text" in part and isinstance(part.get("text"), str):
-                    content += part["text"]
-            break
-
-        if content:
-            return content
-
-        # Fallbacks seen on some gateways
-        for key in ("output_text", "text"):
-            val = data.get(key)
-            if isinstance(val, str) and val.strip():
-                return val
-        return ""
+        return ResponsesAdapter.extract_text(data)
 
     @staticmethod
     def _truncation_reason(data: dict[str, Any], *, max_tokens: int) -> str:
-        """Return why generation stopped early, or ``""`` if it ended normally.
+        return ResponsesAdapter.truncation_reason(data, max_tokens=max_tokens)
 
-        The Responses API marks a budget-exhausted answer with
-        ``status=incomplete`` plus ``incomplete_details.reason``; some gateways
-        only set a per-item ``finish_reason``. When neither is present, output
-        tokens landing exactly on the ceiling means the same thing, so that is
-        the last check rather than the first.
-        """
-        details = data.get("incomplete_details")
-        if isinstance(details, dict):
-            reason = str(details.get("reason") or "").strip()
-            if reason:
-                return reason
-        if str(data.get("status") or "").strip() == "incomplete":
-            return "incomplete"
-        for item in data.get("output", []) or []:
-            if not isinstance(item, dict):
-                continue
-            finish = str(item.get("finish_reason") or "").strip()
-            if finish and finish != "stop":
-                return finish
-        if max_tokens > 0:
-            usage = data.get("usage", {}) or {}
-            produced = usage.get("output_tokens", usage.get("completion_tokens"))
-            if isinstance(produced, int) and produced >= max_tokens:
-                return "max_output_tokens"
-        return ""
+    @staticmethod
+    def _error_code(resp: httpx.Response) -> str:
+        try:
+            error = (resp.json() or {}).get("error")
+        except Exception:  # noqa: BLE001 — a non-JSON error body has no code
+            return ""
+        return str(error.get("code") or "") if isinstance(error, dict) else ""
 
     @staticmethod
     def _is_retryable(status_code: int) -> bool:
@@ -211,14 +127,17 @@ class LLMService:
         enable_thinking: bool = True,
         tools: list[dict[str, Any]] | None = None,
     ) -> str:
-        """Send a Responses API request, return final assistant text."""
-        model = self._resolve_model(model)
-        payload = self._build_payload(
+        """Send one chat request, return final assistant text."""
+        profile = self._profile(model)
+        model = profile.name
+        provider = profile.provider
+        adapter = adapter_for(profile)
+        url = f"{provider.base_url}{adapter.path}"
+        payload = adapter.build_payload(
+            profile,
             messages=messages,
-            model=model,
             temperature=temperature,
             max_tokens=max_tokens,
-            stream=False,
             enable_thinking=enable_thinking,
             tools=tools,
         )
@@ -234,7 +153,7 @@ class LLMService:
         logger.info(
             f"LLM chat: model={model} prompt={prompt_chars} chars "
             f"max_tokens={max_tokens} timeout={base_read_timeout:.0f}s "
-            f"url={self.base_url}/responses thinking={enable_thinking} tools={tool_names}"
+            f"url={url} thinking={enable_thinking} tools={tool_names}"
         )
         t0 = time.perf_counter()
 
@@ -255,8 +174,8 @@ class LLMService:
                 )
                 async with httpx.AsyncClient(timeout=timeout) as client:
                     resp = await client.post(
-                        f"{self.base_url}/responses",
-                        headers=self._headers(),
+                        url,
+                        headers=self._headers(provider),
                         json=payload,
                     )
                 req_elapsed = time.perf_counter() - t_req
@@ -279,7 +198,11 @@ class LLMService:
                     continue
 
                 # ── Non-retryable client errors: fail immediately ──
-                if resp.status_code in (400, 401, 403, 404):
+                # New-API reports an unknown model as 503 `model_not_found`;
+                # the status alone would have it retried five times.
+                if resp.status_code in (400, 401, 403, 404) or (
+                    resp.status_code >= 400 and self._error_code(resp) == "model_not_found"
+                ):
                     body = (resp.text or "")[:800]
                     logger.error(
                         f"LLM chat: HTTP {resp.status_code} — not retrying; body={body!r}"
@@ -298,14 +221,12 @@ class LLMService:
 
                 resp.raise_for_status()
                 data = resp.json()
-                content = self._extract_output_text(data)
-                truncated = self._truncation_reason(data, max_tokens=max_tokens)
+                content = adapter.extract_text(data)
+                truncated = adapter.truncation_reason(data, max_tokens=max_tokens)
                 total_elapsed = time.perf_counter() - t0
 
-                usage = data.get("usage", {}) or {}
-                prompt_tokens = usage.get("input_tokens", usage.get("prompt_tokens", "?"))
-                completion_tokens = usage.get(
-                    "output_tokens", usage.get("completion_tokens", "?")
+                prompt_tokens, completion_tokens = (
+                    "?" if count is None else count for count in usage_tokens(data)
                 )
                 logger.info(
                     f"LLM chat: DONE in {total_elapsed:.1f}s (http={req_elapsed:.1f}s) — "
@@ -320,8 +241,8 @@ class LLMService:
                         f"LLM returned no text (reason={truncated or 'unknown'}); "
                         f"model={model} max_tokens={max_tokens} "
                         f"output_tokens={completion_tokens} thinking={enable_thinking}. "
-                        "On the Responses API max_output_tokens covers reasoning as "
-                        "well, so raise the budget for this call.",
+                        "The output ceiling covers reasoning as well, so raise the "
+                        "budget for this call.",
                         reason=truncated,
                     )
                 if truncated:
@@ -371,7 +292,9 @@ class LLMService:
                 req_elapsed = time.perf_counter() - t_req if "t_req" in dir() else 0
                 # 4xx already logged and raised above; do not retry them here.
                 status = e.response.status_code if e.response is not None else 0
-                if status and status < 500:
+                if status and (
+                    status < 500 or self._error_code(e.response) == "model_not_found"
+                ):
                     raise
                 if attempt > self.max_retries:
                     logger.error(
@@ -385,91 +308,6 @@ class LLMService:
                     f"retry in {delay:.1f}s — {e}"
                 )
                 await asyncio.sleep(delay)
-
-    async def chat_stream(
-        self,
-        messages: list[dict[str, str]],
-        model: str = "",
-        temperature: float = 0.3,
-        max_tokens: int = 4096,
-        *,
-        enable_thinking: bool = True,
-        tools: list[dict[str, Any]] | None = None,
-    ) -> AsyncIterator[str]:
-        """Stream final answer tokens from the Responses API (skips reasoning deltas)."""
-        model = self._resolve_model(model)
-        payload = self._build_payload(
-            messages=messages,
-            model=model,
-            temperature=temperature,
-            max_tokens=max_tokens,
-            stream=True,
-            enable_thinking=enable_thinking,
-            tools=tools,
-        )
-
-        prompt_chars = sum(len(m.get("content", "")) for m in messages)
-        read_timeout = self._compute_read_timeout(
-            prompt_chars, max_tokens, tools=bool(tools)
-        )
-        tool_names = ",".join(
-            str(t.get("type", "?")) for t in (tools or []) if isinstance(t, dict)
-        ) or "-"
-        logger.info(
-            f"LLM stream: model={model} prompt={prompt_chars} chars "
-            f"timeout={read_timeout:.0f}s url={self.base_url}/responses "
-            f"thinking={enable_thinking} tools={tool_names}"
-        )
-        t0 = time.perf_counter()
-        token_count = 0
-
-        timeout = httpx.Timeout(connect=30.0, read=read_timeout, write=30.0, pool=30.0)
-        async with httpx.AsyncClient(timeout=timeout) as client:
-            async with client.stream(
-                "POST",
-                f"{self.base_url}/responses",
-                headers=self._headers(),
-                json=payload,
-            ) as resp:
-                if resp.status_code >= 400:
-                    body = (await resp.aread()).decode("utf-8", errors="replace")[:800]
-                    logger.error(
-                        f"LLM stream: HTTP {resp.status_code} body={body!r}"
-                    )
-                resp.raise_for_status()
-                async for line in resp.aiter_lines():
-                    if not line.startswith("data:"):
-                        continue
-                    data_str = line[5:].strip()
-                    if not data_str or data_str == "[DONE]":
-                        continue
-                    try:
-                        chunk = json.loads(data_str)
-                    except json.JSONDecodeError:
-                        continue
-                    event_type = chunk.get("type", "")
-                    # Final answer tokens only — ignore reasoning/thinking deltas.
-                    if event_type in {
-                        "response.output_text.delta",
-                        "response.content_part.delta",
-                    }:
-                        content = chunk.get("delta", "")
-                        if isinstance(content, dict):
-                            content = content.get("text", "") or content.get("delta", "")
-                        if content:
-                            token_count += 1
-                            yield content
-                    elif event_type == "response.completed":
-                        break
-
-        logger.info(f"LLM stream: DONE in {time.perf_counter()-t0:.1f}s — {token_count} chunks")
-        if token_count == 0:
-            # Same failure `chat` raises on: reasoning can spend the whole
-            # max_output_tokens budget and the text deltas never arrive.
-            logger.error(
-                f"LLM stream: no text deltas — model={model} max_tokens={max_tokens} "
-                f"thinking={enable_thinking}; the budget covers reasoning too"
-            )
 
 
 def get_llm_service() -> LLMService:

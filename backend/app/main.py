@@ -11,6 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from slowapi.errors import RateLimitExceeded
 
 from app.config import get_settings
+from app.services.llm_gateway import get_registry
 from app.db import database
 from app.rate_limit import limiter
 from app.services.identity import AGENT_TOKEN_HEADER
@@ -78,10 +79,12 @@ async def lifespan(app: FastAPI):
         )
         if not providers and not settings.auth_allow_anonymous:
             logger.warning("No login provider is configured and anonymous use is off: nobody can sign in")
+    registry = get_registry()
     logger.info(
         f"LLM base_url={settings.llm_base_url} "
-        f"default_model={settings.default_thinking_model or '(none)'} "
-        f"models={settings.thinking_models}"
+        f"default_model={registry.default_model or '(none)'} "
+        f"utility_model={registry.utility_model or '(none)'} "
+        f"models={registry.selectable_models()} agent_models={registry.agent_models()}"
     )
 
     # The agent checkpointer holds its own small pool for the process. Failing

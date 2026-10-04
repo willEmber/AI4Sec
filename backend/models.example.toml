@@ -1,0 +1,30 @@
+# Extension gateways and the chat models they add.
+#
+# Copy to `backend/models.toml` (not committed) and edit. The base gateway is
+# NOT declared here: it stays in .env (LLM_BASEURL, LLM_APIKEY,
+# THINKING_MODELNAME, BASE_MODELNAME) and keeps serving rerank, embeddings and
+# every utility call. Without this file there is only the base gateway.
+#
+# Secrets do not belong in this file. A provider names the environment
+# variables (or .env entries) that hold its URL and key.
+#
+# Before adding a model, verify it:
+#   uv run python -m scripts.verify_model_gateway --model <name>
+
+[providers.newapi]
+base_url_env = "NEWAPI_BASEURL"     # the origin; /v1 is appended when missing
+api_key_env  = "NEWAPI_APIKEY"
+protocol     = "chat_completions"   # or "responses"
+
+# The table name is what readers see in the model list and what sessions store.
+# Models are offered after the THINKING_MODELNAME ones, in the order written.
+[models."gemini-3.8-flash"]
+provider = "newapi"
+# Offer it for conversations too. Leave false until verify_model_gateway
+# reports "ready for conversations: yes".
+agent = false
+
+# Optional per-model settings, with their defaults:
+#   upstream_id = "..."                  # the gateway's name for the model, when it differs
+#   flatten_nullable_tool_params = true  # chat_completions default; Gemini rejects `anyOf [X, null]`
+#   enable_thinking_param = false        # send Bailian's `enable_thinking`; responses default is true

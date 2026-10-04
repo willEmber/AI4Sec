@@ -169,11 +169,13 @@ def _allowed_model(requested: str) -> str:
 
     Same rule as the classic run endpoint: a caller must not be able to point a
     conversation at an arbitrary — possibly far more expensive — model name.
+    The list is narrower than the report modes': a model is offered for
+    conversations only once it has been verified against the agent's tools.
     """
-    from app.config import get_settings
+    from app.services.llm_gateway import get_registry
 
     name = (requested or "").strip()
-    allowed = get_settings().thinking_models
+    allowed = get_registry().agent_models()
     if name and allowed and name not in allowed:
         logger.warning("Rejected unknown llm_model=%r for agent session; using default", name)
         return ""

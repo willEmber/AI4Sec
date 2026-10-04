@@ -52,6 +52,7 @@ from app.models.agent_models import (
     SessionPaper,
 )
 from app.services.agent_worker import HEARTBEAT_SECONDS, WORKER_ID
+from app.services.llm_gateway import get_registry
 
 logger = logging.getLogger("scholar.agent.runner")
 
@@ -291,6 +292,44 @@ def _usage_of(message: AIMessage | AIMessageChunk) -> int:
         return 0
 
 
+def _summary_model(chat_model: Any) -> Any:
+    """The model that compacts context: the utility model, whoever is answering.
+
+    Compaction is a utility call, so every conversation is summarised the same
+    way and an extension gateway's model is never asked to do it.
+    """
+    registry = get_registry()
+    name = registry.utility_model
+    if not name or registry.profile(name).request_model == getattr(chat_model, "model_name", ""):
+        return chat_model
+    try:
+        return build_chat_model(name)
+    except Exception:  # noqa: BLE001 — a turn must not fail over its summariser
+        logger.warning("Utility model %r unavailable; summarising with the turn's model", name)
+        return chat_model
+
+
+def _new_usage(message: AIMessage | AIMessageChunk, counted: dict[str, int]) -> tuple[int, bool]:
+    """Tokens on this message not yet counted, and whether it opens a new model call.
+
+    One call's usage normally arrives once, on its last chunk. New-API sends it
+    twice — on the last content chunk and again on the closing usage chunk —
+    and summing both doubled a turn's token count. Chunks of one call share a
+    message id, so each id is counted up to the largest total it reported.
+    """
+    reported = _usage_of(message)
+    if not reported:
+        return 0, False
+    message_id = getattr(message, "id", None)
+    if not message_id:
+        return reported, True
+    already = counted.get(message_id, 0)
+    if reported <= already:
+        return 0, False
+    counted[message_id] = reported
+    return reported - already, already == 0
+
+
 def _model_input(question: str, mode: str, language: str) -> str:
     """The user turn as the model sees it: the question plus the chosen mode.
 
@@ -312,6 +351,7 @@ async def _execute_turn(
     collected_evidence: list[str] = []
     answer_parts: list[str] = []
     seen_calls: set[str] = set()
+    counted_usage: dict[str, int] = {}
     heartbeat: asyncio.Task[None] | None = None
     settings = get_settings()
     stream = DeltaCoalescer(
@@ -370,7 +410,9 @@ async def _execute_turn(
             model=chat_model,
             context_schema=AgentContext,
             checkpointer=_checkpointer(),
-            middleware=build_agent_middleware(chat_model, on_compact=_on_compact),
+            middleware=build_agent_middleware(
+                _summary_model(chat_model), on_compact=_on_compact
+            ),
         )
 
         cancelled = False
@@ -417,12 +459,12 @@ async def _execute_turn(
                     await stream.emit(
                         EventType.TOOL_STARTED, {"tool": name, "call_id": call_id}
                     )
-                # The provider reports usage on the last chunk of each call.
                 # Summed per run, so the token ceiling is enforced against what
                 # was actually billed rather than left at "unknown".
-                reported = _usage_of(message)
+                reported, new_call = _new_usage(message, counted_usage)
                 if reported:
                     usage.tokens = (usage.tokens or 0) + reported
+                if new_call:
                     usage.llm_calls += 1
                 text = _text_of(message.content)
                 if text:
@@ -637,7 +679,7 @@ async def warm_up_agent() -> None:
         context_schema=AgentContext,
         checkpointer=_checkpointer(),
         model=model,
-        middleware=build_agent_middleware(model),
+        middleware=build_agent_middleware(_summary_model(model) if model else None),
     )
 
 
