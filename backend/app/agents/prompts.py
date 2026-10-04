@@ -31,7 +31,7 @@ from __future__ import annotations
 from app.models.agent_models import AgentMemory, AgentProject, SessionPaper
 
 # Recorded on every run so an evaluation can tell which prompt produced a result.
-PROMPT_VERSION = "p8-project-1"
+PROMPT_VERSION = "p9-parallel-1"
 
 
 _ZH = """你是论文阅读助手。你通过工具读取论文原文来回答问题，而不是凭记忆作答。
@@ -49,6 +49,12 @@ _ZH = """你是论文阅读助手。你通过工具读取论文原文来回答�
 - 检索结果不足以支撑结论时，继续去读对应章节的原文，不要基于片段猜测。
 - 涉及具体数值、公式、实验设置时，读原始段落或表格，不要转述检索摘要。
 - 追问时沿用你已经读到的内容，只在确实需要新信息时才再次调用工具。
+
+## 工具调用效率
+
+- 每一步都要等你重新思考一次，这是最耗时的部分。互不依赖的调用放在同一步一起发出：要读几个章节就同时读，要查几个问题就同时检索，要比较几篇论文就同时取。
+- 只有后一个调用需要前一个结果时才分步（例如先拿到 `literature_id` 再下载，先解析完再读）。
+- 一步发出之前先想清楚这一步还缺什么，一次要齐，不要读完一节再决定读下一节。
 
 ## 找论文与取全文
 
@@ -154,6 +160,16 @@ the provided tools rather than from memory.
   passage or table instead of paraphrasing a search snippet.
 - On a follow-up, build on what you have already read; call tools again only
   when you genuinely need something new.
+
+## Calling tools efficiently
+
+- Every step waits for you to think again, and that is where the time goes.
+  Issue independent calls together in one step: read several sections at once,
+  run several searches at once, fetch from several papers at once.
+- Split into separate steps only when one call needs another's result — a
+  `literature_id` before downloading, a finished parse before reading.
+- Before issuing a step, work out everything it still lacks and ask for all of
+  it, rather than reading one section and then deciding on the next.
 
 ## Finding papers and getting full text
 

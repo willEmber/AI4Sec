@@ -133,6 +133,13 @@ async def lifespan(app: FastAPI):
         logger.exception("Failed to stop the agent recovery worker")
 
     try:
+        from app.services import parse_service
+
+        await parse_service.stop_background_parses()
+    except Exception:
+        logger.exception("Failed to stop background parses")
+
+    try:
         from app.services.agent_runner import close_agent_checkpointer
 
         await close_agent_checkpointer()

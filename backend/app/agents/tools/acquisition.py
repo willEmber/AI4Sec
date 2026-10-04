@@ -303,6 +303,7 @@ async def ensure_paper_parsed(runtime: ToolRuntime[AgentContext], paper_id: str)
         await _backfill_title(paper_id, existing_literature)
 
     if await _parsed_already(paper_id):
+        await repo.mark_paper_parsed(paper_id)
         version = await paper_catalog.get_current_version(paper_id)
         return ToolResult.ok(
             {

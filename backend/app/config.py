@@ -71,6 +71,10 @@ class AppSettings(BaseSettings):
     mineru_queue_timeout_seconds: int = Field(default=300, ge=0, alias="MINERU_QUEUE_TIMEOUT_SECONDS")
     mineru_parse_timeout_seconds: int = Field(default=1800, alias="MINERU_PARSE_TIMEOUT_SECONDS")
     mineru_batch_timeout_seconds: int = Field(default=7200, alias="MINERU_BATCH_TIMEOUT_SECONDS")
+    # Start parsing a PDF when it is attached to a conversation instead of when
+    # the agent first asks for it, so the reader's typing time is parse time.
+    # Off means a paper nobody asks about is never billed.
+    parse_on_attach: bool = Field(default=True, alias="PARSE_ON_ATTACH")
 
     # --- Paper downloader (OA Resolver / Elsevier TDM / Wiley TDM) ---
     unpaywall_email: str = Field(default="", alias="UNPAYWALL_EMAIL")

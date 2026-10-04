@@ -1010,6 +1010,21 @@ async def set_session_paper_availability(
     )
 
 
+async def mark_paper_parsed(paper_id: str) -> None:
+    """Record a finished parse on every session holding this file.
+
+    Being parsed is a fact about the file, not about the session that happened
+    to ask: a session left at `pdf_ready` would send its next turn to
+    `ensure_paper_parsed` just to be told there is nothing to do.
+    """
+    await db.execute(
+        """UPDATE session_papers
+              SET availability = ?, note = '', updated_at = now()
+            WHERE paper_id = ? AND availability = ?""",
+        (Availability.PARSED.value, paper_id, Availability.PDF_READY.value),
+    )
+
+
 async def list_session_papers(session_id: str) -> list[SessionPaper]:
     """Session papers joined with their bibliographic record."""
     rows = await db.fetch_all(

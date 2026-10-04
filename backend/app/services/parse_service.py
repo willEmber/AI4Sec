@@ -146,6 +146,75 @@ async def run_agent_parse(
     return handle
 
 
+# Parses started ahead of any question. Held here so the tasks are not garbage
+# collected mid-flight and so shutdown can hand their leases back.
+_background: dict[str, asyncio.Task[None]] = {}
+
+
+async def start_background_parse(paper_id: str, *, session_id: str = "") -> bool:
+    """Begin parsing `paper_id` now, without a turn waiting on it.
+
+    A parse takes minutes and the reader takes about as long to type a first
+    question, so the work starts when the paper reaches a conversation. It is
+    the same keyed job `ensure_paper_parsed` runs: a turn that asks while this
+    is in flight joins it, and one that asks afterwards finds it done. Nothing
+    is awaited here and nothing is raised — a failure is recorded on the job,
+    where the agent's own attempt will find it.
+
+    Returns whether a task was started.
+    """
+    settings = get_settings()
+    if not settings.parse_on_attach or not settings.mineru_token.strip():
+        return False
+    if paper_id in _background:
+        return False
+    if not (settings.data_dir / "papers" / paper_id / "original.pdf").exists():
+        return False
+    parsed = await db.fetch_one(
+        "SELECT 1 AS hit FROM paper_nodes WHERE paper_id = ? LIMIT 1", (paper_id,)
+    )
+    if parsed is not None:
+        return False
+
+    async def work(job_id: str) -> dict[str, Any]:
+        return await run_parse_job(job_id=job_id, paper_id=paper_id)
+
+    async def run() -> None:
+        from app.db import agent_repository as repo
+
+        try:
+            handle = await agent_jobs.run_once(
+                kind="parse", idempotency_key=parse_idempotency_key(paper_id), work=work,
+                session_id=session_id, request={"paper_id": paper_id},
+            )
+        except agent_jobs.JobFailed as exc:
+            logger.info("Background parse of %s did not finish: %s", paper_id, exc.message)
+            return
+        except Exception:
+            logger.exception("Background parse of %s failed", paper_id)
+            return
+        if handle.status == "done":
+            await repo.mark_paper_parsed(paper_id)
+
+    task = asyncio.create_task(run(), name=f"parse:{paper_id}")
+    _background[paper_id] = task
+    task.add_done_callback(lambda _t: _background.pop(paper_id, None))
+    return True
+
+
+async def stop_background_parses() -> None:
+    """Cancel parses nobody is waiting on, at shutdown.
+
+    Cancelling releases each lease with its `remote_id`, so the next process
+    rejoins the submitted batch at once instead of waiting out a dead lease.
+    """
+    tasks = list(_background.values())
+    for task in tasks:
+        task.cancel()
+    if tasks:
+        await asyncio.gather(*tasks, return_exceptions=True)
+
+
 async def resumable_batch(job_id: str) -> tuple[str, str]:
     """`(parse_id, batch_id)` for a submission this job can still rejoin.
 

@@ -47,6 +47,7 @@ from app.services import (
     evidence_service,
     identity,
     paper_catalog,
+    parse_service,
 )
 from app.services.accounts import Caller
 
@@ -73,14 +74,22 @@ async def _attach_papers(session_id: str, paper_ids: list[str]) -> list[str]:
             logger.info("Ignoring unknown paper %s on session %s", paper_id, session_id)
             continue
         literature_id = await paper_catalog.ensure_literature_for_local_paper(paper_id)
+        availability = await _availability_of(paper_id)
         await repo.attach_session_paper(
             session_id=session_id,
             literature_id=literature_id,
             paper_id=paper_id,
-            availability=await _availability_of(paper_id),
+            availability=availability,
             added_by="user",
         )
         attached.append(paper_id)
+        if availability is Availability.PDF_READY:
+            # The reader is about to ask about this paper; parsing while they
+            # type keeps those minutes out of their first turn.
+            try:
+                await parse_service.start_background_parse(paper_id, session_id=session_id)
+            except Exception:
+                logger.exception("Could not start parsing %s ahead of the first turn", paper_id)
     return attached
 
 
