@@ -16,7 +16,7 @@ from app.services.publication_rank.publication_rank import PublicationRankResult
 
 
 # ---------------------------------------------------------------------------
-# Test doubles for the web_search / Tavily + LLM extraction pipeline
+# Test doubles for the Tavily + LLM extraction pipeline
 # ---------------------------------------------------------------------------
 
 class _FakeTavily:
@@ -43,10 +43,8 @@ class _FakeLLM:
         response: str = "{}",
         *,
         raise_exc: Exception | None = None,
-        web_search_response: str | None = None,
     ) -> None:
         self._response = response
-        self._web_search_response = web_search_response
         self._raise = raise_exc
         self.called = False
         self.calls: list[dict[str, Any]] = []
@@ -74,10 +72,8 @@ class _FakeLLM:
                 "enable_thinking": enable_thinking,
             }
         )
-        if self._raise is not None and tools:
+        if self._raise is not None:
             raise self._raise
-        if tools and self._web_search_response is not None:
-            return self._web_search_response
         return self._response
 
 
@@ -111,7 +107,7 @@ class _SuccessfulLLMRank:
 
 
 # ---------------------------------------------------------------------------
-# LLMRankClient (web_search + Tavily fallback) tests
+# LLMRankClient (Tavily search + LLM extraction) tests
 # ---------------------------------------------------------------------------
 
 class LLMRankClientConfigTests(unittest.TestCase):
@@ -165,9 +161,9 @@ class LLMRankClientConfigTests(unittest.TestCase):
         self.assertFalse(tavily.called)
         self.assertFalse(llm.called)
 
-    def test_builtin_web_search_is_primary_path(self) -> None:
-        tavily = _FakeTavily(context="should not be used")
-        llm = _FakeLLM(web_search_response='{"sci": null, "ccf": "A"}')
+    def test_never_asks_the_gateway_to_search(self) -> None:
+        tavily = _FakeTavily(context="CVPR 是 CCF A 类会议，无 SCI 分区")
+        llm = _FakeLLM(response='{"sci": null, "ccf": "A"}')
         client = LLMRankClient(
             base_url="https://example.test/v1",
             api_key="k",
@@ -179,39 +175,11 @@ class LLMRankClientConfigTests(unittest.TestCase):
         result = asyncio.run(client.query("CVPR"))
 
         self.assertTrue(result.success)
-        self.assertIsNone(result.sci)
-        self.assertEqual(result.ccf, "A")
-        self.assertTrue(llm.called)
-        self.assertEqual(llm.last_tools, [{"type": "web_search"}])
-        self.assertTrue(llm.calls[0]["enable_thinking"])
-        self.assertFalse(tavily.called)
-
-    def test_tavily_fallback_when_web_search_fails(self) -> None:
-        tavily = _FakeTavily(context="CVPR 是 CCF A 类会议，无 SCI 分区")
-        llm = _FakeLLM(
-            response='{"sci": null, "ccf": "A"}',
-            raise_exc=RuntimeError("web_search unavailable"),
-        )
-        client = LLMRankClient(
-            base_url="https://example.test/v1",
-            api_key="k",
-            model="m",
-            tavily_client=tavily,
-            llm_service=llm,
-        )
-
-        result = asyncio.run(client.query("CVPR"))
-
-        self.assertTrue(result.success)
-        self.assertEqual(result.ccf, "A")
         self.assertTrue(tavily.called)
-        self.assertGreaterEqual(len(llm.calls), 2)
-        # Second call is extraction without tools
-        self.assertIsNone(llm.calls[-1]["tools"])
-        joined = "".join(m["content"] for m in (llm.last_messages or []))
-        self.assertIn("CCF A 类会议", joined)
+        self.assertEqual(len(llm.calls), 1)
+        self.assertIsNone(llm.calls[0]["tools"])
 
-    def test_missing_tavily_key_returns_error_after_web_search_fail(self) -> None:
+    def test_missing_tavily_key_returns_error_without_calling_llm(self) -> None:
         tavily = _FakeTavily(configured=False)
         llm = _FakeLLM(raise_exc=RuntimeError("no tools"))
         client = LLMRankClient(
@@ -227,6 +195,7 @@ class LLMRankClientConfigTests(unittest.TestCase):
         self.assertFalse(result.success)
         self.assertIn("TAVILY_KEY", result.error or "")
         self.assertFalse(tavily.called)
+        self.assertFalse(llm.called)
 
     def test_tavily_only_mode_extracts_rank(self) -> None:
         tavily = _FakeTavily(context="CVPR 是 CCF A 类会议，无 SCI 分区")
@@ -237,7 +206,6 @@ class LLMRankClientConfigTests(unittest.TestCase):
             model="m",
             tavily_client=tavily,
             llm_service=llm,
-            use_builtin_web_search=False,
         )
 
         result = asyncio.run(client.query("CVPR"))
