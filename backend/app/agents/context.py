@@ -36,7 +36,7 @@ class RunBudget:
     # the run, unlike the ceilings `BudgetUsage.exceeded` checks.
     max_web_searches: int = 10
     max_web_fetches: int = 8
-    max_tokens: int = 400_000
+    max_tokens: int = 2_500_000
     max_wall_seconds: int = 1800
 
     def as_dict(self) -> dict[str, Any]:

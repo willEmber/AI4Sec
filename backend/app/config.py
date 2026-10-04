@@ -151,7 +151,10 @@ class AppSettings(BaseSettings):
     # the tool refuses and the agent answers from what it has.
     agent_max_web_searches: int = Field(default=10, alias="AGENT_MAX_WEB_SEARCHES")
     agent_max_web_fetches: int = Field(default=8, alias="AGENT_MAX_WEB_FETCHES")
-    agent_max_tokens: int = Field(default=400_000, alias="AGENT_MAX_TOKENS")
+    # Summed over a turn's model calls, each of which bills the whole context
+    # again: this has to cover several calls at `agent_context_trigger_tokens`,
+    # or a long conversation ends its turns after the second step.
+    agent_max_tokens: int = Field(default=2_500_000, alias="AGENT_MAX_TOKENS")
     # Generous because one turn may now download and parse a paper it just
     # found, which a pure reading turn never did.
     agent_max_wall_seconds: int = Field(default=1800, alias="AGENT_MAX_WALL_SECONDS")
@@ -165,8 +168,9 @@ class AppSettings(BaseSettings):
     # Conversation size (approximate tokens, system prompt and tool schemas
     # included) at which older turns are summarised. The gateway models have
     # no published profile, so this is an absolute number rather than a fraction
-    # of the context window; 80k leaves room for a long section read on top.
-    agent_context_trigger_tokens: int = Field(default=80_000, alias="AGENT_CONTEXT_TRIGGER_TOKENS")
+    # of the context window. It has to sit below the smallest window among the
+    # models offered for conversations, with room for a step of section reads.
+    agent_context_trigger_tokens: int = Field(default=260_000, alias="AGENT_CONTEXT_TRIGGER_TOKENS")
     # How many recent messages survive a compaction untouched. Counted in
     # messages, not tokens, because a tool-call/tool-result pair must never be
     # split — the summariser keeps whole exchanges.

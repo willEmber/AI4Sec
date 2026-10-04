@@ -292,6 +292,66 @@ class EvictionTests(unittest.TestCase):
         self.assertIs(out[0], small)
         self.assertIs(out[1], rank)
 
+    def test_results_the_model_has_not_seen_are_never_evicted(self) -> None:
+        from app.agents.middleware import evict_tool_results
+
+        earlier = self._tool_message("read_paper_section", 5000, ["ev_old"])
+        batch = [self._tool_message("read_paper_section", 5000 + i, [f"ev_{i}"]) for i in range(8)]
+        messages = [HumanMessage("q1"), AIMessage(""), earlier, AIMessage("a1"), HumanMessage("q2"), AIMessage(""), *batch]
+
+        # One step of eight parallel reads against a window of six: all eight
+        # reach the model, and only the result it has already answered goes.
+        out, evicted = evict_tool_results(messages, keep_recent=6, max_chars=1000)
+        self.assertEqual(evicted, 1)
+        self.assertTrue(json.loads(out[2].content)["evicted"])
+        for original, kept in zip(batch, out[6:]):
+            self.assertIs(kept, original)
+
+        # Once the model has answered them they age like any other result.
+        out, evicted = evict_tool_results([*messages, AIMessage("a2")], keep_recent=6, max_chars=1000)
+        self.assertEqual(evicted, 3)
+        self.assertTrue(json.loads(out[7].content)["evicted"])
+        self.assertIs(out[8], batch[2])
+
+
+class TokenCountTests(unittest.TestCase):
+    def test_chinese_is_counted_at_about_a_token_per_character(self) -> None:
+        from langchain_core.messages.utils import count_tokens_approximately
+
+        from app.agents.middleware import count_tokens_cjk_aware
+
+        english = [HumanMessage("word " * 800)]
+        self.assertEqual(count_tokens_cjk_aware(english), count_tokens_approximately(english))
+
+        chinese = [HumanMessage("论文的方法部分提出了什么" * 100), AIMessage("", tool_calls=[
+            {"name": "search_paper_content", "args": {"question": "实验设置" * 50}, "id": "c1"}
+        ])]
+        counted = count_tokens_cjk_aware(chinese)
+        self.assertGreaterEqual(counted, 1400)
+        self.assertLess(count_tokens_approximately(chinese), 500)
+
+    def test_the_summariser_uses_it_and_passes_tool_schemas(self) -> None:
+        from app.agents.middleware import build_agent_middleware, count_tokens_cjk_aware
+        from tests.test_agent_p2 import ScriptedModel
+
+        middleware = build_agent_middleware(ScriptedModel())[0]
+        self.assertIs(middleware.token_counter, count_tokens_cjk_aware)
+        self.assertTrue(middleware._counter_accepts_tools)
+        # Nothing is cut from what the summariser reads: a ceiling keeps the
+        # last tokens, and the previous compaction's summary is the first.
+        earlier_summary = HumanMessage("上一次压缩的摘要：读者要求用中文回答。")
+        to_summarize = [earlier_summary, *[HumanMessage("问题" * 20_000) for _ in range(8)]]
+        self.assertGreater(count_tokens_cjk_aware(to_summarize), 260_000)
+        kept = middleware._lc_helper._trim_messages_for_summary(to_summarize)
+        self.assertEqual(len(kept), len(to_summarize))
+        self.assertIs(kept[0], earlier_summary)
+
+        tool = {"name": "t", "description": "x" * 4000, "parameters": {}}
+        self.assertGreater(
+            count_tokens_cjk_aware([HumanMessage("q")], tools=[tool]),
+            count_tokens_cjk_aware([HumanMessage("q")]) + 900,
+        )
+
 
 class MiddlewareAssemblyTests(unittest.TestCase):
     def setUp(self) -> None:
@@ -306,7 +366,7 @@ class MiddlewareAssemblyTests(unittest.TestCase):
         stack = build_agent_middleware(ScriptedModel())
         self.assertEqual([m.name for m in stack], ["SummarizationMiddleware"])
         self.assertIsInstance(stack[0], ScholarSummarizationMiddleware)
-        self.assertEqual(stack[0]._trigger_tokens, 80_000)
+        self.assertEqual(stack[0]._trigger_tokens, 260_000)
         self.assertEqual(stack[0]._keep_messages, 12)
 
     def test_without_a_model_only_eviction_is_installed(self) -> None:

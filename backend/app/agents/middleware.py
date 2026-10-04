@@ -14,7 +14,8 @@ checkpoint keeps the full result, so nothing is lost for replay or audit.
 
 *`ScholarSummarizationMiddleware`* is deepagents' summarisation with three
 things changed: the trigger is an absolute token count from settings (the
-gateway models publish no profile, so fraction triggers never fire), the
+gateway models publish no profile, so fraction triggers never fire) taken with
+a counter that knows what Chinese costs, the
 summary prompt is written for a reading assistant (it must carry forward
 paper handles, evidence ids and the reader's stated preferences), and each
 compaction is reported to a hook so the turn can tell the reader it happened.
@@ -26,7 +27,9 @@ from __future__ import annotations
 
 import json
 import logging
-from collections.abc import Awaitable, Callable
+import math
+import re
+from collections.abc import Awaitable, Callable, Iterable
 from typing import Any
 
 from langchain.agents.middleware.types import (
@@ -35,7 +38,7 @@ from langchain.agents.middleware.types import (
     ModelResponse,
 )
 from langchain_core.language_models import BaseChatModel
-from langchain_core.messages import AnyMessage, ToolMessage
+from langchain_core.messages import AIMessage, AnyMessage, ToolMessage
 from langchain_core.messages.utils import count_tokens_approximately
 
 from deepagents.backends import StateBackend
@@ -60,11 +63,50 @@ EVICTABLE_TOOLS = frozenset(
     }
 )
 
-# How much of the summariser's own input to keep. LangChain's default (4000
-# tokens) was tuned for terse coding sessions; a reading session's evicted
-# window carries several section reads, and cutting them to 4k would summarise
-# mostly the beginning of the oldest one.
-SUMMARY_INPUT_TOKENS = 24_000
+# How much of the summariser's own input to keep: all of it. A ceiling keeps
+# the *last* tokens, so everything older never reaches the summariser — and
+# the oldest message of a second compaction is the first compaction's summary,
+# which is where the reader's preferences and the established findings live.
+# The summariser's window is larger than any request the turn's model accepted.
+SUMMARY_INPUT_TOKENS: int | None = None
+
+# Han, kana, hangul, and their punctuation and full-width forms.
+_CJK_CHAR = re.compile(r"[\u2e80-\u9fff\uac00-\ud7af\uf900-\ufaff\uff00-\uffef]")
+
+# What one such character costs. The approximate counter charges every
+# character a quarter of a token, which is right for English and about four
+# times too low for Chinese — and this agent answers in Chinese by default, so
+# the trigger would fire long after the request had outgrown what it claims.
+# Rounded up to one: counting high compacts a little early, counting low
+# overflows the model's window.
+CJK_TOKENS_PER_CHAR = 1.0
+_APPROX_TOKENS_PER_CHAR = 0.25
+
+
+def _cjk_chars(message: Any) -> int:
+    content = getattr(message, "content", message)
+    count = 0
+    if isinstance(content, str):
+        count += len(_CJK_CHAR.findall(content))
+    elif isinstance(content, list):
+        for block in content:
+            text = block.get("text") if isinstance(block, dict) else block
+            if isinstance(text, str):
+                count += len(_CJK_CHAR.findall(text))
+    for call in getattr(message, "tool_calls", None) or []:
+        count += len(_CJK_CHAR.findall(json.dumps(call.get("args"), ensure_ascii=False, default=str)))
+    return count
+
+
+def count_tokens_cjk_aware(
+    messages: Iterable[Any], *, tools: list[Any] | None = None, **kwargs: Any
+) -> int:
+    """`count_tokens_approximately`, with CJK characters charged at their real cost."""
+    messages = list(messages)
+    base = count_tokens_approximately(messages, tools=tools, **kwargs)
+    cjk = sum(_cjk_chars(m) for m in messages)
+    return base + math.ceil(cjk * (CJK_TOKENS_PER_CHAR - _APPROX_TOKENS_PER_CHAR))
+
 
 # `.format(messages=...)` is applied to this, so every literal brace is doubled.
 SCHOLAR_SUMMARY_PROMPT = """<role>
@@ -132,7 +174,7 @@ class ScholarSummarizationMiddleware(SummarizationMiddleware):
             backend=StateBackend(),
             trigger=("tokens", int(trigger_tokens)),
             keep=("messages", int(keep_messages)),
-            token_counter=count_tokens_approximately,
+            token_counter=count_tokens_cjk_aware,
             summary_prompt=SCHOLAR_SUMMARY_PROMPT,
             trim_tokens_to_summarize=SUMMARY_INPUT_TOKENS,
         )
@@ -257,9 +299,18 @@ def evict_tool_results(
     "Old" means not among the last `keep_recent` tool messages; "large" means
     longer than `max_chars`. Only tools in `EVICTABLE_TOOLS` are touched — the
     others are small and their exact content matters (a rank, a candidate list).
+
+    Results the model has not answered yet — everything after its last message
+    — are never old, however many there are. The prompt asks for independent
+    reads in one step, and a step of eight would otherwise lose its first two
+    before the model saw any of them.
     """
     tool_positions = [i for i, m in enumerate(messages) if isinstance(m, ToolMessage)]
     protected = set(tool_positions[-keep_recent:]) if keep_recent > 0 else set()
+    last_model_turn = max(
+        (i for i, m in enumerate(messages) if isinstance(m, AIMessage)), default=-1
+    )
+    protected.update(i for i in tool_positions if i > last_model_turn)
     out: list[AnyMessage] = list(messages)
     evicted = 0
     for index in tool_positions:
