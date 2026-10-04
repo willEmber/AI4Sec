@@ -220,16 +220,11 @@ scholar/
 │   │   └── lib/            # API client, types, i18n (EN/ZH)
 │   ├── Dockerfile
 │   └── package.json
-├── paper_search/           # Async multi-platform search aggregator (standalone CLI)
-├── papersdownload/         # DOI-to-PDF batch downloader (standalone CLI)
-├── PublicationRank/        # EasyScholar journal ranking client (standalone module)
-├── paper_converter/        # MinerU PDF parsing integration (standalone module)
 ├── docker-compose.yml
 ├── .env.example
 └── CLAUDE.md
 ```
 
-> `paper_search/`, `papersdownload/`, `PublicationRank/`, and `paper_converter/` are standalone command-line tools whose core capabilities are also bundled into the backend's `app/services/` for the full-stack app to reuse.
 
 ## License
 

@@ -251,16 +251,11 @@ scholar/
 │   │   └── lib/            # API 客户端、类型、i18n（中/英）
 │   ├── Dockerfile
 │   └── package.json
-├── paper_search/           # 异步多平台论文搜索聚合器（独立 CLI）
-├── papersdownload/         # DOI 到 PDF 的批量下载工具（独立 CLI）
-├── PublicationRank/        # EasyScholar 期刊排名客户端（独立模块）
-├── paper_converter/        # MinerU PDF 解析集成（独立模块）
 ├── docker-compose.yml
 ├── .env.example
 └── CLAUDE.md
 ```
 
-> `paper_search/`、`papersdownload/`、`PublicationRank/`、`paper_converter/` 既是可独立运行的命令行工具，其核心能力也已集成进后端 `app/services/` 供全栈应用复用。
 
 ## 许可证
 
