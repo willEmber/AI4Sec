@@ -3,7 +3,9 @@
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
 import type { ReactNode } from "react";
 
-export type Locale = "en" | "zh";
+import { DEFAULT_LOCALE, LOCALE_COOKIE, parseLocale, type Locale } from "./locale";
+
+export type { Locale };
 
 const translations: Record<Locale, Record<string, string>> = {
   en: {
@@ -1134,27 +1136,53 @@ interface LanguageContextValue {
 }
 
 const LanguageContext = createContext<LanguageContextValue>({
-  locale: "en",
+  locale: DEFAULT_LOCALE,
   setLocale: () => {},
   t: (key) => key,
 });
 
-const STORAGE_KEY = "scholar-locale";
+// Where the choice lived before the cookie; read once to carry it over.
+const LEGACY_STORAGE_KEY = "scholar-locale";
 
-export function LanguageProvider({ children }: { children: ReactNode }) {
-  const [locale, setLocaleState] = useState<Locale>("en");
+function writeLocaleCookie(locale: Locale) {
+  document.cookie = `${LOCALE_COOKIE}=${locale}; path=/; max-age=31536000; samesite=lax`;
+}
 
-  // Load from localStorage on mount
+export function LanguageProvider({
+  initialLocale = DEFAULT_LOCALE,
+  hasStoredLocale = false,
+  children,
+}: {
+  /** The locale the server rendered with, read from the cookie. */
+  initialLocale?: Locale;
+  /** Whether that locale came from the cookie rather than the default. */
+  hasStoredLocale?: boolean;
+  children: ReactNode;
+}) {
+  const [locale, setLocaleState] = useState<Locale>(initialLocale);
+
+  // The state starts from what the server rendered, so there is nothing to
+  // correct after mount — except for a choice made before the cookie existed.
   useEffect(() => {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    if (saved === "zh" || saved === "en") {
-      setLocaleState(saved);
+    if (hasStoredLocale) return;
+    try {
+      const legacy = parseLocale(window.localStorage.getItem(LEGACY_STORAGE_KEY));
+      if (!legacy) return;
+      window.localStorage.removeItem(LEGACY_STORAGE_KEY);
+      writeLocaleCookie(legacy);
+      setLocaleState(legacy);
+    } catch {
+      // Storage unavailable: keep the default.
     }
-  }, []);
+  }, [hasStoredLocale]);
+
+  useEffect(() => {
+    document.documentElement.lang = locale === "zh" ? "zh-CN" : "en";
+  }, [locale]);
 
   const setLocale = useCallback((l: Locale) => {
     setLocaleState(l);
-    localStorage.setItem(STORAGE_KEY, l);
+    writeLocaleCookie(l);
   }, []);
 
   const t = useCallback(

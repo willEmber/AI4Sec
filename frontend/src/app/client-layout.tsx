@@ -1,7 +1,7 @@
 "use client";
 
 import { AuthMenu } from "@/components/AuthMenu";
-import { LanguageProvider, LanguageToggle, useTranslation } from "@/lib/i18n";
+import { LanguageProvider, LanguageToggle, useTranslation, type Locale } from "@/lib/i18n";
 import { recordVisit } from "@/lib/api";
 import { useEffect, type ReactNode } from "react";
 import Image from "next/image";
@@ -55,7 +55,15 @@ function NavBar() {
   );
 }
 
-export default function ClientLayout({ children }: { children: ReactNode }) {
+export default function ClientLayout({
+  initialLocale,
+  hasStoredLocale,
+  children,
+}: {
+  initialLocale: Locale;
+  hasStoredLocale: boolean;
+  children: ReactNode;
+}) {
   const pathname = usePathname();
 
   useEffect(() => {
@@ -64,7 +72,7 @@ export default function ClientLayout({ children }: { children: ReactNode }) {
   }, [pathname]);
 
   return (
-    <LanguageProvider>
+    <LanguageProvider initialLocale={initialLocale} hasStoredLocale={hasStoredLocale}>
       <NavBar />
       <main>{children}</main>
     </LanguageProvider>
