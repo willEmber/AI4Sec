@@ -377,8 +377,36 @@ def _format_context(nodes: list[PaperNode], max_chars: int) -> str:
     return context
 
 
+# A paper whose text fits in this many characters (~40k tokens) is given to
+# the model whole. Selecting passages was for models that could not hold a
+# paper: the scoring is lexical, and a passage it misses turns into "the paper
+# does not say". Only a document too long for this goes through selection.
+FULL_TEXT_MAX_CHARS = 150_000
+
+
+def _whole_paper_context(nodes: list[PaperNode]) -> tuple[str, int] | None:
+    """Every readable chunk in reading order, or None when that is too long."""
+    chunks = [
+        node for node in nodes
+        if node.node_type == "chunk"
+        and node.block_type in _SEARCHABLE_BLOCK_TYPES
+        and node.text.strip()
+    ]
+    if not chunks or sum(len(node.text) for node in chunks) > FULL_TEXT_MAX_CHARS:
+        return None
+    chunks.sort(key=lambda item: (item.page_start, item.order_idx))
+    parts: list[str] = []
+    for node in chunks:
+        section = f" [{node.title_path}]" if node.title_path else ""
+        parts.append(f"[p.{node.page_start + 1}]{section} {node.text.strip()}")
+    return "\n\n".join(parts), len(chunks)
+
+
 def retrieve_qa_context(paper_ir: PaperIR, question: str, max_chars: int = 20000) -> tuple[str, int]:
     nodes = build_paper_nodes(paper_ir)
+    whole = _whole_paper_context(nodes)
+    if whole is not None:
+        return whole
     chosen = _select_context_nodes(nodes, question)
     return _format_context(chosen, max_chars), len(chosen)
 
@@ -551,6 +579,10 @@ async def retrieve_qa_context_for_paper(
 
     if not nodes:
         return retrieve_qa_context(paper_ir, question, max_chars=max_chars)
+
+    whole = _whole_paper_context(nodes)
+    if whole is not None:
+        return whole
 
     boosted_ids = await _search_fts_node_ids(paper_id, question)
     chosen = _select_context_nodes(nodes, question, boosted_node_ids=boosted_ids)

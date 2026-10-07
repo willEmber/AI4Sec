@@ -282,6 +282,29 @@ class EvictionTests(unittest.TestCase):
         self.assertIs(out[6], recent)
         self.assertIn("zzzz", messages[2].content)
 
+    def test_nothing_is_cut_while_the_conversation_is_small(self) -> None:
+        from types import SimpleNamespace
+
+        from app.agents.middleware import ToolResultEvictionMiddleware
+
+        old = self._tool_message("read_paper_section", 5000, ["ev_a"])
+        recent = self._tool_message("read_paper_section", 5000, ["ev_b"])
+        messages = [HumanMessage("q1"), AIMessage(""), old, AIMessage("a1"), HumanMessage("q2"), AIMessage(""), recent]
+
+        def request():
+            return SimpleNamespace(
+                messages=messages, override=lambda **kw: SimpleNamespace(**kw)
+            )
+
+        roomy = ToolResultEvictionMiddleware(keep_recent=1, max_chars=1000, trigger_tokens=50_000)
+        self.assertIs(roomy._apply(request()).messages[2], old)
+
+        full = ToolResultEvictionMiddleware(keep_recent=1, max_chars=1000, trigger_tokens=1_000)
+        self.assertTrue(json.loads(full._apply(request()).messages[2].content)["evicted"])
+
+        always = ToolResultEvictionMiddleware(keep_recent=1, max_chars=1000)
+        self.assertTrue(json.loads(always._apply(request()).messages[2].content)["evicted"])
+
     def test_small_results_and_non_evictable_tools_are_left_alone(self) -> None:
         from app.agents.middleware import evict_tool_results
 

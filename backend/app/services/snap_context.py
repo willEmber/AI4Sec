@@ -224,7 +224,7 @@ def _fallback_body_text(paper_ir: PaperIR) -> str:
     return "\n".join(parts)
 
 
-def build_triage_context(paper_ir: PaperIR, *, total_budget: int = 40_000) -> TriageContext:
+def build_triage_context(paper_ir: PaperIR, *, total_budget: int = 100_000) -> TriageContext:
     """Assemble the Insight Snap context under a character budget.
 
     Slots are funded in the priority order of ``_SLOTS`` (unspent allowance

@@ -33,9 +33,11 @@ from app.services.qa_retrieval import (
 logger = logging.getLogger("scholar.agents.tools.reading")
 
 # A section read returns the whole section, which can be most of a paper. This
-# caps what reaches the model per call; the model can read another section if
-# it needs more, which is cheaper than blowing the context on one call.
-MAX_SECTION_CHARS = 12_000
+# caps what reaches the model per call. At 12k an experiments section came
+# back cut in half and the model had to find its way to the rest through the
+# outline; 40k (~10k tokens) returns nearly any section whole, and a paper in
+# a handful of reads.
+MAX_SECTION_CHARS = 40_000
 # Table markup is verbose out of all proportion to what it says.
 MAX_TABLE_CHARS = 1_600
 

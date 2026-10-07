@@ -334,16 +334,24 @@ def evict_tool_results(
 class ToolResultEvictionMiddleware(AgentMiddleware):
     """Trim old, large tool results out of the request before each model call."""
 
-    def __init__(self, *, keep_recent: int, max_chars: int) -> None:
+    def __init__(self, *, keep_recent: int, max_chars: int, trigger_tokens: int = 0) -> None:
         super().__init__()
         self._keep_recent = max(0, int(keep_recent))
         self._max_chars = max(200, int(max_chars))
+        self._trigger_tokens = max(0, int(trigger_tokens))
 
     @property
     def name(self) -> str:
         return "ToolResultEvictionMiddleware"
 
     def _apply(self, request: ModelRequest) -> ModelRequest:
+        # A small conversation keeps every result: there is room for them, and
+        # a stub only sends the model back to read the same section again.
+        if (
+            self._trigger_tokens
+            and count_tokens_cjk_aware(request.messages) < self._trigger_tokens
+        ):
+            return request
         messages, evicted = evict_tool_results(
             list(request.messages), keep_recent=self._keep_recent, max_chars=self._max_chars
         )
@@ -385,6 +393,7 @@ def build_agent_middleware(
     eviction = ToolResultEvictionMiddleware(
         keep_recent=settings.agent_tool_result_keep,
         max_chars=settings.agent_tool_result_max_chars,
+        trigger_tokens=settings.agent_tool_result_evict_tokens,
     )
     if model is None:
         return [eviction]

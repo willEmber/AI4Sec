@@ -97,9 +97,10 @@ class AppSettings(BaseSettings):
 
     # --- Insight Snap ---
     # Character budget for the triage context handed to the LLM. The old 12k
-    # prefix-cut dropped results tables and conclusions on any long paper; 40k
-    # (~10k tokens) fits comfortably in every model offered here.
-    snap_context_budget_chars: int = Field(default=40_000, alias="SNAP_CONTEXT_BUDGET_CHARS")
+    # prefix-cut dropped results tables and conclusions on any long paper. 100k
+    # (~25k tokens) holds every triage slot of an ordinary paper whole, so the
+    # priority order only decides what is cut from an unusually long one.
+    snap_context_budget_chars: int = Field(default=100_000, alias="SNAP_CONTEXT_BUDGET_CHARS")
     # Enrich the triage verdict with external evidence (venue rank, citation
     # impact, code availability, retraction status). Adds a few seconds of
     # network I/O per new paper; results are cached on the papers row.
@@ -180,6 +181,15 @@ class AppSettings(BaseSettings):
     # needed verbatim two questions later. Evidence ids survive the cut.
     agent_tool_result_keep: int = Field(default=6, alias="AGENT_TOOL_RESULT_KEEP")
     agent_tool_result_max_chars: int = Field(default=1_500, alias="AGENT_TOOL_RESULT_MAX_CHARS")
+    # Nothing is cut while the conversation (approximate tokens, messages only)
+    # is smaller than this. Cutting from the seventh result on, whatever the
+    # size, made the model re-read sections it had been given a moment ago,
+    # with hundreds of thousands of tokens of room left. It sits well below the
+    # summarisation trigger because every step bills the whole context again,
+    # against `agent_max_tokens` and the reader's daily quota. 0 = always cut.
+    agent_tool_result_evict_tokens: int = Field(
+        default=60_000, alias="AGENT_TOOL_RESULT_EVICT_TOKENS"
+    )
     # --- Long-term memory ---
     # Ceiling on memories injected into the prompt per turn (newest first).
     agent_memory_max_items: int = Field(default=30, alias="AGENT_MEMORY_MAX_ITEMS")

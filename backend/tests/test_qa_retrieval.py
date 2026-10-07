@@ -4,6 +4,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from app.db import database as db
 from tests.pg_support import open_fresh_database
@@ -102,6 +103,29 @@ class QaRetrievalHierarchyTests(unittest.TestCase):
         self.assertIn("[p.5] [4 Experiments] 4 Experiments", context)
         self.assertIn("Evaluation Metrics", context)
         self.assertIn("<table>", context)
+        self.assertIn("PSNR", context)
+
+    def test_a_paper_that_fits_is_given_whole(self) -> None:
+        """Nothing in this question matches the discussion; it is there anyway."""
+        context, blocks_used = retrieve_qa_context(_paper_ir(), "What are the PSNR and SSIM metrics?")
+
+        chunks = [node for node in build_paper_nodes(_paper_ir()) if node.node_type == "chunk"]
+        self.assertEqual(blocks_used, len(chunks))
+        self.assertIn("[5 Discussion]", context)
+        self.assertNotIn("truncated", context)
+
+    def test_a_paper_too_long_to_give_whole_is_searched(self) -> None:
+        from app.services import qa_retrieval
+
+        question = "What are the PSNR and SSIM metrics?"
+        with patch.object(
+            qa_retrieval, "_select_context_nodes", wraps=qa_retrieval._select_context_nodes
+        ) as select:
+            retrieve_qa_context(_paper_ir(), question)
+            select.assert_not_called()
+            with patch.object(qa_retrieval, "FULL_TEXT_MAX_CHARS", 50):
+                context, _ = retrieve_qa_context(_paper_ir(), question)
+            select.assert_called_once()
         self.assertIn("PSNR", context)
 
 
