@@ -58,13 +58,24 @@ from app.models.sphere_models import (
     tier_for_sources,
 )
 from app.services.llm_gateway import get_registry
-from app.services.llm_service import get_llm_service
+from app.services.llm_service import chat_complete, get_llm_service
 from app.services.paper_search import normalize_whitespace, title_fingerprint
 from app.services.sphere_scorer import is_preprint_venue, is_survey_title, normalize_venue
 from app.workflows.progress import emit_progress as _emit_progress
 from app.workflows.state import MainGraphState
 
 logger = logging.getLogger("scholar.graph")
+
+# Output budget for the passes that run on the reader's model with thinking on
+# (abstract analysis, theme naming and classification, comparison, gaps). The
+# ceiling covers reasoning as well as the JSON: at 4096 a batch of 20 abstracts
+# had no room for both, and each of these fails into an empty section of a run
+# that still reports success. They go through `chat_complete` for the same
+# reason — a cut-off answer would otherwise surface as a JSON parse error.
+_SYNTH_MAX_TOKENS = 16384
+# The comparison table and the gaps pass read the whole core set and write the
+# longest answers of the run.
+_SYNTH_LONG_MAX_TOKENS = 32768
 
 
 def _current_year() -> int:
@@ -1882,7 +1893,14 @@ async def step_layer1_abstract_snap(
         ]
 
         try:
-            response = await llm.chat(messages, model=model, temperature=0.2, max_tokens=4096)
+            response = await chat_complete(
+                llm,
+                messages,
+                model=model,
+                temperature=0.2,
+                max_tokens=_SYNTH_MAX_TOKENS,
+                log_label=f"[{paper_id}] sphere snap",
+            )
             extractions = json.loads(_strip_json_fences(response))
             if isinstance(extractions, list):
                 for ext in extractions:
@@ -2239,12 +2257,14 @@ async def step_synthesize_landscape(
                     if methods:
                         line += f"\n  methods: {methods}"
                     lines.append(line)
-                resp = await llm.chat(
+                resp = await chat_complete(
+                    llm,
                     [
                         {"role": "system", "content": _localize(_CLUSTER_NAMER_SYSTEM)},
                         {"role": "user", "content": "\n\n".join(lines)},
                     ],
-                    model=model, temperature=0.2, max_tokens=8192,
+                    model=model, temperature=0.2, max_tokens=_SYNTH_MAX_TOKENS,
+                    log_label=f"[{paper_id}] sphere synth: cluster naming",
                 )
                 data = json.loads(_strip_json_fences(resp))
                 themes: list[ThemeCluster] = []
@@ -2271,12 +2291,14 @@ async def step_synthesize_landscape(
 
         # Fallback: LLM classification over the core set
         try:
-            resp = await llm.chat(
+            resp = await chat_complete(
+                llm,
                 [
                     {"role": "system", "content": _localize(_CLASSIFIER_SYSTEM)},
                     {"role": "user", "content": f"Classify these {len(paper_list)} papers into themes:\n\n{papers_context}"},
                 ],
-                model=model, temperature=0.2, max_tokens=4096,
+                model=model, temperature=0.2, max_tokens=_SYNTH_MAX_TOKENS,
+                log_label=f"[{paper_id}] sphere synth: classifier",
             )
             data = json.loads(_strip_json_fences(resp))
             themes = []
@@ -2300,7 +2322,11 @@ async def step_synthesize_landscape(
                 {"role": "system", "content": _localize(_COMPARATOR_SYSTEM)},
                 {"role": "user", "content": f"Compare these papers:\n\n{comp_context}"},
             ]
-            comparator_resp = await llm.chat(comparator_messages, model=model, temperature=0.2, max_tokens=8192)
+            comparator_resp = await chat_complete(
+                llm, comparator_messages, model=model, temperature=0.2,
+                max_tokens=_SYNTH_LONG_MAX_TOKENS,
+                log_label=f"[{paper_id}] sphere synth: comparator",
+            )
             return json.loads(_strip_json_fences(comparator_resp))
         except Exception as e:
             logger.warning(f"[{paper_id}] sphere synth: Comparator failed: {e}")
@@ -2431,7 +2457,11 @@ async def step_synthesize_landscape(
             {"role": "system", "content": _localize(_ADVISOR_SYSTEM)},
             {"role": "user", "content": f"Analyze research landscape:\n\n{advisor_context}"},
         ]
-        advisor_resp = await llm.chat(advisor_messages, model=model, temperature=0.3, max_tokens=4096)
+        advisor_resp = await chat_complete(
+            llm, advisor_messages, model=model, temperature=0.3,
+            max_tokens=_SYNTH_LONG_MAX_TOKENS,
+            log_label=f"[{paper_id}] sphere synth: advisor",
+        )
         advisor_data = json.loads(_strip_json_fences(advisor_resp))
 
         sphere.output.sphere_overview = advisor_data.get("overview", "")

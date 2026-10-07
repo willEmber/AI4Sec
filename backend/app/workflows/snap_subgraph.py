@@ -13,7 +13,12 @@ from app.services.citation_validator import (
     format_coverage_summary,
     validate_citation_coverage,
 )
-from app.services.llm_service import get_llm_service
+from app.services.llm_service import (
+    LLMEmptyResponseError,
+    LLMTruncatedResponseError,
+    chat_complete,
+    get_llm_service,
+)
 from app.services.snap_context import build_triage_context
 from app.services.snap_report import (
     citation_audit as report_citation_audit,
@@ -38,11 +43,10 @@ logger = logging.getLogger("scholar.graph")
 # default — so these have to leave room for a full reasoning trace *plus* the
 # answer. A budget sized for the answer alone
 # lets reasoning consume all of it and the call returns nothing at all.
-_REPORT_MAX_TOKENS = 16384
-# The repair attempt gets more room, not the same: the first failure is usually
-# the budget rather than the schema, and retrying at the same size re-fails.
-_REPORT_REPAIR_MAX_TOKENS = 24576
-_CONTENT_REVIEW_MAX_TOKENS = 8192
+# Both go through `chat_complete`, which answers a spent ceiling by asking again
+# with thinking off — so the repair attempt below is for the schema only.
+_REPORT_MAX_TOKENS = 32768
+_CONTENT_REVIEW_MAX_TOKENS = 16384
 
 
 async def _generate_report(
@@ -57,32 +61,38 @@ async def _generate_report(
 
     A model that ignores the schema on the first attempt usually complies when
     told exactly what went wrong, so one repair round-trip is worth the latency.
-    The retry also raises the output budget, because the other way this call
-    fails — reasoning spending the whole allowance and leaving no text — looks
-    identical from here and is not fixed by a better prompt.
+    The other way this call fails — reasoning spending the whole allowance — is
+    not fixed by a better prompt, so an answer that is still cut off after
+    `chat_complete` ends the attempts instead of spending a repair on it.
     If it fails twice the raw text is kept as Markdown (``degraded=True``) — a
     prose report is worse than a structured one but far better than no run.
+    With no text at all there is nothing to keep, and the run fails: an empty
+    report used to be saved as a finished one.
     """
     user_message = (
         "请分析这篇论文:\n\n" if language == "zh" else "Analyze this paper:\n\n"
     ) + context
 
     raw = ""
+    failure: Exception | None = None
     for attempt in (1, 2):
         try:
-            raw = await llm.chat(
+            raw = await chat_complete(
+                llm,
                 [
                     {"role": "system", "content": report_system_prompt(language, repair=attempt == 2)},
                     {"role": "user", "content": user_message},
                 ],
                 model=model,
                 temperature=0.2 if attempt == 1 else 0.0,
-                max_tokens=(
-                    _REPORT_MAX_TOKENS if attempt == 1 else _REPORT_REPAIR_MAX_TOKENS
-                ),
+                max_tokens=_REPORT_MAX_TOKENS,
+                log_label=log_label,
             )
         except Exception as exc:
             logger.warning("%s: report call attempt %d failed: %s", log_label, attempt, exc)
+            failure = exc
+            if isinstance(exc, (LLMEmptyResponseError, LLMTruncatedResponseError)) and exc.reason:
+                break
             continue
 
         report = parse_snap_report(raw)
@@ -91,6 +101,8 @@ async def _generate_report(
         if attempt == 1:
             logger.info("%s: report JSON unparseable — retrying with repair prompt", log_label)
 
+    if not raw:
+        raise RuntimeError(f"Snap report produced no text: {failure}") from failure
     logger.warning("%s: report JSON failed twice — falling back to raw text", log_label)
     return SnapReport(degraded=True, raw_markdown=raw)
 
@@ -111,8 +123,9 @@ async def _run_content_review(
     Failures degrade to an unavailable review, never to an exception.
     """
     try:
-        raw = await llm.chat(
-            messages=[
+        raw = await chat_complete(
+            llm,
+            [
                 {
                     "role": "system",
                     "content": content_review_prompt(language, question=question),
@@ -122,6 +135,7 @@ async def _run_content_review(
             model=model,
             temperature=0.0,
             max_tokens=_CONTENT_REVIEW_MAX_TOKENS,
+            log_label=f"{log_label} content review",
         )
     except Exception as exc:
         logger.warning("%s: content review call failed: %s", log_label, exc)

@@ -7,7 +7,7 @@ from typing import Any
 
 from app.models.paper_ir import PaperIR
 from app.services.qa_retrieval import retrieve_qa_context, retrieve_qa_context_for_paper
-from app.services.llm_service import get_llm_service
+from app.services.llm_service import chat_complete, get_llm_service
 from app.workflows.state import MainGraphState
 
 logger = logging.getLogger("scholar.graph")
@@ -94,14 +94,18 @@ async def run_qa(state: MainGraphState) -> dict[str, Any]:
     logger.info(f"[{paper_id}] qa: calling LLM (model={model or '(default)'})")
 
     t_llm = time.perf_counter()
-    markdown = await llm.chat(
-        messages=[
+    # The ceiling covers reasoning as well as the answer, and an answer cut
+    # off mid-way would be saved as the whole one.
+    markdown = await chat_complete(
+        llm,
+        [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_content},
         ],
         model=model,
         temperature=0.2,
-        max_tokens=8192,
+        max_tokens=16384,
+        log_label=f"[{paper_id}] qa",
     )
     logger.info(f"[{paper_id}] qa: LLM returned in {time.perf_counter()-t_llm:.1f}s — {len(markdown)} chars")
 

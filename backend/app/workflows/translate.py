@@ -5,7 +5,7 @@ import re
 import time
 from typing import Any
 
-from app.services.llm_service import get_llm_service
+from app.services.llm_service import chat_complete, get_llm_service
 from app.workflows.state import MainGraphState
 
 logger = logging.getLogger("scholar.translate")
@@ -29,6 +29,11 @@ _SECTION_RE = re.compile(r"(?=^## )", re.MULTILINE)
 # Maximum characters per translation chunk (~2000 tokens)
 _MAX_CHUNK_CHARS = 8000
 
+# Output budget per chunk: the translation plus the reasoning before it, which
+# is billed against the same ceiling. A single section longer than
+# `_MAX_CHUNK_CHARS` is still one chunk, so this is not sized for 8000 chars.
+_CHUNK_MAX_TOKENS = 16384
+
 
 def _split_at_sections(markdown: str) -> list[str]:
     """Split markdown at ## headings, merging small chunks."""
@@ -49,13 +54,25 @@ def _split_at_sections(markdown: str) -> list[str]:
 
 
 async def _translate_chunk(text: str, model: str) -> str:
-    """Translate a single chunk of markdown via LLM."""
+    """Translate a single chunk of markdown via LLM.
+
+    A chunk that comes back cut off raises: joined to the others it would read
+    as a full translation with a passage missing, and the caller keeps the
+    original report when a chunk fails.
+    """
     llm = get_llm_service()
     messages = [
         {"role": "system", "content": _TRANSLATE_SYSTEM},
         {"role": "user", "content": text},
     ]
-    return await llm.chat(messages, model=model, temperature=0.2, max_tokens=8192)
+    return await chat_complete(
+        llm,
+        messages,
+        model=model,
+        temperature=0.2,
+        max_tokens=_CHUNK_MAX_TOKENS,
+        log_label="translate_output",
+    )
 
 
 async def translate_output(state: MainGraphState) -> dict[str, Any]:

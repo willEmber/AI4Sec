@@ -16,7 +16,7 @@ from typing import Any
 
 from app.config import get_settings
 from app.services import dify_client
-from app.services.llm_service import get_llm_service
+from app.services.llm_service import chat_complete, get_llm_service
 
 logger = logging.getLogger("scholar.corpus_qa")
 
@@ -139,14 +139,18 @@ async def answer_corpus_question(
         user_content = f"Question: {question}\n\nLibrary passages:\n{context}"
 
     t_llm = time.perf_counter()
-    markdown = await get_llm_service().chat(
-        messages=[
+    # The ceiling covers reasoning as well as the answer, and an answer cut
+    # off mid-way would be returned as the whole one.
+    markdown = await chat_complete(
+        get_llm_service(),
+        [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_content},
         ],
         model=llm_model,
         temperature=0.2,
-        max_tokens=8192,
+        max_tokens=16384,
+        log_label="corpus_qa",
     )
     logger.info(
         "corpus_qa: LLM answered in %.1fs — %d sources, %d chars",

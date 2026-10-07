@@ -27,10 +27,17 @@ from app.services.ir_extract import (
 )
 from app.services.lens_digest import generate_lens_digest
 from app.services.llm_gateway import get_registry
-from app.services.llm_service import get_llm_service
+from app.services.llm_service import chat_complete, get_llm_service
 from app.workflows.state import MainGraphState
 
 logger = logging.getLogger("scholar.graph")
+
+# Output budget for the report. The ceiling covers reasoning as well as the
+# visible text: at 16384, qwen3.8-max spent the whole allowance reasoning about
+# a 40k-char context and the report came back empty, or 238 characters long —
+# and the short one was saved as a finished run, with the digest asked twice to
+# index one paragraph. Hence `chat_complete`.
+_REPORT_MAX_TOKENS = 40960
 
 # Slot names exposed to the evidence extractor. Aligned with the four parts of
 # the reader-oriented Lens prompt (overview/motivation → method → experiments →
@@ -373,7 +380,14 @@ async def run_logic_lens(state: MainGraphState) -> dict[str, Any]:
     model = state.get("llm_model", "")
     logger.info(f"[{paper_id}] lens: Calling LLM (model={model or '(default)'})...")
     t_llm = time.perf_counter()
-    markdown = await llm.chat(messages, model=model, temperature=0.3, max_tokens=16384)
+    markdown = await chat_complete(
+        llm,
+        messages,
+        model=model,
+        temperature=0.3,
+        max_tokens=_REPORT_MAX_TOKENS,
+        log_label=f"[{paper_id}] lens",
+    )
     logger.info(f"[{paper_id}] lens: LLM returned in {time.perf_counter()-t_llm:.1f}s — {len(markdown)} chars response")
 
     audit = validate_citation_coverage(markdown)

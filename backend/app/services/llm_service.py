@@ -13,8 +13,11 @@ from app.services.llm_gateway.adapters import ResponsesAdapter, adapter_for, usa
 
 logger = logging.getLogger("scholar.llm")
 
-# Maximum timeout cap for any single LLM request (seconds)
-_TIMEOUT_CAP = 900.0
+# Maximum timeout cap for any single LLM request (seconds). The answer arrives
+# in one piece, so this has to outlast a call that uses its whole budget: the
+# largest one (40960 tokens, the Lens report) takes ~1040s at the slowest rate
+# measured on qwen3.8-max (39.5 tok/s).
+_TIMEOUT_CAP = 1500.0
 
 class LLMEmptyResponseError(RuntimeError):
     """The gateway accepted the request but returned no assistant text.
@@ -30,6 +33,22 @@ class LLMEmptyResponseError(RuntimeError):
     def __init__(self, message: str, *, reason: str = "") -> None:
         super().__init__(message)
         self.reason = reason
+
+
+class LLMTruncatedResponseError(RuntimeError):
+    """The answer was cut off, and the caller asked for a complete one.
+
+    Raised only under ``chat(..., require_complete=True)``. The usual cause is
+    the same as for an empty answer — reasoning took most of the output
+    ceiling — but some text got out, and that is the dangerous case: a report
+    that stops after its first paragraph is not empty, so it is persisted as a
+    finished one. ``partial`` keeps what did arrive.
+    """
+
+    def __init__(self, message: str, *, reason: str, partial: str) -> None:
+        super().__init__(message)
+        self.reason = reason
+        self.partial = partial
 
 
 class LLMService:
@@ -110,9 +129,9 @@ class LLMService:
         # Thinking models spend extra time on hidden reasoning tokens; tool-using
         # calls (web_search) add another network round-trip on the provider side.
         # The per-token term is 0.03s (~33 tok/s) against ~43 tok/s measured on
-        # qwen3.8-max: enough headroom to absorb a slow hour, while keeping the
-        # large budgets these calls now pass off the _TIMEOUT_CAP ceiling — a
-        # request that caps out waits 15 minutes per attempt before failing.
+        # qwen3.8-max: enough headroom to absorb a slow hour. Only the largest
+        # budget (40960) reaches _TIMEOUT_CAP — a request that caps out waits
+        # that long per attempt before failing.
         base = 150.0 if tools else 120.0
         timeout = base + (prompt_chars / 4) * 0.02 + max_tokens * 0.03
         return min(max(180.0, timeout), _TIMEOUT_CAP)
@@ -126,8 +145,15 @@ class LLMService:
         *,
         enable_thinking: bool = True,
         tools: list[dict[str, Any]] | None = None,
+        require_complete: bool = False,
     ) -> str:
-        """Send one chat request, return final assistant text."""
+        """Send one chat request, return final assistant text.
+
+        A truncated answer is returned as it is, with a warning, unless
+        ``require_complete`` is set — then it raises `LLMTruncatedResponseError`.
+        Set it where the text is kept as a finished document: a caller that
+        parses the answer finds out from the parser, a report writer never does.
+        """
         profile = self._profile(model)
         model = profile.name
         provider = profile.provider
@@ -245,6 +271,16 @@ class LLMService:
                         "budget for this call.",
                         reason=truncated,
                     )
+                if truncated and require_complete:
+                    raise LLMTruncatedResponseError(
+                        f"LLM answer cut off after {len(content)} chars "
+                        f"(reason={truncated}); model={model} max_tokens={max_tokens} "
+                        f"output_tokens={completion_tokens} thinking={enable_thinking}. "
+                        "The output ceiling covers reasoning as well, so a retry "
+                        "needs a larger budget or thinking switched off.",
+                        reason=truncated,
+                        partial=content,
+                    )
                 if truncated:
                     logger.warning(
                         f"LLM chat: output truncated ({truncated}) at "
@@ -308,6 +344,51 @@ class LLMService:
                     f"retry in {delay:.1f}s — {e}"
                 )
                 await asyncio.sleep(delay)
+
+
+async def chat_complete(
+    llm: Any,
+    messages: list[dict[str, str]],
+    *,
+    model: str = "",
+    temperature: float = 0.3,
+    max_tokens: int,
+    log_label: str,
+) -> str:
+    """A whole answer, or an exception — never one that was cut off.
+
+    For calls on the reader's model with thinking on, where nothing downstream
+    would notice a truncated answer: a report or translation is kept as it
+    came, and a cut-off JSON object is reported as a parse error. When the
+    ceiling is hit the call is repeated once with thinking off, which gives the
+    whole budget to the answer. A larger budget is not the retry: the answer
+    arrives in one piece, and the call that just ran out already took most of
+    its timeout. Where the gateway takes no thinking switch the second call
+    would be the first one again, so the failure is raised as it is.
+    """
+    try:
+        return await llm.chat(
+            messages=messages,
+            model=model,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            require_complete=True,
+        )
+    except (LLMEmptyResponseError, LLMTruncatedResponseError) as exc:
+        if not exc.reason or not get_registry().profile(model).sends_enable_thinking:
+            raise
+        logger.warning(
+            f"{log_label}: answer hit the output ceiling ({exc.reason}) at "
+            f"max_tokens={max_tokens} — retrying with thinking off"
+        )
+    return await llm.chat(
+        messages=messages,
+        model=model,
+        temperature=temperature,
+        max_tokens=max_tokens,
+        enable_thinking=False,
+        require_complete=True,
+    )
 
 
 def get_llm_service() -> LLMService:

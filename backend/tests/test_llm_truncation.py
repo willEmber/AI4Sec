@@ -6,7 +6,11 @@ from unittest.mock import patch
 
 import httpx
 
-from app.services.llm_service import LLMEmptyResponseError, LLMService
+from app.services.llm_service import (
+    LLMEmptyResponseError,
+    LLMService,
+    LLMTruncatedResponseError,
+)
 
 
 def _response(
@@ -157,6 +161,35 @@ class TestChatEmptyResponse(unittest.IsolatedAsyncioTestCase):
             )
         self.assertEqual(got, "partial answer")
 
+    async def test_require_complete_refuses_a_truncated_answer(self) -> None:
+        """A report writer keeps the text as a finished document, so it opts in."""
+        payload = _response(
+            output=[_message("partial answer")],
+            usage={"output_tokens": 4096},
+            status="incomplete",
+            incomplete_details={"reason": "max_output_tokens"},
+        )
+        service = LLMService(base_url="https://gw.test/v1", api_key="k")
+        with _patched_client(payload):
+            with self.assertRaises(LLMTruncatedResponseError) as ctx:
+                await service.chat(
+                    [{"role": "user", "content": "hi"}],
+                    model="m",
+                    max_tokens=4096,
+                    require_complete=True,
+                )
+        self.assertEqual(ctx.exception.reason, "max_output_tokens")
+        self.assertEqual(ctx.exception.partial, "partial answer")
+
+    async def test_require_complete_passes_a_whole_answer(self) -> None:
+        payload = _response(output=[_message("all good")], usage={"output_tokens": 12})
+        service = LLMService(base_url="https://gw.test/v1", api_key="k")
+        with _patched_client(payload):
+            got = await service.chat(
+                [{"role": "user", "content": "hi"}], model="m", require_complete=True
+            )
+        self.assertEqual(got, "all good")
+
     async def test_normal_answer_is_unaffected(self) -> None:
         payload = _response(output=[_message("all good")], usage={"output_tokens": 12})
         service = LLMService(base_url="https://gw.test/v1", api_key="k")
@@ -176,6 +209,11 @@ class TestReadTimeoutBudget(unittest.TestCase):
         small = LLMService._compute_read_timeout(25654, 4096, tools=False)
         large = LLMService._compute_read_timeout(25654, 16384, tools=False)
         self.assertGreater(large, small)
+
+    def test_the_largest_budget_can_finish_inside_its_timeout(self) -> None:
+        """The Lens report: 40960 tokens at the slowest measured rate (39.5 tok/s)."""
+        timeout = LLMService._compute_read_timeout(40022, 40960, tools=False)
+        self.assertGreater(timeout, 40960 / 39.5 * 1.25)
 
 
 if __name__ == "__main__":
