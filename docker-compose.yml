@@ -33,7 +33,9 @@ services:
     # (AUTH_MODE, OAUTH_*, ADMIN_USERNAME / ADMIN_PASSWORD).
     env_file: .env
     environment:
-      - CORS_ORIGINS=["http://localhost:3001","http://127.0.0.1:3001"]
+      # The event streams are the one request the browser sends to the backend
+      # directly, so the origin it sees (PUBLIC_BASE_URL) has to be allowed.
+      - CORS_ORIGINS=["${PUBLIC_BASE_URL:-http://localhost:3001}","http://localhost:3001","http://127.0.0.1:3001"]
       - DATABASE_URL=postgresql://${POSTGRES_USER:-scholar}:${POSTGRES_PASSWORD:-scholar}@postgres:5432/${POSTGRES_DB:-scholar}
     volumes:
       - ./docker-data:/scholar/backend/data
@@ -61,6 +63,9 @@ services:
       context: ./frontend
       args:
         NODE_IMAGE: ${NODE_IMAGE:-node:22-alpine}
+        # Where the browser opens event streams. Compiled into the bundle, so
+        # changing it needs a rebuild of this image.
+        NEXT_PUBLIC_BACKEND_URL: ${NEXT_PUBLIC_BACKEND_URL:-http://localhost:8001}
     container_name: scholar-frontend
     environment:
       - BACKEND_URL=http://backend:8000

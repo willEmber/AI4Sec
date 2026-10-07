@@ -16,6 +16,10 @@ COPY . .
 ENV NEXT_TELEMETRY_DISABLED=1
 ARG BACKEND_URL=http://backend:8000
 ENV BACKEND_URL=${BACKEND_URL}
+# Inlined into the client bundle at build time: the address the browser uses
+# for event streams, which do not go through the rewrite proxy.
+ARG NEXT_PUBLIC_BACKEND_URL=http://localhost:8001
+ENV NEXT_PUBLIC_BACKEND_URL=${NEXT_PUBLIC_BACKEND_URL}
 RUN npm run build
 
 # --- runner stage: minimal production image ---
