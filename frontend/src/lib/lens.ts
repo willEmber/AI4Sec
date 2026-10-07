@@ -128,6 +128,59 @@ const EMPTY_DIGEST: LensDigest = {
   open_questions: [], available: false,
 };
 
+/**
+ * Which view a report opens on. The Lens digest is an index of the prose, not a
+ * substitute for it — measured at under half the report's text — so a Lens run
+ * opens on the prose; the other modes' cards are the report itself.
+ */
+export function defaultLensView(lensData: LensData | null): "structured" | "markdown" {
+  return lensData ? "markdown" : "structured";
+}
+
+/** The report's prose, cut at its four top-level headings. */
+export interface LensProse {
+  overview: string;
+  method: string;
+  experiments: string;
+  assessment: string;
+}
+
+/**
+ * Split a Lens report into the four parts its prompt fixes, so the card view
+ * can carry each part's full text under the cards that index it.
+ *
+ * Returns null unless the report has exactly four `## ` headings: the parts are
+ * matched by position (the headings are translated, and the model rewords
+ * them), so any other count means the mapping would be a guess. The caller then
+ * shows the report whole.
+ */
+export function splitLensReport(markdown: string | undefined | null): LensProse | null {
+  if (!markdown) return null;
+  const preamble: string[] = [];
+  const parts: string[][] = [];
+  let fenced = false;
+  for (const line of markdown.split("\n")) {
+    if (/^\s*(```|~~~)/.test(line)) fenced = !fenced;
+    if (!fenced && /^##\s+\S/.test(line)) {
+      parts.push([]);
+      continue;
+    }
+    (parts.length ? parts[parts.length - 1] : preamble).push(line);
+  }
+  if (parts.length !== 4) return null;
+
+  // Text before the first heading is usually just the title; anything else is
+  // content and stays with the first part rather than being dropped.
+  const lead = preamble.filter((line) => !/^#\s/.test(line)).join("\n").trim();
+  const [overview, method, experiments, assessment] = parts.map((p) => p.join("\n").trim());
+  return {
+    overview: lead ? `${lead}\n\n${overview}` : overview,
+    method,
+    experiments,
+    assessment,
+  };
+}
+
 export function parseLensData(jsonData: string | undefined | null): LensData | null {
   if (!jsonData) return null;
   try {

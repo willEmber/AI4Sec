@@ -42,14 +42,14 @@ logger = logging.getLogger("scholar.lens")
 
 LENS_DIGEST_SYSTEM = """You convert a finished "Logic Lens" analysis of ONE paper into a structured digest that a UI renders as cards.
 
-The report you are given is the source of truth. Extract only what it states, reuse its wording, and copy its `[p.X]` page numbers. Add no analysis of your own, and do not restate the report in full — the digest is a navigable index of it, not a second copy.
+The report you are given is the source of truth. Extract only what it states, reuse its wording, and copy its `[p.X]` page numbers. Add no analysis of your own. The reader has the full report beside these cards, so a card earns its place by carrying something specific — a mechanism, a number, a condition — not by being present.
 
 Return ONLY a JSON object — no markdown fences, no commentary:
 
 {
   "core_idea": "2-3 sentences: the central insight and why it works.",
   "problem": "The concrete problem the paper attacks and why it matters.",
-  "gap": "The specific limitation in prior work this paper targets.",
+  "gap": "The specific limitation in prior work this paper targets — only what `problem` does not already say.",
   "contributions": [{"text": "what the paper contributes", "page": 3}],
   "pipeline": [
     {"name": "Encoder stack", "role": "what this stage is responsible for", "page": 4}
@@ -58,7 +58,7 @@ Return ONLY a JSON object — no markdown fences, no commentary:
     {"name": "Scaled dot-product attention",
      "latex": "\\\\mathrm{Attention}(Q,K,V)=\\\\mathrm{softmax}\\\\left(\\\\frac{QK^{\\\\top}}{\\\\sqrt{d_k}}\\\\right)V",
      "page": 4,
-     "role": "what it computes and why it is formulated this way",
+     "role": "what it computes, why it is formulated this way, and how it differs from prior methods — keep the constants the report gives (e.g. beta = 0.75)",
      "symbols": [{"symbol": "d_k", "meaning": "key dimension"}]}
   ],
   "algorithm": {"name": "Training procedure", "page": 5, "complexity": "O(n^2 d)",
@@ -68,7 +68,7 @@ Return ONLY a JSON object — no markdown fences, no commentary:
   "setup": [{"text": "Adam, 100k steps, 8x P100", "page": 7}],
   "findings": [{"metric": "BLEU", "dataset": "WMT14 EN-DE", "value": "28.4",
                 "baseline": "26.3", "delta": "+2.1", "page": 8, "note": "single run"}],
-  "takeaways": [{"text": "what the numbers demonstrate, not the numbers again", "page": 8}],
+  "takeaways": [{"text": "what a result demonstrates and under which condition, with the figures that support it", "page": 8}],
   "why_it_works": [{"text": "a likely source of the method's effectiveness", "page": 6}],
   "limitations": [{"text": "an assumption, confound or generalization risk", "page": 9}],
   "reproducibility": {"score": 2, "available": ["code released", "hyperparameters"],
@@ -82,9 +82,10 @@ Rules:
 3. `page` is the integer from the report's nearest `[p.X]`. Use 0 when the report gives none — never invent a page.
 4. Omit what the report does not support: an empty list, an empty string, or `"algorithm": null` is correct. Padding is not.
 5. `reproducibility.score`: 0 = nothing usable, 1 = partial, 2 = most of it, 3 = enough to reproduce the core result. Judge from what the report says, not from what a good paper would say.
-6. Keep every string terse — each one is a card in a UI, not a paragraph.
-7. Limits: 6 contributions, 10 pipeline stages, 6 formulas (8 symbols each), 12 algorithm steps, 8 datasets, 8 setup items, 10 findings, 6 takeaways, 5 why_it_works, 6 limitations, 5 open questions.
-8. Write every string in the SAME language the report is written in. JSON keys stay in English exactly as specified.
+6. Names, labels, `metrics`, `setup` and the reproducibility lists stay short. `role`, `measures`, `takeaways`, `why_it_works` and `limitations` may run to 2-3 sentences: keep the report's reasoning and every number, table and baseline it names — "robustness is limited" is useless where the report says "PSNR falls to 13.88 dB under Gaussian noise (Table 5)". Ablations and security or robustness analyses belong in `findings` / `takeaways` like any other result.
+7. Limits: 6 contributions, 10 pipeline stages, 10 formulas (8 symbols each), 12 algorithm steps, 8 datasets, 8 setup items, 12 findings, 8 takeaways, 5 why_it_works, 6 limitations, 5 open questions. Include every display formula the report explains, in its order, up to the limit.
+8. Say each thing once. `core_idea`, `problem` and `gap` must not repeat one another: leave `gap` empty when `problem` already names the limitation. `algorithm` is null unless the report walks through a procedure step by step (pseudo-code, a training or inference loop) — the data flow already told in `pipeline` is not an algorithm.
+9. Write every string in the SAME language the report is written in. JSON keys stay in English exactly as specified.
 """
 
 _REPAIR_DIRECTIVE = """
@@ -110,7 +111,7 @@ def system_prompt(*, repair: bool = False) -> str:
     """The digest prompt, optionally with the JSON-repair nudge.
 
     No language variant: the report is already written in the requested
-    language and rule 8 tells the model to follow it, so the digest inherits the
+    language and rule 9 tells the model to follow it, so the digest inherits the
     language instead of re-deciding it.
     """
     return LENS_DIGEST_SYSTEM + (_REPAIR_DIRECTIVE if repair else "")
@@ -301,12 +302,12 @@ def parse_lens_digest(raw: str) -> LensDigest:
         gap=_text(data.get("gap"), 1000),
         contributions=_claims(data.get("contributions"), 6),
         pipeline=_stages(data.get("pipeline"), 10),
-        formulas=_formulas(data.get("formulas"), 6),
+        formulas=_formulas(data.get("formulas"), 10),
         algorithm=_algorithm(data.get("algorithm")),
         datasets=_datasets(data.get("datasets"), 8),
         setup=_claims(data.get("setup"), 8),
-        findings=_findings(data.get("findings"), 10),
-        takeaways=_claims(data.get("takeaways"), 6),
+        findings=_findings(data.get("findings"), 12),
+        takeaways=_claims(data.get("takeaways"), 8),
         why_it_works=_claims(data.get("why_it_works"), 5),
         limitations=_claims(data.get("limitations"), 6),
         reproducibility=_reproducibility(data.get("reproducibility")),

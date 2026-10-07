@@ -5,7 +5,7 @@ import Link from "next/link";
 import type { SessionArtifact } from "@/lib/agent";
 import { getMarkdownExportUrl, getRunOutput, getZoteroBundleUrl } from "@/lib/api";
 import { useTranslation } from "@/lib/i18n";
-import { parseLensData } from "@/lib/lens";
+import { defaultLensView, parseLensData } from "@/lib/lens";
 import { parseSnapData } from "@/lib/snap";
 import { parseSphereData } from "@/lib/sphere";
 import MarkdownRenderer from "@/components/MarkdownRenderer";
@@ -45,7 +45,8 @@ export default function ArtifactCard({ artifact, onJumpToPage, defaultOpen }: Pr
   const [markdown, setMarkdown] = useState("");
   const [jsonData, setJsonData] = useState("");
   const [failed, setFailed] = useState(false);
-  const [view, setView] = useState<"structured" | "markdown">("structured");
+  // Null until the reader picks a view, so Lens can open on its prose.
+  const [viewChoice, setView] = useState<"structured" | "markdown" | null>(null);
 
   useEffect(() => {
     if (!open || markdown || failed) return;
@@ -68,6 +69,7 @@ export default function ArtifactCard({ artifact, onJumpToPage, defaultOpen }: Pr
   const snapData = useMemo(() => parseSnapData(jsonData), [jsonData]);
   const lensData = useMemo(() => parseLensData(jsonData), [jsonData]);
   const structured = sphereData ?? snapData ?? lensData;
+  const view = viewChoice ?? defaultLensView(lensData);
   const showStructured = structured !== null && view === "structured";
 
   const Icon = MODE_ICON[artifact.mode as keyof typeof MODE_ICON] ?? IconCards;
@@ -160,7 +162,7 @@ export default function ArtifactCard({ artifact, onJumpToPage, defaultOpen }: Pr
             <SnapReport data={snapData} onCitationClick={jump} />
           )}
           {showStructured && !sphereData && !snapData && lensData && (
-            <LensReport data={lensData} onCitationClick={jump} />
+            <LensReport data={lensData} markdown={markdown} onCitationClick={jump} />
           )}
           {!showStructured && markdown && (
             <MarkdownRenderer content={markdown} onCitationClick={jump} />

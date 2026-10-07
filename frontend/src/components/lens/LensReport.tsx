@@ -6,13 +6,18 @@
  * The Markdown report is the deep read; this is its index. Each card restates
  * one thing the report established — a pipeline stage, a formula and what it
  * computes, a measured result — and carries the page the report cited, so a
- * reader can scan the method, jump to the PDF, and only then decide to read the
- * prose. Anything the digest could not fill simply does not render: an empty
- * card would imply the paper lacks something the report may well have covered.
+ * reader can scan the method and jump to the PDF. Anything the digest could
+ * not fill simply does not render: an empty card would imply the paper lacks
+ * something the report may well have covered.
+ *
+ * An index drops what makes the mode worth running — the intuition, the
+ * derivations, the reading of the results — so each section also carries the
+ * report's own text for that part, folded under the cards.
  */
 
 import { useMemo } from "react";
 import { IconCheck } from "@/components/icons";
+import MarkdownRenderer from "@/components/MarkdownRenderer";
 import {
   BlockMath,
   ClaimList,
@@ -23,9 +28,9 @@ import {
   RichText,
   Section,
   SectionNav,
-  StatTiles,
 } from "@/components/report/primitives";
 import { useTranslation } from "@/lib/i18n";
+import { splitLensReport } from "@/lib/lens";
 import type {
   LensAlgorithm,
   LensData,
@@ -52,6 +57,28 @@ function LabeledBlock({ label, text }: { label: string; text: string }) {
         <RichText text={text} />
       </p>
     </div>
+  );
+}
+
+/** The report's own text for one part (or all of it), folded under the cards. */
+function FullProse({
+  label,
+  content,
+  onCite,
+}: {
+  label: string;
+  content: string;
+  onCite?: (page: number) => void;
+}) {
+  return (
+    <details className="mt-4 rounded-xl border border-border bg-card/60">
+      <summary className="cursor-pointer select-none px-4 py-2.5 text-[13px] font-medium text-foreground/80">
+        {label}
+      </summary>
+      <div className="border-t border-border/60 px-4 py-3">
+        <MarkdownRenderer content={content} onCitationClick={onCite} />
+      </div>
+    </details>
   );
 }
 
@@ -281,23 +308,38 @@ function ReproCard({ repro }: { repro: LensReproducibility }) {
 
 export default function LensReport({
   data,
+  markdown,
   onCitationClick,
 }: {
   data: LensData;
+  /** The report the digest was extracted from; each section carries its part. */
+  markdown?: string;
   onCitationClick?: (page: number) => void;
 }) {
   const { t } = useTranslation();
   const d = data.digest;
+  const prose = useMemo(() => splitLensReport(markdown), [markdown]);
 
-  const hasOverview = Boolean(d.problem || d.gap || d.contributions.length);
+  // A section renders when either side has something for it: the digest may
+  // have found no card where the report still has pages of text.
+  const hasOverview = Boolean(prose?.overview || d.problem || d.gap || d.contributions.length);
   const hasMethod = Boolean(
-    data.key_figures.length || d.pipeline.length || d.formulas.length || d.algorithm,
+    prose?.method ||
+      data.key_figures.length ||
+      d.pipeline.length ||
+      d.formulas.length ||
+      d.algorithm,
   );
   const hasExperiments = Boolean(
-    d.datasets.length || d.setup.length || d.findings.length || d.takeaways.length,
+    prose?.experiments ||
+      d.datasets.length ||
+      d.setup.length ||
+      d.findings.length ||
+      d.takeaways.length,
   );
   const hasAssessment = Boolean(
-    d.why_it_works.length ||
+    prose?.assessment ||
+      d.why_it_works.length ||
       d.limitations.length ||
       d.open_questions.length ||
       d.reproducibility.score > 0 ||
@@ -340,17 +382,6 @@ export default function LensReport({
         )}
       </div>
 
-      <div className="mt-3">
-        <StatTiles
-          stats={[
-            { label: t("lens.stat.formulas"), value: String(d.formulas.length) },
-            { label: t("lens.stat.stages"), value: String(d.pipeline.length) },
-            { label: t("lens.stat.datasets"), value: String(d.datasets.length) },
-            { label: t("lens.stat.findings"), value: String(d.findings.length) },
-          ]}
-        />
-      </div>
-
       {hasOverview && (
         <Section id="lens-sec-overview" title={t("lens.sec.overview")}>
           {(d.problem || d.gap) && (
@@ -364,6 +395,9 @@ export default function LensReport({
               <SubHead>{t("lens.contributions")}</SubHead>
               <ClaimList claims={d.contributions} onCite={onCitationClick} />
             </div>
+          )}
+          {prose?.overview && (
+            <FullProse label={t("lens.full_section")} content={prose.overview} onCite={onCitationClick} />
           )}
         </Section>
       )}
@@ -412,6 +446,9 @@ export default function LensReport({
               />
             </div>
           )}
+          {prose?.method && (
+            <FullProse label={t("lens.full_section")} content={prose.method} onCite={onCitationClick} />
+          )}
         </Section>
       )}
 
@@ -431,20 +468,27 @@ export default function LensReport({
             </div>
           )}
 
-          <div className="mb-4">
-            <SubHead>{t("lens.findings")}</SubHead>
-            <FindingsTable
-              findings={d.findings}
-              emptyText={t("lens.no_findings")}
-              onCite={onCitationClick}
-            />
-          </div>
+          {/* With the prose below, an empty table would only claim the report
+              has no numbers when it may simply not have tabulated them. */}
+          {(d.findings.length > 0 || !prose?.experiments) && (
+            <div className="mb-4">
+              <SubHead>{t("lens.findings")}</SubHead>
+              <FindingsTable
+                findings={d.findings}
+                emptyText={t("lens.no_findings")}
+                onCite={onCitationClick}
+              />
+            </div>
+          )}
 
           {d.takeaways.length > 0 && (
             <div>
               <SubHead>{t("lens.takeaways")}</SubHead>
               <ClaimList claims={d.takeaways} onCite={onCitationClick} />
             </div>
+          )}
+          {prose?.experiments && (
+            <FullProse label={t("lens.full_section")} content={prose.experiments} onCite={onCitationClick} />
           )}
         </Section>
       )}
@@ -480,7 +524,16 @@ export default function LensReport({
               <ClaimList claims={d.open_questions} onCite={onCitationClick} />
             </div>
           )}
+          {prose?.assessment && (
+            <FullProse label={t("lens.full_section")} content={prose.assessment} onCite={onCitationClick} />
+          )}
         </Section>
+      )}
+
+      {/* The report did not split into the four parts: show it whole rather
+          than guess which text belongs under which cards. */}
+      {!prose && markdown && (
+        <FullProse label={t("lens.full_report")} content={markdown} onCite={onCitationClick} />
       )}
     </div>
   );

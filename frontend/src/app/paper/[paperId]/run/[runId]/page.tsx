@@ -16,7 +16,7 @@ import LensReport from "@/components/lens/LensReport";
 import { IconCards, IconCheck, IconDocument, IconDownload, IconSparkles } from "@/components/icons";
 import { parseSphereData } from "@/lib/sphere";
 import { parseSnapData } from "@/lib/snap";
-import { parseLensData } from "@/lib/lens";
+import { defaultLensView, parseLensData } from "@/lib/lens";
 import type { RunResponse, PaperResponse, SSEEvent, ProgressEntry } from "@/lib/types";
 
 export default function RunPage() {
@@ -30,8 +30,9 @@ export default function RunPage() {
   const [markdown, setMarkdown] = useState<string>("");
   const [jsonData, setJsonData] = useState<string>("");
   // Shared by all three structured modes (Sphere, Snap, Lens) — the toggle
-  // looks and behaves the same, only one of them is mounted per run.
-  const [structuredView, setStructuredView] = useState<"structured" | "markdown">("structured");
+  // looks and behaves the same, only one of them is mounted per run. Null until
+  // the reader picks one, so each mode can open on its own default.
+  const [viewChoice, setStructuredView] = useState<"structured" | "markdown" | null>(null);
   const [targetPage, setTargetPage] = useState<number | undefined>(undefined);
   const [pdfCollapsed, setPdfCollapsed] = useState(false);
   const [pageLoadTime] = useState(() => performance.now());
@@ -182,6 +183,9 @@ export default function RunPage() {
   const snapData = useMemo(() => parseSnapData(jsonData), [jsonData]);
   const lensData = useMemo(() => parseLensData(jsonData), [jsonData]);
   const structuredData = sphereData ?? snapData ?? lensData;
+  // Snap and Sphere cards *are* the report. Lens cards index a prose report
+  // about twice their size, so Lens opens on the prose.
+  const structuredView = viewChoice ?? defaultLensView(lensData);
   const showStructured = structuredData !== null && structuredView === "structured";
 
   const isComplete = run?.status === "done" || (isDone && markdown);
@@ -321,7 +325,7 @@ export default function RunPage() {
             ) : showStructured && lensData ? (
               <div className="px-6 pb-8 pt-2 sm:px-8">
                 <div className="mx-auto max-w-3xl">
-                  <LensReport data={lensData} onCitationClick={handleCitationClick} />
+                  <LensReport data={lensData} markdown={markdown} onCitationClick={handleCitationClick} />
                 </div>
               </div>
             ) : markdown ? (
