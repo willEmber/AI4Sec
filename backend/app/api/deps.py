@@ -150,3 +150,22 @@ async def caller_or_new(request: Request, response: Response) -> Caller:
 
 async def principal_or_new(request: Request, response: Response) -> str:
     return (await caller_or_new(request, response)).principal_id
+
+
+def quota_exceeded(caller: Caller, usage: accounts.QuotaUsage) -> HTTPException:
+    return HTTPException(
+        status_code=429,
+        detail={
+            "code": "quota_exceeded",
+            "message": "Daily usage limit reached. It resets at 00:00 UTC.",
+            "kind": caller.kind,
+            "usage": usage.as_dict(),
+        },
+    )
+
+
+async def require_quota(caller: Caller) -> None:
+    """429 once today's runs or tokens are used up."""
+    usage = await accounts.daily_usage(caller)
+    if usage.exceeded:
+        raise quota_exceeded(caller, usage)

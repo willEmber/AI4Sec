@@ -20,7 +20,13 @@ from typing import Any
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 
-from app.api.deps import principal_or_new, require_caller, require_principal, resolve_caller
+from app.api.deps import (
+    principal_or_new,
+    quota_exceeded,
+    require_caller,
+    require_principal,
+    resolve_caller,
+)
 from app.db import agent_repository as repo
 from app.db import database as db
 from app.models.agent_models import (
@@ -153,15 +159,7 @@ async def _check_quota(caller: Caller, session_id: str, client_request_id: str) 
         (session_id, client_request_id),
     ):
         return
-    raise HTTPException(
-        status_code=429,
-        detail={
-            "code": "quota_exceeded",
-            "message": "Daily usage limit reached. It resets at 00:00 UTC.",
-            "kind": caller.kind,
-            "usage": usage.as_dict(),
-        },
-    )
+    raise quota_exceeded(caller, usage)
 
 
 def _allowed_model(requested: str) -> str:

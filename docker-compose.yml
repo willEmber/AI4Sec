@@ -36,6 +36,11 @@ services:
       # The event streams are the one request the browser sends to the backend
       # directly, so the origin it sees (PUBLIC_BASE_URL) has to be allowed.
       - CORS_ORIGINS=["${PUBLIC_BASE_URL:-http://localhost:3001}","http://localhost:3001","http://127.0.0.1:3001"]
+      # Whose X-Forwarded-For the rate limiter believes. Requests arrive from
+      # the frontend container or a reverse proxy on the host, both on private
+      # addresses; without this every visitor shares one bucket. Next.js adds
+      # no client address of its own, so the reverse proxy in front must.
+      - FORWARDED_ALLOW_IPS=${FORWARDED_ALLOW_IPS:-127.0.0.1,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16}
       - DATABASE_URL=postgresql://${POSTGRES_USER:-scholar}:${POSTGRES_PASSWORD:-scholar}@postgres:5432/${POSTGRES_DB:-scholar}
     volumes:
       - ./docker-data:/scholar/backend/data

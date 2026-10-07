@@ -7,6 +7,7 @@ import {
   searchLibrary,
   askLibrary,
 } from "@/lib/api";
+import { describeApiError } from "@/lib/agent";
 import { useTranslation } from "@/lib/i18n";
 import MarkdownRenderer from "@/components/MarkdownRenderer";
 import SplitPane from "@/components/SplitPane";
@@ -21,10 +22,6 @@ const METHODS: SearchMethod[] = ["full_text_search", "semantic_search", "hybrid_
 
 function fmtScore(score: number | null | undefined): string | null {
   return typeof score === "number" && score > 0 ? score.toFixed(3) : null;
-}
-
-function errMessage(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
 }
 
 export default function LibraryPage() {
@@ -66,7 +63,7 @@ export default function LibraryPage() {
         setDocsPage(page);
         setError("");
       } catch (err) {
-        setError(errMessage(err));
+        setError(describeApiError(err, t));
       } finally {
         setDocsLoading(false);
       }
@@ -89,7 +86,7 @@ export default function LibraryPage() {
       setError("");
     } catch (err) {
       setDocContent("");
-      setError(errMessage(err));
+      setError(describeApiError(err, t));
     } finally {
       setDocLoading(false);
     }
@@ -116,7 +113,7 @@ export default function LibraryPage() {
       setResults(res.records || []);
       setSearched(true);
     } catch (err) {
-      setError(errMessage(err));
+      setError(describeApiError(err, t));
     } finally {
       setSearching(false);
     }
@@ -139,7 +136,7 @@ export default function LibraryPage() {
       });
       setAnswer(res);
     } catch (err) {
-      setError(errMessage(err));
+      setError(describeApiError(err, t));
     } finally {
       setAsking(false);
     }

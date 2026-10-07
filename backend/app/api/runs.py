@@ -11,7 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import Response, StreamingResponse
 from langgraph.graph.state import CompiledStateGraph
 
-from app.api.deps import optional_caller, principal_or_new
+from app.api.deps import caller_or_new, optional_caller, require_quota
 from app.config import get_settings
 from app.services.llm_gateway import get_registry
 from app.db import database as db
@@ -76,7 +76,7 @@ async def _reconcile_stale_runs() -> None:
 @router.post("/runs", response_model=RunResponse)
 @limiter.limit("3/minute")
 async def create_run(
-    request: Request, req: RunCreate, principal_id: str = Depends(principal_or_new)
+    request: Request, req: RunCreate, caller: Caller = Depends(caller_or_new)
 ):
     # Verify paper exists
     paper = await db.fetch_one("SELECT paper_id FROM papers WHERE paper_id = ?", (req.paper_id,))
@@ -102,11 +102,14 @@ async def create_run(
     if mode == "auto" and not question:
         raise HTTPException(status_code=400, detail="Smart Q&A mode requires a non-empty question")
 
+    # A mode run spends as much as an agent turn, so it counts as one.
+    await require_quota(caller)
+
     run_id = uuid.uuid4().hex[:16]
     await db.execute(
         "INSERT INTO runs (run_id, paper_id, mode, llm_model, language, status, user_question, "
         "owner_token, owner_id) VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?)",
-        (run_id, req.paper_id, mode, llm_model, language, question, owner_token, principal_id),
+        (run_id, req.paper_id, mode, llm_model, language, question, owner_token, caller.principal_id),
     )
 
     # Create queue for SSE

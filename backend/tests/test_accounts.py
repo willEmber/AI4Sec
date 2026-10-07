@@ -446,6 +446,12 @@ class AdminLoginOffTests(_AppTestCase):
         response = self.client.post("/api/auth/admin/login", json={"username": "", "password": ""})
         self.assertEqual(response.status_code, 404)
 
+    def test_admin_routes_are_closed_without_a_token_or_an_admin(self) -> None:
+        self.assertEqual(self.client.get("/api/admin/rank-cache/stats").status_code, 401)
+        self.client.post("/api/agent/sessions", json={})   # an anonymous principal
+        self.assertEqual(self.client.get("/api/admin/rank-cache/stats").status_code, 401)
+        self.assertEqual(self.client.delete("/api/admin/rank-cache").status_code, 401)
+
 
 class QuotaTests(_AppTestCase):
     env = {"QUOTA_ANON_DAILY_RUNS": "1"}
@@ -475,6 +481,55 @@ class QuotaTests(_AppTestCase):
         self.assertEqual(retry.status_code, 200)
         self.assertTrue(retry.json()["deduplicated"])
 
+    def test_a_mode_run_from_the_upload_page_counts_as_a_run(self) -> None:
+        from app.db import database as db
+
+        db.execute_sync("INSERT INTO papers (paper_id, file_path) VALUES ('p1', 'papers/p1/original.pdf')")
+        with mock.patch("app.api.runs._execute_run", new=mock.AsyncMock()):
+            first = self.client.post("/api/runs", json={"paper_id": "p1", "mode": "snap"})
+            self.assertEqual(first.status_code, 200, first.text)
+            second = self.client.post("/api/runs", json={"paper_id": "p1", "mode": "snap"})
+        self.assertEqual(second.status_code, 429)
+        self.assertEqual(second.json()["detail"]["code"], "quota_exceeded")
+        self.assertEqual(self.client.get("/api/auth/me").json()["quota"]["runs"], 1)
+        # The same day's agent turn is refused too: one allowance, not one per door.
+        session_id = self.client.post("/api/agent/sessions", json={}).json()["session_id"]
+        turn = self.client.post(f"/api/agent/sessions/{session_id}/messages", json={"content": "one"})
+        self.assertEqual(turn.status_code, 429)
+
+    def test_a_mode_run_made_inside_a_turn_is_not_counted_twice(self) -> None:
+        from app.db import database as db
+
+        session_id = self.client.post("/api/agent/sessions", json={}).json()["session_id"]
+        self.client.post(f"/api/agent/sessions/{session_id}/messages", json={"content": "one"})
+        owner = self.client.portal.call(db.fetch_one, "SELECT owner_id, run_id FROM agent_runs")
+        db.execute_sync("INSERT INTO papers (paper_id, file_path) VALUES ('p1', 'papers/p1/original.pdf')")
+        db.execute_sync(
+            "INSERT INTO runs (run_id, paper_id, owner_id, agent_run_id) VALUES ('r1', 'p1', ?, ?)",
+            (owner["owner_id"], owner["run_id"]),
+        )
+        self.assertEqual(self.client.get("/api/auth/me").json()["quota"]["runs"], 1)
+
+
+class LibraryQuotaTests(_AppTestCase):
+    env = {"QUOTA_ANON_DAILY_RUNS": "1", "DIFY_API_BASE": "http://dify.invalid"}
+
+    def test_a_library_question_counts_once_answered(self) -> None:
+        from app.services.dify_client import DifyError
+
+        ask = {"question": "what is attention?"}
+        down = mock.AsyncMock(side_effect=DifyError("down", upstream_status=503))
+        with mock.patch("app.services.corpus_qa.answer_corpus_question", new=down):
+            self.assertEqual(self.client.post("/api/library/ask", json=ask).status_code, 502)
+        answered = mock.AsyncMock(return_value={"answer": "a"})
+        with mock.patch("app.services.corpus_qa.answer_corpus_question", new=answered):
+            first = self.client.post("/api/library/ask", json=ask)
+            self.assertEqual(first.status_code, 200, first.text)
+            second = self.client.post("/api/library/ask", json=ask)
+        self.assertEqual(second.status_code, 429)
+        self.assertEqual(second.json()["detail"]["code"], "quota_exceeded")
+        self.assertEqual(answered.await_count, 1)
+
 
 class NoAnonymousTests(_AppTestCase):
     env = {"AUTH_ALLOW_ANONYMOUS": "false"}
@@ -500,6 +555,8 @@ class SingleUserTests(_AppTestCase):
         me = self.client.get("/api/auth/me").json()
         self.assertEqual((me["mode"], me["principal_id"]), ("single_user", LOCAL_PRINCIPAL_ID))
         self.assertEqual(me["quota"]["runs_limit"], 0)   # never limited
+        # A private instance's only visitor is its owner.
+        self.assertEqual(self.client.get("/api/admin/rank-cache/stats").status_code, 200)
 
         # Data an anonymous browser made before the switch.
         from app.db import agent_repository as repo

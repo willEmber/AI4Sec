@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { describeApiError } from "@/lib/agent";
 import { uploadPaper, createRun, listModels } from "@/lib/api";
 import { useTranslation } from "@/lib/i18n";
 import type { ReadingMode } from "@/lib/types";
@@ -105,7 +106,7 @@ export default function UploadPage() {
       });
       router.push(`/paper/${uploadRes.paper_id}/run/${runRes.run_id}`);
     } catch (e) {
-      setError(e instanceof Error ? e.message : t("upload.fail"));
+      setError(e instanceof Error ? describeApiError(e, t) : t("upload.fail"));
       setUploading(false);
     }
   }, [file, mode, question, llmModel, outputLanguage, router, t]);

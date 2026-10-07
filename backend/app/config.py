@@ -272,11 +272,12 @@ class AppSettings(BaseSettings):
     # changing either value logs out every session it has.
     admin_username: str = Field(default="", alias="ADMIN_USERNAME")
     admin_password: str = Field(default="", alias="ADMIN_PASSWORD")
-    # Per-principal daily agent quotas (UTC day), counted from agent_runs.
-    # 0 means unlimited; single_user mode is never limited.
-    quota_anon_daily_runs: int = Field(default=20, alias="QUOTA_ANON_DAILY_RUNS")
+    # Per-principal daily quotas (UTC day). A run is an agent turn, a mode run
+    # from the upload page or a library question; tokens are the agent turns'.
+    # 0 means unlimited; single_user mode and the admin are never limited.
+    quota_anon_daily_runs: int = Field(default=10, alias="QUOTA_ANON_DAILY_RUNS")
     quota_anon_daily_tokens: int = Field(default=1_000_000, alias="QUOTA_ANON_DAILY_TOKENS")
-    quota_user_daily_runs: int = Field(default=200, alias="QUOTA_USER_DAILY_RUNS")
+    quota_user_daily_runs: int = Field(default=10, alias="QUOTA_USER_DAILY_RUNS")
     quota_user_daily_tokens: int = Field(default=10_000_000, alias="QUOTA_USER_DAILY_TOKENS")
 
     # --- server ---
@@ -285,9 +286,9 @@ class AppSettings(BaseSettings):
     cors_origins: list[str] = ["http://localhost:3000"]
 
     # --- security / ops ---
-    # When set, /api/admin/* requires a matching `X-Admin-Token` header.
-    # Empty (default) keeps admin routes open for backward compatibility on
-    # trusted/local deployments — set it before exposing the API publicly.
+    # /api/admin/* takes a matching `X-Admin-Token` header or an admin login.
+    # Empty (default) leaves the admin login as the only way in; `single_user`
+    # mode, where every visitor is the owner, is open until a token is set.
     admin_api_token: str = Field(default="", alias="ADMIN_API_TOKEN")
     # Swagger UI / ReDoc / openapi.json. Safe to leave on for local dev; set
     # ENABLE_DOCS=false to stop leaking the full API surface in production.

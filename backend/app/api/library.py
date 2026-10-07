@@ -10,13 +10,16 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
+
+from app.api.deps import caller_or_new, require_quota
 
 from app.config import get_settings
 from app.services.llm_gateway import get_registry
 from app.models.schemas import LibraryAskRequest, LibrarySearchRequest
 from app.rate_limit import limiter
-from app.services import corpus_qa, dify_client
+from app.services import accounts, corpus_qa, dify_client
+from app.services.accounts import Caller
 from app.services.dify_client import DifyError
 
 logger = logging.getLogger("scholar.library")
@@ -112,8 +115,14 @@ async def library_search(request: Request, req: LibrarySearchRequest):
 
 @router.post("/library/ask")
 @limiter.limit("10/minute")
-async def library_ask(request: Request, req: LibraryAskRequest):
-    """Corpus-wide RAG: retrieve passages, then LLM answers with `[L#]` citations."""
+async def library_ask(
+    request: Request, req: LibraryAskRequest, caller: Caller = Depends(caller_or_new)
+):
+    """Corpus-wide RAG: retrieve passages, then LLM answers with `[L#]` citations.
+
+    The one library route that spends model tokens, so the one that needs a
+    caller and counts against the daily quota.
+    """
     _ensure_enabled()
     question = (req.question or "").strip()[:_MAX_QUESTION_LEN]
     if not question:
@@ -129,8 +138,9 @@ async def library_ask(request: Request, req: LibraryAskRequest):
         logger.warning("library_ask: rejected unknown llm_model=%r; using default", llm_model)
         llm_model = ""
 
+    await require_quota(caller)
     try:
-        return await corpus_qa.answer_corpus_question(
+        answer = await corpus_qa.answer_corpus_question(
             question,
             top_k=req.top_k,
             search_method=req.search_method,
@@ -147,3 +157,6 @@ async def library_ask(request: Request, req: LibraryAskRequest):
                 "upstream_detail": exc.detail,
             },
         )
+    # Counted once it is answered: a knowledge base that was down cost nothing.
+    await accounts.record_charge(caller, "library_ask")
+    return answer

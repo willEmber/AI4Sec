@@ -12,9 +12,9 @@ import {
 import Link from "next/link";
 import { useParams, useSearchParams } from "next/navigation";
 import {
-  AgentApiError,
   attachPapers,
   cancelRun,
+  describeApiError,
   getSession,
   listProjects,
   listSessions,
@@ -58,17 +58,6 @@ import {
 
 const ACTIVE_STATUSES = new Set(["pending", "running"]);
 
-/** A send failure in words the reader can act on: quota and login get their own. */
-function describeSendError(err: unknown, t: (key: string) => string): string {
-  if (err instanceof AgentApiError) {
-    if (err.code === "quota_exceeded") {
-      return t(err.detail.kind === "anonymous" ? "auth.quotaExceededAnon" : "auth.quotaExceeded");
-    }
-    if (err.code === "login_required") return t("auth.loginRequired");
-    return err.message;
-  }
-  return String(err);
-}
 const MODES: AgentMode[] = ["auto", "snap", "lens", "sphere"];
 
 export default function ChatPage() {
@@ -283,7 +272,7 @@ function ChatSession() {
       setActiveRunId(res.run_id);
       startStream(res.run_id);
     } catch (err) {
-      setLoadError(describeSendError(err, t));
+      setLoadError(describeApiError(err, t));
       setDraft(content);
       setMode(chosenMode);
       await reload().catch(() => {});

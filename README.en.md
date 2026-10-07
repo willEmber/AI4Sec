@@ -106,7 +106,7 @@ cp .env.example .env
 | `R2_ACCOUNT_ID` / `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` / `R2_BUCKET` / `R2_ENDPOINT` / `R2_PUBLIC_BASE_URL` | Host report figures on object storage (R2 / S3-compatible) and rewrite them to public URLs on export (see [Export](#export)); all must be set, and `R2_BUCKET` must be the bucket bound to `R2_PUBLIC_BASE_URL`'s domain |
 | `UNPAYWALL_EMAIL` / `CORE_API_KEY` / `ELSEVIER_API_KEY` / `ELSEVIER_INSTTOKEN` / `WILEY_TDM_TOKEN` | Fetching reference full text in Research Sphere |
 | `ADMIN_USERNAME` / `ADMIN_PASSWORD` | A username/password administrator account (`multi_user` mode) that logs in without any OAuth app — for local testing and personal deployments; exempt from daily quotas and allowed into `/api/admin/*` |
-| `ADMIN_API_TOKEN` | Require an `X-Admin-Token` header on `/api/admin/*` |
+| `ADMIN_API_TOKEN` | The `X-Admin-Token` for `/api/admin/*`; unset, only the admin login gets in (except in `single_user` mode) |
 | `ENABLE_DOCS` | Set `false` in production to disable Swagger / OpenAPI |
 
 > See [`.env.example`](./.env.example) for the full list and defaults.

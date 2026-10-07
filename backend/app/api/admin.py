@@ -1,11 +1,10 @@
 """Administrative endpoints (rank cache cleanup, etc.).
 
-These routes perform destructive cache operations. They are gated behind an
-optional ``ADMIN_API_TOKEN``: when that env var is set, every request must carry
-a matching ``X-Admin-Token`` header or come from a logged-in admin account
-(``ADMIN_USERNAME`` / ``ADMIN_PASSWORD``). When it is unset (the default) the routes
-stay open so existing trusted/local deployments keep working — set the token
-before exposing the API to the public internet.
+These routes perform destructive cache operations, so a request must carry a
+matching ``X-Admin-Token`` header (``ADMIN_API_TOKEN``) or come from a logged-in
+admin account (``ADMIN_USERNAME`` / ``ADMIN_PASSWORD``). With neither configured
+nobody gets in. The exception is ``single_user`` mode without a token: every
+visitor of a private instance is its owner, so the routes stay open there.
 """
 from __future__ import annotations
 
@@ -27,19 +26,19 @@ logger = logging.getLogger("scholar.admin")
 async def require_admin_token(
     request: Request, x_admin_token: str | None = Header(default=None)
 ) -> None:
-    """Require a matching ``X-Admin-Token`` header or an admin login when
-    ADMIN_API_TOKEN is set."""
-    expected = get_settings().admin_api_token
-    if not expected:
+    """Require a matching ``X-Admin-Token`` header or an admin login."""
+    settings = get_settings()
+    expected = settings.admin_api_token
+    if expected and x_admin_token and hmac.compare_digest(x_admin_token.encode(), expected.encode()):
         return
-    if x_admin_token and hmac.compare_digest(x_admin_token.encode(), expected.encode()):
+    if not expected and settings.auth_mode == "single_user":
         return
     caller = await resolve_caller(request)
     # In single_user mode every visitor is the local admin, so that alone must
     # not open what the token is there to close.
     if caller is not None and caller.via != "single_user" and await accounts.is_admin(caller):
         return
-    raise HTTPException(status_code=401, detail="Admin token required")
+    raise HTTPException(status_code=401, detail="Admin access required")
 
 
 router = APIRouter(

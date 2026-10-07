@@ -42,7 +42,14 @@ _RENEW_AFTER_SECONDS = 3600
 
 # Tables whose `owner_id` moves with a merge. `runs` (classic mode reports) is
 # handled beside them because its column is nullable.
-_OWNED_TABLES = ("agent_sessions", "agent_runs", "agent_memories", "evidence", "agent_projects")
+_OWNED_TABLES = (
+    "agent_sessions",
+    "agent_runs",
+    "agent_memories",
+    "evidence",
+    "agent_projects",
+    "quota_charges",
+)
 
 # The configured administrator is one `user_identities` row. Its subject is
 # fixed rather than the username, so renaming the admin keeps its data.
@@ -377,6 +384,13 @@ async def merge_anonymous(anonymous_id: str, account_id: str) -> bool:
 # ── quotas ──────────────────────────────────────────────────────────────────
 
 
+async def record_charge(caller: Caller, kind: str) -> None:
+    """Count one costly action that has no row of its own against today."""
+    await db.execute(
+        "INSERT INTO quota_charges (owner_id, kind) VALUES (?, ?)", (caller.principal_id, kind)
+    )
+
+
 @dataclass(frozen=True)
 class QuotaUsage:
     runs: int
@@ -408,11 +422,14 @@ async def is_admin(caller: Caller) -> bool:
 
 
 async def daily_usage(caller: Caller) -> QuotaUsage:
-    """Agent turns and tokens since UTC midnight, against the caller's limits.
+    """Runs and tokens since UTC midnight, against the caller's limits.
 
-    Counted from `agent_runs` rather than a counter table, so it cannot drift
-    from what actually ran. The tokens of a turn still in flight are not in yet;
-    the run count is what stops a burst.
+    A run is an agent turn, a mode run started from the upload page, or a
+    library question. Turns and mode runs are counted from their own rows
+    rather than a counter table, so the count cannot drift from what actually
+    ran; a mode run made inside a turn carries `agent_run_id` and is that
+    turn, not a second run. The tokens of a turn still in flight are not in
+    yet; the run count is what stops a burst.
     """
     settings = get_settings()
     if settings.auth_mode == "single_user" or await is_admin(caller):
@@ -430,8 +447,16 @@ async def daily_usage(caller: Caller) -> QuotaUsage:
             WHERE owner_id = ? AND started_at >= date_trunc('day', now())""",
         (caller.principal_id,),
     )
+    other = await db.fetch_one(
+        """SELECT (SELECT COUNT(*) FROM runs
+                    WHERE owner_id = ? AND COALESCE(agent_run_id, '') = ''
+                      AND started_at >= date_trunc('day', now()))
+                + (SELECT COUNT(*) FROM quota_charges
+                    WHERE owner_id = ? AND created_at >= date_trunc('day', now())) AS runs""",
+        (caller.principal_id, caller.principal_id),
+    )
     return QuotaUsage(
-        runs=int(row["runs"] or 0),
+        runs=int(row["runs"] or 0) + int(other["runs"] or 0),
         tokens=int(row["tokens"] or 0),
         runs_limit=max(0, runs_limit),
         tokens_limit=max(0, tokens_limit),
