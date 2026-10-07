@@ -1,6 +1,7 @@
 # === Secrets & env ===
 .env
 .env.local
+.env.cloud
 
 # === Python ===
 __pycache__/
