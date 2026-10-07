@@ -31,6 +31,8 @@ interface Props {
   currentSessionId: string;
   activePaperId: string;
   onSelectPaper: (paperId: string) => void;
+  /** Delete one of the listed conversations (after the reader confirmed). */
+  onDeleteSession?: (sessionId: string) => void;
   /** Upload a PDF into this session. Resolves once it is attached. */
   onUpload?: (file: File) => Promise<void>;
   /** Bumped when the agent saved a memory mid-turn. */
@@ -62,6 +64,7 @@ export default function PaperSidebar({
   currentSessionId,
   activePaperId,
   onSelectPaper,
+  onDeleteSession,
   onUpload,
   memoriesToken = 0,
   project = null,
@@ -313,17 +316,31 @@ export default function PaperSidebar({
           </p>
         )}
         {sessions.map((session) => (
-          <Link
+          <div
             key={session.session_id}
-            href={`/chat/${session.session_id}`}
-            className={`mb-0.5 block truncate rounded-lg px-3 py-2 text-xs transition-colors ${
+            className={`group mb-0.5 flex items-center rounded-lg text-xs transition-colors ${
               session.session_id === currentSessionId
                 ? "bg-card font-medium text-foreground soft-shadow"
                 : "text-muted-foreground hover:bg-card/70 hover:text-foreground"
             }`}
           >
-            {session.title || t("chat.sessions.untitled")}
-          </Link>
+            <Link href={`/chat/${session.session_id}`} className="min-w-0 flex-1 truncate px-3 py-2">
+              {session.title || t("chat.sessions.untitled")}
+            </Link>
+            {onDeleteSession && (
+              <button
+                type="button"
+                onClick={() => {
+                  if (window.confirm(t("chat.sessions.delete_confirm"))) onDeleteSession(session.session_id);
+                }}
+                title={t("chat.sessions.delete")}
+                aria-label={t("chat.sessions.delete")}
+                className="mr-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-muted-foreground opacity-0 transition-opacity hover:bg-destructive/15 hover:text-destructive focus:opacity-100 group-hover:opacity-100"
+              >
+                ✕
+              </button>
+            )}
+          </div>
         ))}
       </div>
 

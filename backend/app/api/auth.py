@@ -29,12 +29,13 @@ from app.api.deps import (
     adopt_header_credential,
     clear_auth_cookie,
     optional_caller,
+    require_caller,
     resolve_caller,
     set_auth_cookie,
 )
 from app.config import get_settings
 from app.rate_limit import limiter
-from app.services import accounts, identity, oauth_providers
+from app.services import accounts, data_lifecycle, identity, oauth_providers
 from app.services.accounts import Caller
 
 logger = logging.getLogger("scholar.api.auth")
@@ -256,6 +257,30 @@ async def admin_login(
     set_auth_cookie(response, session_token, max_age=get_settings().auth_session_days * 86400)
     logger.info("Admin login as %s", principal_id)
     return {"ok": True}
+
+
+@router.get("/me/data")
+async def my_data(caller: Caller = Depends(require_caller)) -> dict[str, int]:
+    """How much deleting the caller's data would remove."""
+    return await data_lifecycle.owned_counts(caller.principal_id)
+
+
+@router.delete("/me")
+async def delete_me(response: Response, caller: Caller = Depends(require_caller)) -> dict[str, Any]:
+    """Delete the caller's conversations, reports, projects, memories and account.
+
+    Not offered where the principal is not the visitor's own: `single_user`
+    mode has one shared local principal, and the configured administrator is
+    recreated from the environment on the next start.
+    """
+    if caller.via == "single_user" or await accounts.is_admin(caller):
+        raise HTTPException(
+            status_code=400,
+            detail={"code": "not_deletable", "message": "This account cannot be deleted."},
+        )
+    removed = await data_lifecycle.delete_principal(caller.principal_id)
+    clear_auth_cookie(response)
+    return {"deleted": True, **removed}
 
 
 @router.post("/logout")

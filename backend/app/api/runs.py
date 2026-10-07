@@ -3,13 +3,11 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import time
 import uuid
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import Response, StreamingResponse
-from langgraph.graph.state import CompiledStateGraph
 
 from app.api.deps import caller_or_new, optional_caller, require_quota
 from app.config import get_settings
@@ -17,60 +15,20 @@ from app.services.llm_gateway import get_registry
 from app.db import database as db
 from app.rate_limit import limiter
 from app.models.schemas import RecentRunResponse, RunCreate, RunOutputResponse, RunResponse
-from app.services import report_images, zotero_export
+from app.services import mode_runs, report_images, zotero_export
 from app.services.accounts import Caller
-from app.workflows.main_graph import build_main_graph
-from app.workflows.progress import emit_progress
-from app.workflows.state import MainGraphState
 
 logger = logging.getLogger("scholar.runs")
 
 router = APIRouter(tags=["runs"])
 
-# In-memory queues for SSE progress per run
-_run_queues: dict[str, asyncio.Queue] = {}
-
-# Compiled graph (lazy init)
-_compiled_graph: CompiledStateGraph | None = None
-
-# Limit concurrent background run executions
-_run_semaphore = asyncio.Semaphore(5)
-
-
-def _get_graph() -> CompiledStateGraph:
-    global _compiled_graph
-    if _compiled_graph is None:
-        graph = build_main_graph()
-        _compiled_graph = graph.compile()
-    return _compiled_graph
-
-
 _VALID_INPUT_MODES = {"snap", "lens", "sphere", "auto"}
 _MAX_QUESTION_LEN = 2000
 _MAX_OWNER_TOKEN_LEN = 100
 
-# A run still pending/running past this many seconds has lost its owning
-# background task (the process restarted, or it hung well past the 30-min SSE
-# window), so it can never finish on its own. It is reconciled to 'failed' on
-# read so the recent-runs banner stops showing zombies. Comfortably beyond any
-# legitimate run, which the SSE stream caps at 1800s.
-_STALE_RUN_SECONDS = 3600
-
 # Never surface runs older than this in the recent list — older history is not
 # useful for recovery and only clutters the UI.
 _RECENT_RUN_DAYS = 7
-
-
-async def _reconcile_stale_runs() -> None:
-    """Mark abandoned pending/running runs as failed (self-healing on read)."""
-    await db.execute(
-        "UPDATE runs SET status = 'failed', "
-        "error_msg = 'Interrupted (task no longer running)', "
-        "finished_at = now() "
-        "WHERE status IN ('pending', 'running') "
-        "AND started_at < now() - make_interval(secs => ?)",
-        (_STALE_RUN_SECONDS,),
-    )
 
 
 @router.post("/runs", response_model=RunResponse)
@@ -112,113 +70,14 @@ async def create_run(
         (run_id, req.paper_id, mode, llm_model, language, question, owner_token, caller.principal_id),
     )
 
-    # Create queue for SSE
-    _run_queues[run_id] = asyncio.Queue()
-
     logger.info(
         f"[run:{run_id}] Created run paper={req.paper_id} mode={mode} model={llm_model or '(default)'} lang={language} q={'(yes)' if question else '(no)'}"
     )
 
-    # Launch graph in background
-    asyncio.create_task(_execute_run(run_id, req.paper_id, mode, llm_model, language, question))
+    mode_runs.start(run_id)
 
     row = await db.fetch_one("SELECT * FROM runs WHERE run_id = ?", (run_id,))
     return RunResponse(**row)
-
-
-async def _execute_run(
-    run_id: str,
-    paper_id: str,
-    mode: str,
-    llm_model: str,
-    language: str = "en",
-    user_question: str = "",
-) -> None:
-    """Execute the LangGraph workflow as a background task, bounded by semaphore."""
-    queue = _run_queues.get(run_id)
-
-    try:
-        await asyncio.wait_for(_run_semaphore.acquire(), timeout=300.0)
-    except asyncio.TimeoutError:
-        logger.warning(f"[run:{run_id}] Timed out waiting for execution slot")
-        await db.execute(
-            "UPDATE runs SET status = 'failed', error_msg = 'Server busy, please retry later', finished_at = now() WHERE run_id = ?",
-            (run_id,),
-        )
-        if queue:
-            await queue.put({"event": "error", "data": {"error": "Server busy, please retry later"}})
-            await queue.put(None)
-        return
-
-    t0 = time.perf_counter()
-    try:
-        await db.execute(
-            "UPDATE runs SET status = 'running', started_at = now() WHERE run_id = ?",
-            (run_id,),
-        )
-
-        if queue:
-            await queue.put({"event": "status", "data": {"status": "running"}})
-
-        logger.info(f"[run:{run_id}] ▶ Graph execution started")
-
-        initial_state: MainGraphState = {
-            "paper_id": paper_id,
-            "run_id": run_id,
-            "mode": mode,
-            "llm_model": llm_model,
-            "language": language,
-            "user_question": user_question,
-            "progress": [],
-        }
-
-        graph = _get_graph()
-
-        # Stream through graph nodes
-        final_state: dict[str, Any] = {}
-        async for event in graph.astream(initial_state):
-            # event is a dict mapping node_name -> output_dict
-            for node_name, node_output in event.items():
-                elapsed = time.perf_counter() - t0
-                final_state.update(node_output)
-                progress = node_output.get("progress", [])
-                latest = progress[-1] if progress else {"step": node_name, "status": "done"}
-                logger.info(f"[run:{run_id}] ✔ Node '{node_name}' done at {elapsed:.1f}s — {latest}")
-                step = latest.get("step", node_name)
-                status = latest.get("status", "done")
-                extra = {k: v for k, v in latest.items() if k not in ("step", "status")}
-                await emit_progress(run_id, step, status, **extra)
-
-        elapsed = time.perf_counter() - t0
-        if queue:
-            error = final_state.get("error")
-            if error:
-                logger.error(f"[run:{run_id}] ✗ Graph failed at {elapsed:.1f}s — {error}")
-                await queue.put({"event": "error", "data": {"error": error}})
-            else:
-                logger.info(f"[run:{run_id}] ✔ Graph completed at {elapsed:.1f}s")
-                await queue.put({
-                    "event": "done",
-                    "data": {
-                        "run_id": run_id,
-                        "status": "done",
-                    },
-                })
-
-    except Exception as e:
-        elapsed = time.perf_counter() - t0
-        logger.exception(f"[run:{run_id}] ✗ Graph exception at {elapsed:.1f}s — {e}")
-        await db.execute(
-            "UPDATE runs SET status = 'failed', error_msg = ?, finished_at = now() WHERE run_id = ?",
-            (str(e), run_id),
-        )
-        if queue:
-            await queue.put({"event": "error", "data": {"error": str(e)}})
-
-    finally:
-        _run_semaphore.release()
-        if queue:
-            await queue.put(None)  # Signal end of stream
 
 
 @router.get("/runs/recent", response_model=list[RecentRunResponse])
@@ -240,13 +99,12 @@ async def list_recent_runs(
     navigated away from. Declared before `/runs/{run_id}` so the literal path
     wins.
 
-    Abandoned runs are reconciled to 'failed' first, and only runs from the
-    last ``_RECENT_RUN_DAYS`` days are returned, so stale tasks never linger
-    as perpetual "running" entries.
+    Only runs from the last ``_RECENT_RUN_DAYS`` days are returned. A run whose
+    worker died is not this listing's business: the recovery sweep runs it
+    again or closes it.
     """
     limit = max(1, min(limit, 100))
     owner_token = (owner_token or "").strip()[:_MAX_OWNER_TOKEN_LEN]
-    await _reconcile_stale_runs()
 
     if caller is not None and owner_token:
         await db.execute(
@@ -386,6 +244,54 @@ async def get_run_markdown_export(request: Request, run_id: str):
     )
 
 
+async def _owned_run(run_id: str, caller: Caller | None, owner_token: str) -> dict[str, Any]:
+    """The run, if the caller may change it; 404 otherwise.
+
+    Reading a run is open to anyone holding its id — that is how a report is
+    shared. Changing one is the owner's: the principal for runs that have one,
+    the browser's `owner_token` for runs from before accounts, and anyone for
+    legacy runs with neither. A run that is not the caller's is reported as
+    missing, so its existence is not revealed either.
+    """
+    owner_token = (owner_token or "").strip()[:_MAX_OWNER_TOKEN_LEN]
+    row = await db.fetch_one(
+        "SELECT status, owner_token, owner_id FROM runs WHERE run_id = ?", (run_id,)
+    )
+    if not row:
+        raise HTTPException(status_code=404, detail="Run not found")
+    if row["owner_id"]:
+        owned = caller is not None and caller.principal_id == row["owner_id"]
+    else:
+        owned = not row["owner_token"] or row["owner_token"] == owner_token
+    if not owned:
+        raise HTTPException(status_code=404, detail="Run not found")
+    return row
+
+
+async def _cancel_owned(run_id: str, caller: Caller | None, owner_token: str) -> RunResponse:
+    await _owned_run(run_id, caller, owner_token)
+    await mode_runs.cancel(run_id)
+    updated = await db.fetch_one("SELECT * FROM runs WHERE run_id = ?", (run_id,))
+    return RunResponse(**updated)
+
+
+@router.post("/runs/{run_id}/cancel", response_model=RunResponse)
+@limiter.limit("30/minute")
+async def cancel_run(
+    request: Request,
+    run_id: str,
+    owner_token: str = "",
+    caller: Caller | None = Depends(optional_caller),
+):
+    """Stop a pending/running run. Only its owner may.
+
+    The run is closed as `cancelled` and whoever is executing it is
+    interrupted — on this replica at once, on another at its next heartbeat.
+    A run that already finished is returned unchanged.
+    """
+    return await _cancel_owned(run_id, caller, owner_token)
+
+
 @router.post("/runs/{run_id}/dismiss", response_model=RunResponse)
 @limiter.limit("30/minute")
 async def dismiss_run(
@@ -394,64 +300,89 @@ async def dismiss_run(
     owner_token: str = "",
     caller: Caller | None = Depends(optional_caller),
 ):
-    """Manually clear a pending/running run the user abandoned.
+    """The earlier name of `cancel`, kept for clients that still call it."""
+    return await _cancel_owned(run_id, caller, owner_token)
 
-    Only the owner may dismiss a run: the principal for runs that have one, the
-    browser's `owner_token` for runs from before accounts. Legacy runs with
-    neither are dismissible by anyone. Marks the run failed so it
-    leaves the active banner, and tears down any live SSE queue. Already-finished
-    runs are returned unchanged.
-    """
-    owner_token = (owner_token or "").strip()[:_MAX_OWNER_TOKEN_LEN]
-    row = await db.fetch_one(
-        "SELECT status, owner_token, owner_id FROM runs WHERE run_id = ?", (run_id,)
-    )
-    if not row:
-        raise HTTPException(status_code=404, detail="Run not found")
-    # Don't reveal existence of runs the caller doesn't own.
-    if row["owner_id"]:
-        owned = caller is not None and caller.principal_id == row["owner_id"]
-    else:
-        owned = not row["owner_token"] or row["owner_token"] == owner_token
-    if not owned:
-        raise HTTPException(status_code=404, detail="Run not found")
 
-    if row["status"] in ("pending", "running"):
-        await db.execute(
-            "UPDATE runs SET status = 'failed', error_msg = 'Dismissed by user', "
-            "finished_at = now() WHERE run_id = ?",
-            (run_id,),
-        )
-        queue = _run_queues.pop(run_id, None)
-        if queue is not None:
-            await queue.put({"event": "error", "data": {"error": "Dismissed by user"}})
-            await queue.put(None)
-        logger.info(f"[run:{run_id}] Dismissed by user")
+@router.delete("/runs/{run_id}")
+@limiter.limit("30/minute")
+async def delete_run(
+    request: Request,
+    run_id: str,
+    owner_token: str = "",
+    caller: Caller | None = Depends(optional_caller),
+):
+    """Delete a run and its report. Only its owner may; links to it stop working."""
+    await _owned_run(run_id, caller, owner_token)
+    await mode_runs.delete(run_id)
+    return {"deleted": run_id}
 
-    updated = await db.fetch_one("SELECT * FROM runs WHERE run_id = ?", (run_id,))
-    return RunResponse(**updated)
+
+# How often the stream looks at the run's row, and how long it stays open.
+_STREAM_POLL_SECONDS = 1.0
+_STREAM_MAX_SECONDS = 1800.0
 
 
 @router.get("/runs/{run_id}/stream")
 @limiter.limit("10/minute")
 async def stream_run(request: Request, run_id: str):
-    """SSE endpoint for streaming run progress."""
-    queue = _run_queues.get(run_id)
-    if not queue:
-        raise HTTPException(status_code=404, detail="No active stream for this run")
+    """SSE endpoint for streaming run progress.
+
+    The stream follows the run's row rather than anything in this process: it
+    replays the steps recorded so far, then reports new ones until the run
+    ends. So it can be opened on any replica, at any point in the run, and
+    again after a reload.
+    """
+    if not await db.fetch_one("SELECT 1 AS hit FROM runs WHERE run_id = ?", (run_id,)):
+        raise HTTPException(status_code=404, detail="Run not found")
+
+    def frame(event: str, data: dict[str, Any] | None = None) -> str:
+        body: dict[str, Any] = {"event": event}
+        if data is not None:
+            body["data"] = data
+        return f"data: {json.dumps(body)}\n\n"
 
     async def event_generator():
-        try:
-            while True:
-                msg = await asyncio.wait_for(queue.get(), timeout=1800.0)
-                if msg is None:
-                    yield f"data: {json.dumps({'event': 'end'})}\n\n"
-                    break
-                yield f"data: {json.dumps(msg)}\n\n"
-        except asyncio.TimeoutError:
-            yield f"data: {json.dumps({'event': 'timeout'})}\n\n"
-        finally:
-            _run_queues.pop(run_id, None)
+        sent = 0
+        announced_running = False
+        deadline = asyncio.get_running_loop().time() + _STREAM_MAX_SECONDS
+        while True:
+            row = await db.fetch_one(
+                "SELECT status, error_msg, progress_json FROM runs WHERE run_id = ?", (run_id,)
+            )
+            if row is None:   # deleted while we watched
+                yield frame("error", {"error": "Run not found"})
+                yield frame("end")
+                return
+            try:
+                steps = json.loads(row["progress_json"] or "[]")
+            except (TypeError, ValueError):
+                steps = []
+            if len(steps) < sent:   # a second attempt started the list over
+                sent = 0
+            if row["status"] == "running" and not announced_running:
+                announced_running = True
+                yield frame("status", {"status": "running"})
+            for step in steps[sent:]:
+                yield frame("progress", step)
+            sent = len(steps)
+
+            status = row["status"]
+            if status == "done":
+                yield frame("done", {"run_id": run_id, "status": "done"})
+            elif status == "cancelled":
+                yield frame("cancelled", {"run_id": run_id, "status": "cancelled"})
+            elif status not in mode_runs.ACTIVE_STATUSES:
+                yield frame("error", {"error": row["error_msg"] or "Run failed"})
+            if status not in mode_runs.ACTIVE_STATUSES:
+                yield frame("end")
+                return
+            if asyncio.get_running_loop().time() > deadline:
+                yield frame("timeout")
+                return
+            if await request.is_disconnected():
+                return
+            await asyncio.sleep(_STREAM_POLL_SECONDS)
 
     return StreamingResponse(
         event_generator(),

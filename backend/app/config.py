@@ -87,6 +87,9 @@ class AppSettings(BaseSettings):
     # the agent first asks for it, so the reader's typing time is parse time.
     # Off means a paper nobody asks about is never billed.
     parse_on_attach: bool = Field(default=True, alias="PARSE_ON_ATTACH")
+    # Mode runs from the upload page executing at once in one process; the
+    # rest wait their turn as `pending`.
+    mode_run_concurrency: int = Field(default=5, alias="MODE_RUN_CONCURRENCY")
 
     # --- Paper downloader (OA Resolver / Elsevier TDM / Wiley TDM) ---
     unpaywall_email: str = Field(default="", alias="UNPAYWALL_EMAIL")
@@ -279,6 +282,17 @@ class AppSettings(BaseSettings):
     quota_anon_daily_tokens: int = Field(default=1_000_000, alias="QUOTA_ANON_DAILY_TOKENS")
     quota_user_daily_runs: int = Field(default=10, alias="QUOTA_USER_DAILY_RUNS")
     quota_user_daily_tokens: int = Field(default=10_000_000, alias="QUOTA_USER_DAILY_TOKENS")
+
+    # Retention, applied by a daily pass (0 = keep forever). Answer fragments
+    # are the streamed `message.delta` events of finished turns; logs are
+    # ended login sessions and old counters. The last two remove what a reader
+    # made: an anonymous visitor not seen for this long goes with their
+    # conversations and reports, and a paper nothing refers to goes with its
+    # parse. `scripts.retention --dry-run` shows what a pass would remove.
+    retention_event_delta_days: int = Field(default=7, alias="RETENTION_EVENT_DELTA_DAYS")
+    retention_log_days: int = Field(default=30, alias="RETENTION_LOG_DAYS")
+    retention_anon_days: int = Field(default=90, alias="RETENTION_ANON_DAYS")
+    retention_orphan_paper_days: int = Field(default=30, alias="RETENTION_ORPHAN_PAPER_DAYS")
 
     # --- server ---
     host: str = "0.0.0.0"

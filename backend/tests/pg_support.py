@@ -82,6 +82,11 @@ def use_database_env(test: unittest.TestCase) -> str:
     previous = os.environ.get("DATABASE_URL")
     os.environ["DATABASE_URL"] = url
     get_settings.cache_clear()
+    # The rate limiter counts per process, not per app: without this the
+    # requests of one test are charged against the limits of the next.
+    from app.rate_limit import limiter
+
+    limiter.reset()
 
     def _restore() -> None:
         if previous is None:

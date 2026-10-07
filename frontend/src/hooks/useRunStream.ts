@@ -53,6 +53,10 @@ export function useRunStream(): UseRunStreamReturn {
           setIsDone(true);
           setIsConnected(false);
           source.close();
+        } else if (parsed.event === "cancelled") {
+          // Terminal, and not a failure: the page reads the run's status.
+          setIsConnected(false);
+          source.close();
         } else if (parsed.event === "error") {
           console.error(`[SSE] Error at +${elapsed}s:`, parsed.data?.error);
           setError(String(parsed.data?.error || "Unknown error"));

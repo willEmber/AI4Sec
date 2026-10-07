@@ -448,6 +448,19 @@ export async function updateProject(
   });
 }
 
+/** Delete a conversation with its messages, evidence and the reports made in it. */
+export async function deleteSession(sessionId: string): Promise<void> {
+  await agentRequest(`/agent/sessions/${sessionId}`, { method: "DELETE" });
+}
+
+/** Delete a project; its conversations are moved out of it, or deleted with it. */
+export async function deleteProject(
+  projectId: string,
+  sessions: "keep" | "delete",
+): Promise<{ sessions_deleted: number }> {
+  return agentRequest(`/agent/projects/${projectId}?sessions=${sessions}`, { method: "DELETE" });
+}
+
 /** The same search the agent's recall uses, over the caller's conversations. */
 export async function searchConversations(
   query: string,

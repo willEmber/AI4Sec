@@ -63,7 +63,10 @@ class MinerUProgressEventTests(unittest.IsolatedAsyncioTestCase):
                 ("paper", "papers/paper/original.pdf"),
             )
 
-            queue = asyncio.Queue()
+            from app.workflows import progress
+
+            queue = progress.subscribe("run-1")
+            self.addCleanup(progress.unsubscribe, "run-1", queue)
             state = {
                 "paper_id": "paper",
                 "run_id": "run-1",
@@ -72,12 +75,11 @@ class MinerUProgressEventTests(unittest.IsolatedAsyncioTestCase):
 
             async def fake_parse_pdf(paper_id: str, parse_id: str) -> Path:
                 event = await queue.get()
-                self.assertEqual(event["event"], "progress")
-                self.assertEqual(event["data"]["step"], "mineru_parse")
-                self.assertEqual(event["data"]["status"], "running")
+                self.assertEqual(event["step"], "mineru_parse")
+                self.assertEqual(event["status"], "running")
                 raise RuntimeError("stop after progress")
 
-            with patch("app.api.runs._run_queues", {"run-1": queue}), patch(
+            with patch(
                 "app.workflows.main_graph.mineru_adapter.parse_pdf",
                 new=AsyncMock(side_effect=fake_parse_pdf),
             ):

@@ -10,10 +10,11 @@ import {
   useState,
 } from "react";
 import Link from "next/link";
-import { useParams, useSearchParams } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import {
   attachPapers,
   cancelRun,
+  deleteSession,
   describeApiError,
   getSession,
   listProjects,
@@ -74,6 +75,7 @@ function ChatSession() {
   const sessionId = params.sessionId as string;
   const { t } = useTranslation();
 
+  const router = useRouter();
   const [detail, setDetail] = useState<SessionDetail | null>(null);
   const [sessions, setSessions] = useState<AgentSession[]>([]);
   const [projects, setProjects] = useState<AgentProject[]>([]);
@@ -327,6 +329,22 @@ function ChatSession() {
       }
     },
     [sessionId, reload],
+  );
+
+  const removeSession = useCallback(
+    (id: string) => {
+      setSessions((prev) => prev.filter((s) => s.session_id !== id));
+      deleteSession(id)
+        .then(() => {
+          // The conversation on screen is the one that is gone.
+          if (id === sessionId) {
+            const projectId = detail?.session.project_id;
+            router.push(projectId ? `/projects/${projectId}` : "/chat");
+          }
+        })
+        .catch((err) => setLoadError(describeApiError(err, t)));
+    },
+    [detail?.session.project_id, router, sessionId, t],
   );
 
   const addProjectPaper = useCallback(
@@ -675,6 +693,7 @@ function ChatSession() {
           setTargetPage(undefined);
           setPdfCollapsed(false);
         }}
+        onDeleteSession={removeSession}
         onUpload={upload}
         memoriesToken={memoriesToken}
         project={detail?.project ?? null}

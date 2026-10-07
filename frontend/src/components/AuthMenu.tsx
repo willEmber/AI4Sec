@@ -3,7 +3,16 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 
 import { AgentApiError } from "@/lib/agent";
-import { adminLogin, getMe, logout, startLogin, takeAuthError, type AuthMe } from "@/lib/auth";
+import {
+  adminLogin,
+  deleteMyData,
+  getMe,
+  getMyData,
+  logout,
+  startLogin,
+  takeAuthError,
+  type AuthMe,
+} from "@/lib/auth";
 import { useTranslation } from "@/lib/i18n";
 
 const KNOWN_ERRORS = new Set([
@@ -91,6 +100,36 @@ export function AuthMenu() {
     }
   };
 
+  const eraseMyData = async () => {
+    setBusy(true);
+    setError("");
+    try {
+      const owned = await getMyData();
+      const sure = window.confirm(
+        t("auth.deleteDataConfirm", { sessions: owned.sessions, runs: owned.runs }),
+      );
+      if (!sure) {
+        setBusy(false);
+        return;
+      }
+      await deleteMyData();
+      // Nothing the page shows exists any more.
+      window.location.href = "/";
+    } catch (err) {
+      setError(String(err instanceof Error ? err.message : err));
+      setBusy(false);
+    }
+  };
+  const eraseButton = (
+    <button
+      onClick={eraseMyData}
+      disabled={busy}
+      className="mt-2 w-full rounded-lg px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:text-destructive disabled:opacity-50"
+    >
+      {t("auth.deleteData")}
+    </button>
+  );
+
   const signOut = async () => {
     setBusy(true);
     try {
@@ -159,6 +198,7 @@ export function AuthMenu() {
               >
                 {t("auth.logout")}
               </button>
+              {me.user?.role !== "admin" && eraseButton}
             </>
           ) : me.providers.length || me.admin_login ? (
             <>
@@ -216,6 +256,7 @@ export function AuthMenu() {
                 <p className="mt-3 text-xs text-muted-foreground">{t("auth.anonymousHint")}</p>
               )}
               {quotaLine && <p className="mt-1 text-xs text-muted-foreground">{quotaLine}</p>}
+              {me.kind === "anonymous" && eraseButton}
             </>
           ) : (
             <p className="text-sm text-muted-foreground">{t("auth.noProviders")}</p>

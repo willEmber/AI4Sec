@@ -86,9 +86,16 @@ export async function listRecentRuns(
   return request(`/runs/recent?${qs.toString()}`);
 }
 
-export async function dismissRun(runId: string): Promise<RunResponse> {
+/** Stop a pending/running run. Only its owner may; anyone else gets a 404. */
+export async function cancelRun(runId: string): Promise<RunResponse> {
   const qs = new URLSearchParams({ owner_token: getOwnerToken() });
-  return request(`/runs/${runId}/dismiss?${qs.toString()}`, { method: "POST" });
+  return request(`/runs/${runId}/cancel?${qs.toString()}`, { method: "POST" });
+}
+
+/** Delete a run and its report. Links to it stop working. */
+export async function deleteRun(runId: string): Promise<void> {
+  const qs = new URLSearchParams({ owner_token: getOwnerToken() });
+  await request(`/runs/${runId}?${qs.toString()}`, { method: "DELETE" });
 }
 
 export function getPaperPdfUrl(paperId: string): string {

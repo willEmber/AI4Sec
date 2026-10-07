@@ -2,8 +2,8 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
-import { deleteMemory, getProject, searchConversations, updateProject } from "@/lib/agent";
+import { useParams, useRouter } from "next/navigation";
+import { deleteMemory, deleteProject, getProject, searchConversations, updateProject } from "@/lib/agent";
 import type { ProjectDetail, RecalledTurn, SessionPaper } from "@/lib/agent";
 import { useTranslation } from "@/lib/i18n";
 import { IconChevronLeft, IconPlus } from "@/components/icons";
@@ -28,6 +28,7 @@ export default function ProjectPage() {
   const projectId = params.projectId as string;
   const { t } = useTranslation();
 
+  const router = useRouter();
   const [detail, setDetail] = useState<ProjectDetail | null>(null);
   const [notFound, setNotFound] = useState(false);
   const [editing, setEditing] = useState(false);
@@ -70,6 +71,24 @@ export default function ProjectPage() {
     },
     [projectId, reload],
   );
+
+  // Two questions, because the answers are independent: whether the project
+  // goes, and whether its conversations go with it or are moved out.
+  const remove = useCallback(async () => {
+    if (!window.confirm(t("project.detail.delete_confirm"))) return;
+    const count = detail?.sessions.length ?? 0;
+    const withSessions =
+      count > 0 && window.confirm(t("project.detail.delete_sessions_confirm", { count }));
+    setBusy(true);
+    setError("");
+    try {
+      await deleteProject(projectId, withSessions ? "delete" : "keep");
+      router.push("/projects");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+      setBusy(false);
+    }
+  }, [detail?.sessions.length, projectId, router, t]);
 
   const search = useCallback(async () => {
     const q = query.trim();
@@ -199,6 +218,16 @@ export default function ProjectPage() {
                   {project.status === "archived"
                     ? t("project.detail.unarchive")
                     : t("project.detail.archive")}
+                </button>
+              )}
+              {project && (
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={remove}
+                  className="rounded-lg border border-border px-3 py-1.5 text-xs text-muted-foreground hover:border-destructive/40 hover:text-destructive disabled:opacity-40"
+                >
+                  {t("project.detail.delete")}
                 </button>
               )}
             </div>

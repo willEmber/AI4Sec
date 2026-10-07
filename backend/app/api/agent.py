@@ -50,6 +50,7 @@ from app.services import (
     accounts,
     agent_runner,
     conversation_recall,
+    data_lifecycle,
     evidence_service,
     identity,
     paper_catalog,
@@ -242,6 +243,21 @@ async def update_session(
     except repo.ProjectNotFound:
         raise HTTPException(status_code=404, detail="No such project.") from None
     return {"session": session.model_dump()}
+
+
+@router.delete("/sessions/{session_id}")
+@limiter.limit("30/minute")
+async def delete_session(
+    request: Request,
+    session_id: str,
+    principal_id: str = Depends(require_principal),
+) -> dict[str, Any]:
+    """Delete a conversation with its messages, evidence and the reports made in it."""
+    try:
+        await data_lifecycle.delete_session(session_id, owner_id=principal_id)
+    except repo.SessionNotFound:
+        raise HTTPException(status_code=404, detail="No such session.") from None
+    return {"session_id": session_id, "deleted": True}
 
 
 @router.get("/sessions/{session_id}", response_model=SessionDetailResponse)
@@ -466,6 +482,25 @@ async def update_project(
     except repo.ProjectNotFound:
         raise HTTPException(status_code=404, detail="No such project.") from None
     return {"project": project.model_dump()}
+
+
+@router.delete("/projects/{project_id}")
+@limiter.limit("30/minute")
+async def delete_project(
+    request: Request,
+    project_id: str,
+    sessions: str = Query(default="keep", pattern="^(keep|delete)$"),
+    principal_id: str = Depends(require_principal),
+) -> dict[str, Any]:
+    """Delete a project and its memories. Its conversations are moved out of it
+    (`sessions=keep`) or deleted with it (`sessions=delete`)."""
+    try:
+        deleted = await data_lifecycle.delete_project(
+            project_id, owner_id=principal_id, delete_sessions=sessions == "delete"
+        )
+    except repo.ProjectNotFound:
+        raise HTTPException(status_code=404, detail="No such project.") from None
+    return {"project_id": project_id, "deleted": True, "sessions_deleted": deleted}
 
 
 @router.get("/search")

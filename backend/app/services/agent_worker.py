@@ -67,7 +67,13 @@ RUN_STALE_SECONDS = 90
 # while a row sits stale — so this is deliberately slower than the heartbeat.
 SWEEP_INTERVAL_SECONDS = 30
 
+# Retention removes what nobody is using; nothing depends on when. Once a day,
+# and not in the first minutes of a process, which belong to recovery.
+RETENTION_INTERVAL_SECONDS = 24 * 3600
+RETENTION_FIRST_DELAY_SECONDS = 600
+
 _sweeper: asyncio.Task[None] | None = None
+_retention: asyncio.Task[None] | None = None
 _resumes: set[asyncio.Task[None]] = set()
 
 
@@ -207,9 +213,12 @@ async def _resume_parse(job: dict[str, Any]) -> None:
 
 async def sweep_once() -> dict[str, Any]:
     """One recovery pass. Separate from the loop so a test can run exactly one."""
+    from app.services import mode_runs
+
     runs = await recover_stale_runs()
     jobs = await recover_stale_jobs()
-    return {"runs_recovered": runs, **jobs}
+    mode = await mode_runs.recover_stale()
+    return {"runs_recovered": runs, **jobs, **mode}
 
 
 async def _sweep_loop() -> None:
@@ -223,6 +232,22 @@ async def _sweep_loop() -> None:
         await asyncio.sleep(SWEEP_INTERVAL_SECONDS)
 
 
+async def _retention_loop() -> None:
+    from app.services import data_lifecycle
+
+    await asyncio.sleep(RETENTION_FIRST_DELAY_SECONDS)
+    while True:
+        try:
+            report = await data_lifecycle.run_retention()
+            if any(report.values()):
+                logger.info("Retention pass: %s", report)
+        except asyncio.CancelledError:
+            raise
+        except Exception:  # noqa: BLE001 — a failed pass must not end the loop
+            logger.exception("Retention pass failed; will retry tomorrow")
+        await asyncio.sleep(RETENTION_INTERVAL_SECONDS)
+
+
 async def start() -> None:
     """Begin recovering. Called from the app lifespan.
 
@@ -230,24 +255,29 @@ async def start() -> None:
     should be cleaned up before this one starts serving, not one interval later
     while a browser waits on a run that ended with the old process.
     """
-    global _sweeper
+    global _sweeper, _retention
     if _sweeper is not None:
         return
     with contextlib.suppress(Exception):
         result = await sweep_once()
-        if result["runs_recovered"] or result["resumed"] or result["released"]:
+        if any(result.values()):
             logger.info("Startup recovery: %s", result)
     _sweeper = asyncio.create_task(_sweep_loop())
+    _retention = asyncio.create_task(_retention_loop())
 
 
 async def stop() -> None:
     """Stop sweeping and let any in-flight resume finish or be dropped."""
-    global _sweeper
-    sweeper, _sweeper = _sweeper, None
-    if sweeper is not None:
-        sweeper.cancel()
-        with contextlib.suppress(asyncio.CancelledError, Exception):
-            await sweeper
+    global _sweeper, _retention
+    for task in (_sweeper, _retention):
+        if task is not None:
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError, Exception):
+                await task
+    _sweeper = _retention = None
     for task in list(_resumes):
         task.cancel()
     _resumes.clear()
+    from app.services import mode_runs
+
+    await mode_runs.stop()

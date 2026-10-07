@@ -82,6 +82,19 @@ export async function adminLogin(username: string, password: string): Promise<vo
   if (!res.ok) throw await apiErrorFrom(res);
 }
 
+/** How much deleting the caller's data would remove. */
+export async function getMyData(): Promise<{ sessions: number; runs: number; projects: number }> {
+  const res = await fetch("/api/auth/me/data", { credentials: "same-origin" });
+  if (!res.ok) throw await apiErrorFrom(res);
+  return res.json();
+}
+
+/** Delete the caller's conversations, reports, projects, memories and account. */
+export async function deleteMyData(): Promise<void> {
+  const res = await fetch("/api/auth/me", { method: "DELETE", credentials: "same-origin" });
+  if (!res.ok) throw await apiErrorFrom(res);
+}
+
 export async function logout(): Promise<void> {
   const res = await fetch("/api/auth/logout", {
     method: "POST",

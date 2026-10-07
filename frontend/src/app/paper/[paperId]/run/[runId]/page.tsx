@@ -2,8 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
-import { getRun, getRunOutput, getPaperPdfUrl, getPaper, getZoteroBundleUrl, getMarkdownExportUrl } from "@/lib/api";
+import { useParams, useRouter } from "next/navigation";
+import { cancelRun, deleteRun, getRun, getRunOutput, getPaperPdfUrl, getPaper, getZoteroBundleUrl, getMarkdownExportUrl } from "@/lib/api";
 import { useRunStream } from "@/hooks/useRunStream";
 import { useTranslation } from "@/lib/i18n";
 import MarkdownRenderer from "@/components/MarkdownRenderer";
@@ -13,7 +13,7 @@ import RankBadges from "@/components/RankBadges";
 import SphereReport from "@/components/sphere/SphereReport";
 import SnapReport from "@/components/snap/SnapReport";
 import LensReport from "@/components/lens/LensReport";
-import { IconCards, IconCheck, IconDocument, IconDownload, IconSparkles } from "@/components/icons";
+import { IconCards, IconCheck, IconDocument, IconDownload, IconSparkles, IconStop } from "@/components/icons";
 import { parseSphereData } from "@/lib/sphere";
 import { parseSnapData } from "@/lib/snap";
 import { defaultLensView, parseLensData } from "@/lib/lens";
@@ -24,6 +24,7 @@ export default function RunPage() {
   const paperId = params.paperId as string;
   const runId = params.runId as string;
   const { t } = useTranslation();
+  const router = useRouter();
 
   const [run, setRun] = useState<RunResponse | null>(null);
   const [paper, setPaper] = useState<PaperResponse | null>(null);
@@ -94,7 +95,7 @@ export default function RunPage() {
   // Always-on backup polling — runs regardless of SSE state until we have results
   useEffect(() => {
     if (markdown) return; // Already got results, stop polling
-    if (run?.status === "failed") return; // Run failed, stop polling
+    if (run?.status === "failed" || run?.status === "cancelled") return; // Run ended, stop polling
 
     const interval = setInterval(() => {
       getRun(runId).then((r) => {
@@ -189,8 +190,31 @@ export default function RunPage() {
   const showStructured = structuredData !== null && structuredView === "structured";
 
   const isComplete = run?.status === "done" || (isDone && markdown);
-  const isFailed = (run?.status === "failed" || !!error) && !isComplete;
-  const isRunning = (run?.status === "running" || isConnected) && !isComplete && !isFailed;
+  const isCancelled = run?.status === "cancelled" && !isComplete;
+  const isFailed = (run?.status === "failed" || !!error) && !isComplete && !isCancelled;
+  const isRunning =
+    (run?.status === "running" || run?.status === "pending" || isConnected) &&
+    !isComplete && !isFailed && !isCancelled;
+
+  // Stopping and deleting are the owner's. Anyone can open a shared report, so
+  // a refusal is shown rather than hidden behind a button that does nothing.
+  const [actionError, setActionError] = useState("");
+  const [cancelling, setCancelling] = useState(false);
+  const handleCancel = useCallback(() => {
+    setCancelling(true);
+    setActionError("");
+    cancelRun(runId)
+      .then((r) => setRun(r))
+      .catch(() => setActionError(t("run.not_owner")))
+      .finally(() => setCancelling(false));
+  }, [runId, t]);
+  const handleDelete = useCallback(() => {
+    if (!window.confirm(t("run.delete_confirm"))) return;
+    setActionError("");
+    deleteRun(runId)
+      .then(() => router.push("/upload"))
+      .catch(() => setActionError(t("run.not_owner")));
+  }, [runId, router, t]);
 
   return (
     <div className="flex h-[calc(100vh-3.5rem)] flex-col">
@@ -245,6 +269,27 @@ export default function RunPage() {
             <IconSparkles className="text-[15px]" />
             {run?.agent_session_id ? t("run.back_to_chat") : t("run.ask_agent")}
           </Link>
+          {actionError && <span className="text-xs text-destructive">{actionError}</span>}
+          {isRunning && (
+            <button
+              onClick={handleCancel}
+              disabled={cancelling}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-sm transition-colors hover:bg-muted disabled:opacity-50"
+              title={t("run.cancel")}
+            >
+              <IconStop className="text-[15px]" />
+              {t("run.cancel")}
+            </button>
+          )}
+          {!isRunning && run && (
+            <button
+              onClick={handleDelete}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:border-destructive/40 hover:text-destructive"
+              title={t("run.delete")}
+            >
+              {t("run.delete")}
+            </button>
+          )}
           {markdown && (
             <button
               onClick={handleExportMarkdown}
@@ -332,6 +377,13 @@ export default function RunPage() {
               <div className="px-6 py-8 sm:px-10">
                 <div className="mx-auto max-w-3xl">
                   <MarkdownRenderer content={markdown} onCitationClick={handleCitationClick} />
+                </div>
+              </div>
+            ) : isCancelled ? (
+              <div className="flex h-full items-center justify-center px-6">
+                <div className="max-w-md rounded-2xl border border-border bg-card/60 p-8 text-center">
+                  <p className="mb-2 font-semibold">{t("run.status.cancelled_label")}</p>
+                  <p className="text-sm text-muted-foreground">{t("run.status.cancelled_hint")}</p>
                 </div>
               </div>
             ) : isFailed ? (

@@ -485,7 +485,7 @@ class QuotaTests(_AppTestCase):
         from app.db import database as db
 
         db.execute_sync("INSERT INTO papers (paper_id, file_path) VALUES ('p1', 'papers/p1/original.pdf')")
-        with mock.patch("app.api.runs._execute_run", new=mock.AsyncMock()):
+        with mock.patch("app.services.mode_runs._execute", new=mock.AsyncMock()):
             first = self.client.post("/api/runs", json={"paper_id": "p1", "mode": "snap"})
             self.assertEqual(first.status_code, 200, first.text)
             second = self.client.post("/api/runs", json={"paper_id": "p1", "mode": "snap"})
@@ -529,6 +529,35 @@ class LibraryQuotaTests(_AppTestCase):
         self.assertEqual(second.status_code, 429)
         self.assertEqual(second.json()["detail"]["code"], "quota_exceeded")
         self.assertEqual(answered.await_count, 1)
+
+
+class DeleteDataTests(_AppTestCase):
+    env = {"ADMIN_USERNAME": "root", "ADMIN_PASSWORD": "pw-1"}
+
+    def test_a_reader_deletes_a_session_a_project_and_then_everything(self) -> None:
+        session_id = self.client.post("/api/agent/sessions", json={}).json()["session_id"]
+        project_id = self.client.post("/api/agent/projects", json={"title": "MoE"}).json()["project"]["project_id"]
+        with self._new_client() as visitor:
+            visitor.post("/api/agent/sessions", json={})
+            self.assertEqual(visitor.delete(f"/api/agent/sessions/{session_id}").status_code, 404)
+            self.assertEqual(visitor.delete(f"/api/agent/projects/{project_id}").status_code, 404)
+
+        self.assertEqual(self.client.get("/api/auth/me/data").json(), {"sessions": 1, "runs": 0, "projects": 1})
+        self.assertEqual(self.client.delete(f"/api/agent/projects/{project_id}").status_code, 200)
+        self.assertEqual(self.client.delete(f"/api/agent/sessions/{session_id}").status_code, 200)
+        self.assertEqual(self.client.get(f"/api/agent/sessions/{session_id}").status_code, 404)
+
+        self.client.post("/api/agent/sessions", json={})
+        gone = self.client.delete("/api/auth/me")
+        self.assertEqual(gone.status_code, 200, gone.text)
+        self.assertEqual(gone.json()["sessions"], 1)
+        self.assertEqual(self.client.get("/api/agent/sessions").status_code, 401)
+
+    def test_the_configured_admin_is_not_deletable(self) -> None:
+        self.client.post("/api/auth/admin/login", json={"username": "root", "password": "pw-1"})
+        refused = self.client.delete("/api/auth/me")
+        self.assertEqual(refused.status_code, 400)
+        self.assertEqual(refused.json()["detail"]["code"], "not_deletable")
 
 
 class NoAnonymousTests(_AppTestCase):

@@ -44,8 +44,9 @@ from app.config import get_settings
 from app.db import agent_repository as repo
 from app.db import database as db
 from app.models.agent_models import Availability, ErrorCode, EventType, ToolResult
-from app.services import agent_jobs, paper_catalog, parse_service
+from app.services import agent_jobs, mode_runs, paper_catalog, parse_service
 from app.services.paper_ir_loader import PaperNotParsed, ensure_pub_rank, load_paper_ir
+from app.workflows import progress
 
 logger = logging.getLogger("scholar.agents.tools.modes")
 
@@ -130,16 +131,12 @@ async def _ensure_parsed(ctx: AgentContext, paper_id: str, *, tool_name: str) ->
 async def _forward_progress(
     ctx: AgentContext, tool_name: str, queue: asyncio.Queue[Any]
 ) -> None:
-    """Turn the legacy run's progress queue into `tool.progress` events."""
+    """Turn the run's step progress into `tool.progress` events."""
     while True:
         item = await queue.get()
         if item is None:
             return
-        if not isinstance(item, dict) or item.get("event") != "progress":
-            continue
-        data = dict(item.get("data") or {})
-        payload = {"tool": tool_name, **data}
-        await _emit(ctx, EventType.TOOL_PROGRESS, payload)
+        await _emit(ctx, EventType.TOOL_PROGRESS, {"tool": tool_name, **item})
 
 
 async def _run_subgraph(mode: str, state: dict[str, Any]) -> dict[str, Any]:
@@ -168,7 +165,6 @@ async def _produce_report(
     *, ctx: AgentContext, mode: str, paper_id: str, focus: str, tool_name: str
 ) -> dict[str, Any]:
     """The body of a mode job: make the legacy run row, run the analysis, persist it."""
-    settings = get_settings()
     run_id = uuid.uuid4().hex[:16]
     t0 = time.perf_counter()
 
@@ -191,76 +187,88 @@ async def _produce_report(
         ),
     )
 
-    # The subgraphs push step progress to the legacy per-run queue. Registering
-    # one here is what lets the conversation see the same steps.
-    from app.api.runs import _run_queues
-
-    queue: asyncio.Queue[Any] = asyncio.Queue()
-    _run_queues[run_id] = queue
+    # The subgraphs report each step as they go. Listening here is what lets
+    # the conversation show the same steps the report page shows.
+    queue: asyncio.Queue[Any] = progress.subscribe(run_id)
     forwarder = asyncio.create_task(_forward_progress(ctx, tool_name, queue))
 
     try:
-        paper_ir = await load_paper_ir(paper_id)
-        pdf_path = settings.data_dir / "papers" / paper_id / "original.pdf"
-        state: dict[str, Any] = {
-            "paper_id": paper_id,
-            "run_id": run_id,
-            "mode": mode,
-            "llm_model": ctx.llm_model,
-            "language": ctx.language,
-            "user_question": focus,
-            "pdf_path": str(pdf_path),
-            "paper_ir_json": paper_ir.model_dump_json(),
-            "progress": [],
-        }
-        if mode in ("snap", "lens"):
-            pub_rank = await ensure_pub_rank(paper_id, paper_ir, pdf_path)
-            state["pub_rank_json"] = json.dumps(pub_rank)
-
-        state = await _run_subgraph(mode, state)
-        if state.get("error"):
-            raise RuntimeError(str(state["error"]))
-
-        markdown = state.get("final_markdown", "") or ""
-        json_data = state.get("final_json", "{}") or "{}"
-        await db.execute(
-            "INSERT INTO run_outputs (run_id, markdown, json_data) VALUES (?, ?, ?) "
-            "ON CONFLICT (run_id) DO UPDATE SET markdown = excluded.markdown, "
-            "json_data = excluded.json_data",
-            (run_id, markdown, json_data),
-        )
-        await db.execute(
-            "UPDATE runs SET status = 'done', finished_at = now() WHERE run_id = ?",
-            (run_id,),
-        )
-        logger.info(
-            "[%s] mode %s report %s done in %.1fs (%d chars)",
-            paper_id, mode, run_id, time.perf_counter() - t0, len(markdown),
-        )
-        return {
-            "run_id": run_id,
-            "title": paper_ir.title,
-            "markdown_chars": len(markdown),
-        }
+        async with mode_runs.heartbeating(run_id):
+            return await _report_body(
+                ctx=ctx, mode=mode, paper_id=paper_id, focus=focus, run_id=run_id, t0=t0
+            )
     except asyncio.CancelledError:
+        # The reader stopped the turn (or the run itself). Conditional, so a
+        # run already closed as cancelled keeps the reason it was given.
         await db.execute(
-            "UPDATE runs SET status = 'failed', error_msg = 'Cancelled', "
-            "finished_at = now() WHERE run_id = ?",
+            "UPDATE runs SET status = 'cancelled', error_msg = 'Cancelled', "
+            "finished_at = now() WHERE run_id = ? AND status IN ('pending', 'running')",
             (run_id,),
         )
         raise
     except Exception as exc:
         await db.execute(
             "UPDATE runs SET status = 'failed', error_msg = ?, finished_at = now() "
-            "WHERE run_id = ?",
+            "WHERE run_id = ? AND status IN ('pending', 'running')",
             (str(exc)[:500], run_id),
         )
         raise
     finally:
-        _run_queues.pop(run_id, None)
-        await queue.put(None)
+        progress.unsubscribe(run_id, queue)
+        queue.put_nowait(None)
         with contextlib.suppress(Exception):
             await asyncio.wait_for(forwarder, timeout=5)
+
+
+async def _report_body(
+    *, ctx: AgentContext, mode: str, paper_id: str, focus: str, run_id: str, t0: float
+) -> dict[str, Any]:
+    settings = get_settings()
+    paper_ir = await load_paper_ir(paper_id)
+    pdf_path = settings.data_dir / "papers" / paper_id / "original.pdf"
+    state: dict[str, Any] = {
+        "paper_id": paper_id,
+        "run_id": run_id,
+        "mode": mode,
+        "llm_model": ctx.llm_model,
+        "language": ctx.language,
+        "user_question": focus,
+        "pdf_path": str(pdf_path),
+        "paper_ir_json": paper_ir.model_dump_json(),
+        "progress": [],
+    }
+    if mode in ("snap", "lens"):
+        pub_rank = await ensure_pub_rank(paper_id, paper_ir, pdf_path)
+        state["pub_rank_json"] = json.dumps(pub_rank)
+
+    state = await _run_subgraph(mode, state)
+    if state.get("error"):
+        raise RuntimeError(str(state["error"]))
+
+    markdown = state.get("final_markdown", "") or ""
+    json_data = state.get("final_json", "{}") or "{}"
+    await db.execute(
+        "INSERT INTO run_outputs (run_id, markdown, json_data) VALUES (?, ?, ?) "
+        "ON CONFLICT (run_id) DO UPDATE SET markdown = excluded.markdown, "
+        "json_data = excluded.json_data",
+        (run_id, markdown, json_data),
+    )
+    closed = await db.execute(
+        "UPDATE runs SET status = 'done', finished_at = now() "
+        "WHERE run_id = ? AND status IN ('pending', 'running')",
+        (run_id,),
+    )
+    if not closed:
+        raise RuntimeError("The report was cancelled before it finished.")
+    logger.info(
+        "[%s] mode %s report %s done in %.1fs (%d chars)",
+        paper_id, mode, run_id, time.perf_counter() - t0, len(markdown),
+    )
+    return {
+        "run_id": run_id,
+        "title": paper_ir.title,
+        "markdown_chars": len(markdown),
+    }
 
 
 async def _stored_report(run_id: str) -> dict[str, Any] | None:

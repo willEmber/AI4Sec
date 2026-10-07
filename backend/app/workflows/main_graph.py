@@ -64,6 +64,37 @@ async def mineru_parse(state: MainGraphState) -> dict[str, Any]:
                 "progress": state.get("progress", []) + [{"step": "mineru_parse", "status": "done", "cached": True}],
             }
 
+    # A batch MinerU already has for this paper — submitted by a run that was
+    # cancelled, or whose worker died — is collected rather than paid for again.
+    # One that somebody polled a moment ago still has its own collector.
+    quiet_s = max(60, 3 * get_settings().mineru_poll_interval_seconds)
+    submitted = await db.fetch_one(
+        "SELECT parse_id, remote_batch_id FROM mineru_parses "
+        "WHERE paper_id = ? AND status IN ('pending', 'running') "
+        "AND COALESCE(remote_batch_id, '') <> '' "
+        "AND created_at > now() - make_interval(days => 1) "
+        "AND COALESCE(last_poll_at, created_at) < now() - make_interval(secs => ?) "
+        "ORDER BY created_at DESC LIMIT 1",
+        (paper_id, quiet_s),
+    )
+    if submitted:
+        parse_id = submitted["parse_id"]
+        try:
+            await _emit_progress(
+                state.get("run_id", ""), "mineru_parse", "running", parse_id=parse_id, resumed=True
+            )
+            output_dir = await mineru_adapter.resume_parse(
+                paper_id, parse_id, submitted["remote_batch_id"]
+            )
+            logger.info(f"[{paper_id}] mineru_parse: REJOINED batch {submitted['remote_batch_id']}")
+            return {
+                "parse_id": parse_id,
+                "output_dir": str(output_dir),
+                "progress": state.get("progress", []) + [{"step": "mineru_parse", "status": "done", "resumed": True}],
+            }
+        except Exception as e:  # the batch expired or failed: submit afresh
+            logger.warning(f"[{paper_id}] mineru_parse: could not rejoin batch — {e}")
+
     parse_id = uuid.uuid4().hex[:16]
     await db.execute(
         "INSERT INTO mineru_parses (parse_id, paper_id, status) VALUES (?, ?, 'pending')",
@@ -518,7 +549,8 @@ async def persist_output(state: MainGraphState) -> dict[str, Any]:
 
     if state.get("error"):
         await db.execute(
-            "UPDATE runs SET status = 'failed', error_msg = ?, mode = ?, detected_intent = ?, finished_at = now() WHERE run_id = ?",
+            "UPDATE runs SET status = 'failed', error_msg = ?, mode = ?, detected_intent = ?, finished_at = now() "
+            "WHERE run_id = ? AND status IN ('pending', 'running')",
             (state["error"], final_mode, detected_intent, run_id),
         )
         logger.info(f"[{paper_id}] persist_output: Saved FAILED status in {time.perf_counter()-t0:.2f}s")
@@ -534,7 +566,8 @@ async def persist_output(state: MainGraphState) -> dict[str, Any]:
         (run_id, markdown, json_data),
     )
     await db.execute(
-        "UPDATE runs SET status = 'done', mode = ?, detected_intent = ?, finished_at = now() WHERE run_id = ?",
+        "UPDATE runs SET status = 'done', mode = ?, detected_intent = ?, finished_at = now() "
+        "WHERE run_id = ? AND status IN ('pending', 'running')",
         (final_mode, detected_intent, run_id),
     )
 

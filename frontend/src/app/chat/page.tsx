@@ -3,7 +3,7 @@
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { createSession, listProjects, listSessions } from "@/lib/agent";
+import { createSession, deleteSession, listProjects, listSessions } from "@/lib/agent";
 import type { AgentMode, AgentProject, AgentSession } from "@/lib/agent";
 import { listModels, listRecentRuns, uploadPaper } from "@/lib/api";
 import type { RecentRunResponse } from "@/lib/types";
@@ -341,13 +341,27 @@ function ChatEntry() {
         )}
         <div className="space-y-1">
           {(sessions ?? []).map((session) => (
-            <Link
+            <div
               key={session.session_id}
-              href={`/chat/${session.session_id}`}
-              className="block truncate rounded-lg px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              className="group flex items-center rounded-lg text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
             >
-              {session.title || t("chat.sessions.untitled")}
-            </Link>
+              <Link href={`/chat/${session.session_id}`} className="min-w-0 flex-1 truncate px-3 py-2">
+                {session.title || t("chat.sessions.untitled")}
+              </Link>
+              <button
+                type="button"
+                onClick={() => {
+                  if (!window.confirm(t("chat.sessions.delete_confirm"))) return;
+                  setSessions((prev) => (prev ?? []).filter((s) => s.session_id !== session.session_id));
+                  deleteSession(session.session_id).catch(() => {});
+                }}
+                title={t("chat.sessions.delete")}
+                aria-label={t("chat.sessions.delete")}
+                className="mr-2 flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-muted-foreground opacity-0 transition-opacity hover:bg-destructive/15 hover:text-destructive focus:opacity-100 group-hover:opacity-100"
+              >
+                ✕
+              </button>
+            </div>
           ))}
         </div>
       </section>

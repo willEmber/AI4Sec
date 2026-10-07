@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
-import { dismissRun, listRecentRuns } from "@/lib/api";
+import { cancelRun, deleteRun, listRecentRuns } from "@/lib/api";
 import { useTranslation } from "@/lib/i18n";
 import { IconArrowRight, IconCheck } from "@/components/icons";
 import type { RecentRunResponse } from "@/lib/types";
@@ -61,10 +61,19 @@ export default function RecentRuns({ refreshMs = 5000, historyLimit = 8 }: Props
   }, [refreshMs]);
 
   const handleDismiss = useCallback((runId: string) => {
-    // Optimistically drop the row, then clear it on the backend.
+    // Optimistically drop the row, then stop the run on the backend.
     setRuns((prev) => (prev ? prev.filter((r) => r.run_id !== runId) : prev));
-    dismissRun(runId).catch(() => {});
+    cancelRun(runId).catch(() => {});
   }, []);
+
+  const handleDelete = useCallback(
+    (runId: string) => {
+      if (!window.confirm(t("run.delete_confirm"))) return;
+      setRuns((prev) => (prev ? prev.filter((r) => r.run_id !== runId) : prev));
+      deleteRun(runId).catch(() => {});
+    },
+    [t],
+  );
 
   if (runs === null || runs.length === 0) return null;
 
@@ -94,7 +103,7 @@ export default function RecentRuns({ refreshMs = 5000, historyLimit = 8 }: Props
           </summary>
           <ul className="mt-3 space-y-1.5">
             {history.map((r) => (
-              <HistoryRow key={r.run_id} run={r} t={t} locale={locale} />
+              <HistoryRow key={r.run_id} run={r} t={t} locale={locale} onDelete={handleDelete} />
             ))}
           </ul>
         </details>
@@ -150,18 +159,20 @@ function HistoryRow({
   run,
   t,
   locale,
+  onDelete,
 }: {
   run: RecentRunResponse;
   t: (k: string, vars?: Record<string, string | number>) => string;
   locale: string;
+  onDelete: (runId: string) => void;
 }) {
   const modeLabel = t(`upload.mode.${run.mode}.label`) || run.mode;
   const ok = run.status === "done";
   return (
-    <li>
+    <li className="group flex items-center rounded-xl transition-colors hover:bg-muted">
       <Link
         href={`/paper/${run.paper_id}/run/${run.run_id}`}
-        className="group flex items-center gap-3 rounded-xl px-3 py-2 transition-colors hover:bg-muted"
+        className="flex min-w-0 flex-1 items-center gap-3 px-3 py-2"
       >
         <span
           className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[11px] ${
@@ -180,6 +191,15 @@ function HistoryRow({
         </span>
         <IconArrowRight className="shrink-0 text-base text-muted-foreground transition-colors group-hover:text-foreground/70" />
       </Link>
+      <button
+        type="button"
+        onClick={() => onDelete(run.run_id)}
+        title={t("run.delete")}
+        aria-label={t("run.delete")}
+        className="mr-2 ml-1 flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-sm text-muted-foreground transition-colors hover:bg-destructive/15 hover:text-destructive"
+      >
+        ✕
+      </button>
     </li>
   );
 }

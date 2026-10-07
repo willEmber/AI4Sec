@@ -332,6 +332,27 @@ def _get_client() -> MinerUClient:
     return MinerUClient(token=settings.mineru_token)
 
 
+# Files an extracted archive no longer needs: the archive itself, and a second
+# copy of the PDF that was uploaded.
+_REDUNDANT_PARSE_FILES = ("*.zip", "*/*_origin.pdf")
+
+
+def drop_redundant_parse_files(raw_dir: Path, *, dry_run: bool = False) -> int:
+    """Delete what an extracted MinerU archive no longer needs. Returns bytes freed."""
+    freed = 0
+    for pattern in _REDUNDANT_PARSE_FILES:
+        for path in raw_dir.glob(pattern):
+            if not path.is_file():
+                continue
+            # An archive is only redundant once it has been extracted.
+            if path.suffix == ".zip" and not path.with_suffix("").is_dir():
+                continue
+            freed += path.stat().st_size
+            if not dry_run:
+                path.unlink(missing_ok=True)
+    return freed
+
+
 async def parse_pdf(paper_id: str, parse_id: str, *, queue_timeout_s: int = 0) -> Path:
     """Parse a single PDF via MinerU batch API. Returns the output directory."""
     settings = get_settings()
@@ -454,6 +475,7 @@ def _collect_batch_sync(
             shutil.rmtree(extract_dir)
         with zipfile.ZipFile(zip_path, "r") as zf:
             _safe_zip_extract(zf, extract_dir)
+        drop_redundant_parse_files(output_dir)
         n_files = sum(1 for _ in extract_dir.rglob("*") if _.is_file())
         logger.info(f"[{paper_id}] MinerU extract: {time.perf_counter()-t0:.2f}s ({n_files} files)")
         return extract_dir
@@ -576,6 +598,7 @@ async def parse_pdf_batch(paper_ids: list[str], parse_ids: list[str]) -> list[Pa
                 shutil.rmtree(ed)
             with zipfile.ZipFile(zp, "r") as zf:
                 _safe_zip_extract(zf, ed)
+            drop_redundant_parse_files(out)
             out_dirs.append(ed)
 
         return out_dirs
