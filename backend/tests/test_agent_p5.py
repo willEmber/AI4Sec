@@ -76,6 +76,63 @@ class MemoryToolTests(AgentP2TestCase):
         self.assertEqual(result["status"], "error")
         self.assertEqual(result["error"]["code"], "forbidden")
 
+    async def test_a_paper_handle_is_not_mistaken_for_a_credential(self) -> None:
+        from app.agents.tools import save_memory
+        from app.agents.tools.memory import looks_like_secret
+
+        # A real `paper_id` is the SHA-1 of the file; the fixture's is not.
+        paper_id = "a94a8fe5ccb19ba61c4c0873d391e987982fbbd3"
+        self.assertTrue(looks_like_secret(f"baseline is {paper_id}"))
+        with mock.patch(
+            "app.agents.tools.memory._paper_handles", mock.AsyncMock(return_value={paper_id})
+        ):
+            saved = await self._call(
+                save_memory, content=f"Thesis baseline is paper_id={paper_id}", kind="project"
+            )
+        self.assertEqual(saved["status"], "ok")
+
+        # Only a handle this conversation holds is exempt: the same shape
+        # from anywhere else is still treated as a token.
+        stranger = "0123456789abcdef0123456789abcdef01234567"
+        self.assertTrue(looks_like_secret(f"see {stranger}", {paper_id}))
+        refused = await self._call(save_memory, content=f"Baseline is {stranger}")
+        self.assertEqual(refused["error"]["code"], "forbidden")
+
+    async def test_a_correction_replaces_the_memory_it_corrects(self) -> None:
+        from app.agents.tools import list_memories, save_memory
+
+        old = await self._call(save_memory, content="Answer in Chinese")
+        new = await self._call(
+            save_memory, content="Answer in English", replaces=old["data"]["memory_id"]
+        )
+        self.assertEqual(new["data"]["replaced"], old["data"]["memory_id"])
+        listed = await self._call(list_memories)
+        self.assertEqual([m["content"] for m in listed["data"]["memories"]], ["Answer in English"])
+
+        # An id that does not resolve costs nothing but a note; the save stands.
+        third = await self._call(save_memory, content="Prefers tables", replaces="mem_nope")
+        self.assertEqual(third["status"], "ok")
+        self.assertEqual(third["data"]["replaced"], "")
+        self.assertIn("nothing was replaced", third["note"])
+
+    async def test_the_prompt_carries_ids_and_says_what_it_left_out(self) -> None:
+        from app.agents.prompts import build_system_prompt
+        from app.db import agent_repository as repo
+
+        for i in range(5):
+            await repo.add_memory(owner_id=self.owner, content=f"Fact {i}")
+        shown = await repo.list_memories_for_prompt(self.owner, limit=3)
+        total = await repo.count_memories_for_prompt(self.owner)
+        self.assertEqual((len(shown), total), (3, 5))
+
+        prompt = build_system_prompt(
+            language="en", memories=shown, memories_omitted=total - len(shown)
+        )
+        for memory in shown:
+            self.assertIn(memory.memory_id, prompt)
+        self.assertIn("2 older ones not listed", prompt)
+        self.assertNotIn("not listed", build_system_prompt(language="en", memories=shown))
+
     async def test_memories_reach_the_prompt_as_reference_not_instruction(self) -> None:
         from app.agents.prompts import build_system_prompt
         from app.db import agent_repository as repo
@@ -374,6 +431,42 @@ class TokenCountTests(unittest.TestCase):
             count_tokens_cjk_aware([HumanMessage("q")], tools=[tool]),
             count_tokens_cjk_aware([HumanMessage("q")]) + 900,
         )
+
+
+class CompactionTests(unittest.TestCase):
+    def test_a_compaction_leaves_no_file_and_no_pointer_to_one(self) -> None:
+        """The model has no file tools, so the summary must not send it to a file."""
+        from langgraph.checkpoint.memory import InMemorySaver
+
+        from app.agents.harness import create_paper_agent
+        from app.agents.middleware import ScholarSummarizationMiddleware
+        from tests.test_agent_p2 import ScriptedModel
+
+        agent = create_paper_agent(
+            tools=[],
+            system_prompt="read papers",
+            model=ScriptedModel(final="an answer"),
+            checkpointer=InMemorySaver(),
+            middleware=[
+                ScholarSummarizationMiddleware(
+                    ScriptedModel(final="THE SUMMARY"), trigger_tokens=2_000, keep_messages=2
+                )
+            ],
+        )
+        config = {"configurable": {"thread_id": "compaction"}}
+        for i in range(4):
+            agent.invoke({"messages": [{"role": "user", "content": f"q{i} " + "word " * 1500}]}, config=config)
+
+        state = agent.get_state(config).values
+        event = state.get("_summarization_event")
+        self.assertIsNotNone(event, "the conversation should have been compacted")
+        summary = event["summary_message"].content
+        self.assertIn("THE SUMMARY", summary)
+        self.assertNotIn("conversation_history", summary)
+        self.assertFalse(event.get("file_path"))
+        self.assertFalse(state.get("files"))
+        # Nothing was removed from the checkpoint: compaction is a cutoff.
+        self.assertEqual(len(state["messages"]), 8)
 
 
 class MiddlewareAssemblyTests(unittest.TestCase):

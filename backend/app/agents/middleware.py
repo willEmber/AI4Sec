@@ -12,13 +12,14 @@ before each model call. The stub keeps the tool's `status`, `note` and every
 and re-reading is one cheap tool call away. Only the request is changed — the
 checkpoint keeps the full result, so nothing is lost for replay or audit.
 
-*`ScholarSummarizationMiddleware`* is deepagents' summarisation with three
+*`ScholarSummarizationMiddleware`* is deepagents' summarisation with four
 things changed: the trigger is an absolute token count from settings (the
 gateway models publish no profile, so fraction triggers never fire) taken with
 a counter that knows what Chinese costs, the
 summary prompt is written for a reading assistant (it must carry forward
-paper handles, evidence ids and the reader's stated preferences), and each
-compaction is reported to a hook so the turn can tell the reader it happened.
+paper handles, evidence ids and the reader's stated preferences), each
+compaction is reported to a hook so the turn can tell the reader it happened,
+and the summarised messages are not copied to a file the model cannot open.
 The class reports `name == "SummarizationMiddleware"` so `create_deep_agent`
 replaces its default instance in place rather than running both.
 """
@@ -194,6 +195,25 @@ class ScholarSummarizationMiddleware(SummarizationMiddleware):
         # own instance; a subclass would otherwise report its class name and be
         # *added* beside the default, summarising twice.
         return "SummarizationMiddleware"
+
+    # deepagents also writes the summarised messages to a file in the graph
+    # state and tells the model where to read them back. This agent has no
+    # file tools (`harness.py` strips them), so the pointer led nowhere, and
+    # the file was a second copy of messages the checkpoint already keeps:
+    # compaction records a cutoff, it does not remove anything from `messages`.
+    # An empty path, not `None`, which the caller reports as a failed offload.
+    def _offload_to_backend(self, backend: Any, messages: list[AnyMessage], session_id: str) -> str:
+        return ""
+
+    async def _aoffload_to_backend(
+        self, backend: Any, messages: list[AnyMessage], session_id: str
+    ) -> str:
+        return ""
+
+    def _build_new_messages_with_path(
+        self, summary: str, file_path: str | None
+    ) -> list[AnyMessage]:
+        return super()._build_new_messages_with_path(summary, None)
 
     def _compaction_payload(
         self, before: list[AnyMessage], response: Any

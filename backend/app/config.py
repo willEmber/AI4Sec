@@ -189,13 +189,20 @@ class AppSettings(BaseSettings):
     # size, made the model re-read sections it had been given a moment ago,
     # with hundreds of thousands of tokens of room left. It sits well below the
     # summarisation trigger because every step bills the whole context again,
-    # against `agent_max_tokens` and the reader's daily quota. 0 = always cut.
+    # against `agent_max_tokens` and the reader's daily quota. 150k is what a
+    # twelve-step turn can carry inside that ceiling; the models' window is
+    # not what bounds it, so going higher means raising the ceiling as well.
+    # 0 = always cut.
     agent_tool_result_evict_tokens: int = Field(
-        default=60_000, alias="AGENT_TOOL_RESULT_EVICT_TOKENS"
+        default=150_000, alias="AGENT_TOOL_RESULT_EVICT_TOKENS"
     )
     # --- Long-term memory ---
-    # Ceiling on memories injected into the prompt per turn (newest first).
-    agent_memory_max_items: int = Field(default=30, alias="AGENT_MEMORY_MAX_ITEMS")
+    # Ceiling on memories injected into the prompt per turn (the project's
+    # first, then newest first). A memory is a sentence, so a hundred is a few
+    # thousand tokens; at 30 the ones dropped were the oldest global ones,
+    # which is where a reader's first-stated preferences sit. Past the ceiling
+    # the prompt says how many were left out.
+    agent_memory_max_items: int = Field(default=100, alias="AGENT_MEMORY_MAX_ITEMS")
 
     # --- GROBID (structured header extraction fallback) ---
     # Base URL of a GROBID server, e.g. http://localhost:8070. Empty disables it;

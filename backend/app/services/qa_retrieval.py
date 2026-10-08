@@ -362,6 +362,16 @@ def _select_context_nodes(
     return sorted(selected.values(), key=lambda item: (item.page_start, item.order_idx))
 
 
+# A paper whose text fits in this many characters (~40k tokens) is given to
+# the model whole. Selecting passages was for models that could not hold a
+# paper: the scoring is lexical, and a passage it misses turns into "the paper
+# does not say". Only a document too long for this goes through selection —
+# and what is selected is then allowed the same room, not the 20k it had when
+# every paper was selected from: a paper just over the line got an eighth of
+# the context of one just under it.
+FULL_TEXT_MAX_CHARS = 150_000
+
+
 def _format_context(nodes: list[PaperNode], max_chars: int) -> str:
     parts: list[str] = []
     for node in nodes:
@@ -375,13 +385,6 @@ def _format_context(nodes: list[PaperNode], max_chars: int) -> str:
     if len(context) > max_chars:
         context = context[:max_chars] + "\n\n[... truncated for length ...]"
     return context
-
-
-# A paper whose text fits in this many characters (~40k tokens) is given to
-# the model whole. Selecting passages was for models that could not hold a
-# paper: the scoring is lexical, and a passage it misses turns into "the paper
-# does not say". Only a document too long for this goes through selection.
-FULL_TEXT_MAX_CHARS = 150_000
 
 
 def _whole_paper_context(nodes: list[PaperNode]) -> tuple[str, int] | None:
@@ -402,7 +405,7 @@ def _whole_paper_context(nodes: list[PaperNode]) -> tuple[str, int] | None:
     return "\n\n".join(parts), len(chunks)
 
 
-def retrieve_qa_context(paper_ir: PaperIR, question: str, max_chars: int = 20000) -> tuple[str, int]:
+def retrieve_qa_context(paper_ir: PaperIR, question: str, max_chars: int = FULL_TEXT_MAX_CHARS) -> tuple[str, int]:
     nodes = build_paper_nodes(paper_ir)
     whole = _whole_paper_context(nodes)
     if whole is not None:
@@ -569,7 +572,7 @@ async def retrieve_qa_context_for_paper(
     paper_id: str,
     paper_ir: PaperIR,
     question: str,
-    max_chars: int = 20000,
+    max_chars: int = FULL_TEXT_MAX_CHARS,
 ) -> tuple[str, int]:
     try:
         nodes = await load_paper_nodes(paper_id)

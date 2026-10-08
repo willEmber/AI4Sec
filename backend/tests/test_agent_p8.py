@@ -428,6 +428,28 @@ class ProjectMemoryAndPromptTests(P8TestCase):
         listed = await self._call(list_memories)
         self.assertEqual([m["content"] for m in listed["data"]["memories"]], ["Prefers tables"])
 
+    async def test_another_projects_memory_cannot_be_forgotten_or_replaced(self) -> None:
+        from app.agents.tools import forget_memory, save_memory
+        from app.db import agent_repository as repo
+
+        here = await repo.create_project(owner_id=self.owner, title="P")
+        elsewhere = await repo.create_project(owner_id=self.owner, title="Q")
+        theirs = await repo.add_memory(
+            owner_id=self.owner, content="Q uses JAX", project_id=elsewhere.project_id
+        )
+        self.ctx.project_id = here.project_id
+
+        refused = await self._call(forget_memory, memory_id=theirs.memory_id)
+        self.assertEqual(refused["status"], "unavailable")
+        saved = await self._call(save_memory, content="Uses PyTorch", replaces=theirs.memory_id)
+        self.assertEqual(saved["data"]["replaced"], "")
+        kept = await repo.get_memory(theirs.memory_id, owner_id=self.owner)
+        self.assertTrue(kept.active)
+
+        # A global memory is everyone's to drop, and the project's own is too.
+        mine = await self._call(save_memory, content="Works on routing", kind="project")
+        self.assertTrue((await self._call(forget_memory, memory_id=mine["data"]["memory_id"]))["data"]["forgotten"])
+
     async def test_project_scope_without_a_project_falls_back_to_global(self) -> None:
         from app.agents.tools import save_memory
 
@@ -461,13 +483,13 @@ class ProjectMemoryAndPromptTests(P8TestCase):
         prompt = build_system_prompt(
             language="en", papers=[], memories=memories, project=project, project_papers=others
         )
-        self.assertEqual(PROMPT_VERSION, "p9-parallel-1")
+        self.assertEqual(PROMPT_VERSION, "p9-memory-1")
         self.assertIn('## Research project', prompt)
         self.assertIn('"MoE routing"', prompt)
         self.assertIn("Compare routers on WMT14.", prompt)
         self.assertIn("paper_id=paper1, parsed", prompt)
         self.assertIn("open_project_paper", prompt)
-        self.assertIn("[preference · this project] Works on MoE", prompt)
+        self.assertRegex(prompt, r"\[preference · this project · mem_\w+\] Works on MoE")
 
         zh = build_system_prompt(language="zh", project=project, project_papers=others)
         self.assertIn("## 研究项目", zh)

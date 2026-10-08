@@ -954,6 +954,16 @@ async def list_memories_for_prompt(
     return [_row_to_memory(r) for r in rows]
 
 
+async def count_memories_for_prompt(owner_id: str, *, project_id: str = "") -> int:
+    """How many memories `list_memories_for_prompt` would return without its limit."""
+    row = await db.fetch_one(
+        """SELECT count(*) AS n FROM agent_memories
+            WHERE owner_id = ? AND active = 1 AND (project_id = '' OR project_id = ?)""",
+        (owner_id, project_id),
+    )
+    return int(row["n"]) if row else 0
+
+
 async def get_memory(memory_id: str, *, owner_id: str) -> AgentMemory | None:
     row = await db.fetch_one("SELECT * FROM agent_memories WHERE memory_id = ?", (memory_id,))
     if row is None or row["owner_id"] != owner_id:

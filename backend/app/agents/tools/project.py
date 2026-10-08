@@ -38,8 +38,9 @@ async def recall_conversations(
 
     Use this when the reader refers to something discussed before ("last time",
     "the number we found", "上次"), or when an earlier conversation in this
-    project probably already settled the question. `query` is a few keywords
-    (Chinese or English). `scope` is "project" (this project's other
+    project probably already settled the question. `query` is a few keywords;
+    a turn matches on any of them, so give the terms in both Chinese and
+    English when the earlier conversation may have used either. `scope` is "project" (this project's other
     conversations; the default) or "all" (every earlier conversation of this
     reader). Each result is one earlier turn: the question, an excerpt of the
     answer, and the evidence that answer cited. Cite that evidence by its id;

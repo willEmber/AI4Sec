@@ -376,6 +376,16 @@ async def _execute_turn(
             project_id=project.project_id if project is not None else "",
             limit=settings.agent_memory_max_items,
         )
+        memories_omitted = 0
+        if len(memories) >= settings.agent_memory_max_items:
+            memories_omitted = max(
+                0,
+                await repo.count_memories_for_prompt(
+                    session.owner_id,
+                    project_id=project.project_id if project is not None else "",
+                )
+                - len(memories),
+            )
         context = AgentContext(
             owner_id=session.owner_id,
             session_id=session.session_id,
@@ -404,6 +414,7 @@ async def _execute_turn(
                 language=session.language,
                 papers=papers,
                 memories=memories,
+                memories_omitted=memories_omitted,
                 project=project,
                 project_papers=project_papers,
             ),

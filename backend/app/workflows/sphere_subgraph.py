@@ -60,6 +60,7 @@ from app.models.sphere_models import (
 from app.services.llm_gateway import get_registry
 from app.services.llm_service import chat_complete, get_llm_service
 from app.services.paper_search import normalize_whitespace, title_fingerprint
+from app.services.qa_retrieval import FULL_TEXT_MAX_CHARS
 from app.services.sphere_scorer import is_preprint_venue, is_survey_title, normalize_venue
 from app.workflows.progress import emit_progress as _emit_progress
 from app.workflows.state import MainGraphState
@@ -76,6 +77,10 @@ _SYNTH_MAX_TOKENS = 16384
 # The comparison table and the gaps pass read the whole core set and write the
 # longest answers of the run.
 _SYNTH_LONG_MAX_TOKENS = 32768
+# The comparator reads the center paper whole, the same size Q&A does. At 6000
+# characters it saw the abstract and the start of the introduction, and filled
+# the method, dataset and metric columns of the center's row from those.
+_CENTER_TEXT_MAX_CHARS = FULL_TEXT_MAX_CHARS
 
 
 def _current_year() -> int:
@@ -2228,8 +2233,8 @@ async def step_synthesize_landscape(
         if block.type in ("text", "title", "list", "equation"):
             center_text_parts.append(f"{block.text.strip()} [p.{block.page_idx + 1}]")
     center_text = "\n".join(center_text_parts)
-    if len(center_text) > 6000:
-        center_text = center_text[:6000] + "\n[...truncated...]"
+    if len(center_text) > _CENTER_TEXT_MAX_CHARS:
+        center_text = center_text[:_CENTER_TEXT_MAX_CHARS] + "\n[...truncated...]"
 
     comp_context = f"CENTER PAPER:\n[0] {center.title}\n{center_text}\n\nCOMPARISON PAPERS:\n"
     for i, node in enumerate(comparison_papers):

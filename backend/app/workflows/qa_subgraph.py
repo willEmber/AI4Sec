@@ -6,14 +6,18 @@ import time
 from typing import Any
 
 from app.models.paper_ir import PaperIR
-from app.services.qa_retrieval import retrieve_qa_context, retrieve_qa_context_for_paper
+from app.services.qa_retrieval import (
+    FULL_TEXT_MAX_CHARS,
+    retrieve_qa_context,
+    retrieve_qa_context_for_paper,
+)
 from app.services.llm_service import chat_complete, get_llm_service
 from app.workflows.state import MainGraphState
 
 logger = logging.getLogger("scholar.graph")
 
 
-def _assemble_context(paper_ir: PaperIR, question: str, max_chars: int = 20000) -> tuple[str, int]:
+def _assemble_context(paper_ir: PaperIR, question: str, max_chars: int = FULL_TEXT_MAX_CHARS) -> tuple[str, int]:
     """Compatibility wrapper for tests and callers that expect synchronous QA context assembly."""
     return retrieve_qa_context(paper_ir, question, max_chars=max_chars)
 

@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import logging
 import re
+from collections.abc import Iterable
 
 from langchain.tools import ToolRuntime, tool
 
@@ -34,6 +35,9 @@ from app.models.agent_models import ErrorCode, EventType, MemoryKind, ToolResult
 logger = logging.getLogger("scholar.agents.tools.memory")
 
 MAX_MEMORY_CHARS = 500
+# What `list_memories` returns: everything a reader plausibly has, since it is
+# the way to see what the prompt's ceiling left out.
+MAX_LISTED_MEMORIES = 500
 
 # Token-like runs and the usual key prefixes. Coarse on purpose: a false
 # positive costs one refused memory, a false negative leaks a secret.
@@ -45,8 +49,42 @@ _SECRET_RE = re.compile(
 )
 
 
-def looks_like_secret(text: str) -> bool:
-    return _SECRET_RE.search(text or "") is not None
+def looks_like_secret(text: str, known_ids: Iterable[str] = ()) -> bool:
+    """Whether `text` holds something shaped like a credential.
+
+    `known_ids` are handles that are allowed to appear: a `paper_id` is forty
+    hex characters, which is exactly what the token rule looks for. Only ids
+    the caller already knows are exempt — a forty-character run that is not
+    one of them may well be a key.
+    """
+    text = text or ""
+    for known in known_ids:
+        if known:
+            text = text.replace(known, "")
+    return _SECRET_RE.search(text) is not None
+
+
+async def _paper_handles(ctx: AgentContext) -> set[str]:
+    """The `paper_id`s this turn can name: the session's and its project's."""
+    papers = list(await repo.list_session_papers(ctx.session_id))
+    if ctx.project_id:
+        papers += await repo.list_project_papers(
+            ctx.project_id, exclude_session_id=ctx.session_id
+        )
+    return {p.paper_id for p in papers if p.paper_id}
+
+
+async def _memory_in_reach(ctx: AgentContext, memory_id: str) -> bool:
+    """Whether `memory_id` is an active memory this conversation can see.
+
+    The reader's own, and global or this project's — the same set the prompt
+    and `list_memories` show. An id from another project cannot be listed
+    here, so it should not be removable from here either.
+    """
+    memory = await repo.get_memory(memory_id, owner_id=ctx.owner_id)
+    if memory is None or not memory.active:
+        return False
+    return not memory.project_id or memory.project_id == ctx.project_id
 
 
 async def _emit_saved(ctx: AgentContext, memory_id: str, kind: str, content: str) -> None:
@@ -69,6 +107,7 @@ async def save_memory(
     runtime: ToolRuntime[AgentContext],
     kind: str = "preference",
     scope: str = "auto",
+    replaces: str = "",
 ) -> str:
     """Remember something durable about the reader for future conversations.
 
@@ -80,7 +119,9 @@ async def save_memory(
     conversation), or "auto": a `project` memory stays in the project, anything
     else is global. Do not store paper content, one-off requests, or anything
     transient; do not store credentials. Write the memory as a short,
-    self-contained sentence.
+    self-contained sentence. When this corrects or supersedes a memory you
+    already hold, pass that memory's id as `replaces` and it is forgotten in
+    the same call.
     """
     ctx = runtime.context
     text = (content or "").strip()
@@ -94,7 +135,7 @@ async def save_memory(
             f"A memory must be under {MAX_MEMORY_CHARS} characters; keep it to one durable point.",
             retryable=False,
         ).to_json()
-    if looks_like_secret(text):
+    if looks_like_secret(text) and looks_like_secret(text, await _paper_handles(ctx)):
         return ToolResult.failed(
             ErrorCode.FORBIDDEN,
             "That looks like a credential. Credentials are never stored; tell the reader so.",
@@ -115,6 +156,15 @@ async def save_memory(
         project_id=project_id,
     )
     await _emit_saved(ctx, memory.memory_id, memory.kind.value, memory.content)
+
+    replaced = (replaces or "").strip()
+    if replaced and replaced != memory.memory_id:
+        if await _memory_in_reach(ctx, replaced):
+            await repo.deactivate_memory(replaced, owner_id=ctx.owner_id)
+            scope_note = f"It replaces {replaced}. {scope_note}"
+        else:
+            scope_note = f"No active memory {replaced}, so nothing was replaced. {scope_note}"
+            replaced = ""
     where = (
         "future conversations in this project" if memory.project_id else "future conversations"
     )
@@ -124,6 +174,7 @@ async def save_memory(
             "kind": memory.kind.value,
             "content": memory.content,
             "scope": "project" if memory.project_id else "global",
+            "replaced": replaced if replaced != memory.memory_id else "",
         },
         note=f"Saved. It will be available in {where}; the reader can delete it. {scope_note}".strip(),
     ).to_json()
@@ -149,11 +200,12 @@ def _memory_project(ctx: AgentContext, kind: MemoryKind, scope: str) -> tuple[st
 async def list_memories(runtime: ToolRuntime[AgentContext]) -> str:
     """List what you currently remember about the reader, with memory ids.
 
-    The active memories are already in your instructions; call this only when
-    you need an id — for example to forget one the reader has asked you to drop.
+    The active memories are already in your instructions, ids included; call
+    this only when the instructions say some were left out, or the reader asks
+    what you remember.
     """
     ctx = runtime.context
-    memories = await repo.list_memories(ctx.owner_id)
+    memories = await repo.list_memories(ctx.owner_id, limit=MAX_LISTED_MEMORIES)
     return ToolResult.ok(
         {
             "memories": [
@@ -175,8 +227,8 @@ async def list_memories(runtime: ToolRuntime[AgentContext]) -> str:
 async def forget_memory(memory_id: str, runtime: ToolRuntime[AgentContext]) -> str:
     """Forget one memory, by id, when the reader asks you to or corrects it.
 
-    Get the id from list_memories. To replace a memory, forget the old one and
-    save the corrected one.
+    The id is beside each memory in your instructions. To correct a memory,
+    call save_memory with `replaces` instead.
     """
     ctx = runtime.context
     memory_id = (memory_id or "").strip()
@@ -184,7 +236,9 @@ async def forget_memory(memory_id: str, runtime: ToolRuntime[AgentContext]) -> s
         return ToolResult.failed(
             ErrorCode.INVALID_ARGUMENT, "memory_id must not be empty.", retryable=False
         ).to_json()
-    removed = await repo.deactivate_memory(memory_id, owner_id=ctx.owner_id)
+    removed = await _memory_in_reach(ctx, memory_id) and await repo.deactivate_memory(
+        memory_id, owner_id=ctx.owner_id
+    )
     if not removed:
         return ToolResult.unavailable(
             ErrorCode.EVIDENCE_NOT_FOUND, f"No active memory {memory_id}."
