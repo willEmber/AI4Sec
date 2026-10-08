@@ -21,6 +21,11 @@ COPY backend/app ./app
 # One-off maintenance, e.g. `docker compose run --rm backend
 # .venv/bin/python -m scripts.migrate_sqlite_to_postgres`.
 COPY backend/scripts ./scripts
+# The model registry, where the backend looks for it by default. models.toml is
+# not committed, so it is matched by a glob: a build without one still succeeds
+# (the example file keeps the instruction from having no source) and offers
+# only the base gateway. Editing models.toml means rebuilding this image.
+COPY backend/models.example.toml backend/models.tom[l] ./
 COPY backend/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh \
     && chown -R scholar:scholar /scholar/backend
