@@ -217,7 +217,7 @@ export default function RunPage() {
   }, [runId, router, t]);
 
   return (
-    <div className="flex h-[calc(100vh-3.5rem)] flex-col">
+    <div className="flex h-[calc(100dvh-3.5rem)] flex-col">
       {/* Header bar */}
       <div className="flex shrink-0 items-center gap-4 border-b border-border bg-card/60 px-5 py-2.5">
         <div className="min-w-0 flex-1">
@@ -396,7 +396,7 @@ export default function RunPage() {
                 </div>
               </div>
             ) : (
-              <div className="flex h-full items-start justify-center overflow-auto px-6 py-10">
+              <div className="relative flex h-full items-start justify-center overflow-auto px-6 py-10">
                 <div className="w-full max-w-sm text-center">
                   <div className="mx-auto mb-5 h-10 w-10 animate-spin rounded-full border-[3px] border-primary border-t-transparent" />
                   <p className="font-medium text-foreground">

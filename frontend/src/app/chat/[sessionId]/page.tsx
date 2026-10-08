@@ -492,7 +492,7 @@ function ChatSession() {
       {header}
 
       <div className="relative min-h-0 flex-1">
-        <div ref={scrollerRef} onScroll={onScroll} className="h-full overflow-y-auto">
+        <div ref={scrollerRef} onScroll={onScroll} className="relative h-full overflow-y-auto">
           <div className="mx-auto w-full max-w-3xl space-y-6 px-4 py-6 sm:px-6">
             {!detail && !loadError && (
               <div className="flex items-center gap-2 text-sm text-muted-foreground">

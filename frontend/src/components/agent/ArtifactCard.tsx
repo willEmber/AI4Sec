@@ -150,7 +150,7 @@ export default function ArtifactCard({ artifact, onJumpToPage, defaultOpen }: Pr
       </div>
 
       {open && (
-        <div className="max-h-[70vh] overflow-y-auto px-5 py-4">
+        <div className="relative max-h-[70vh] overflow-y-auto px-5 py-4">
           {failed && (
             <p className="text-xs text-destructive">{t("chat.artifact.failed")}</p>
           )}

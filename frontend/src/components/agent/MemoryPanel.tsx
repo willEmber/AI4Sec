@@ -94,7 +94,7 @@ export default function MemoryPanel({ refreshToken, projectId = "" }: Props) {
       </button>
 
       {open && (
-        <div className="max-h-56 overflow-y-auto px-2 pb-3">
+        <div className="relative max-h-56 overflow-y-auto px-2 pb-3">
           {memories !== null && memories.length === 0 && (
             <p className="px-2 pb-2 text-xs leading-relaxed text-muted-foreground">
               {t("chat.memory.empty")}

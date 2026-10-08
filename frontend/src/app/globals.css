@@ -134,6 +134,15 @@
   box-shadow: 0 12px 32px -14px rgba(20, 20, 19, 0.2);
 }
 
+/* KaTeX hides its MathML copy with position:absolute, and nothing in .katex is
+   positioned. Inside a scrolling pane that copy is then laid out against an
+   ancestor *outside* the pane: it does not scroll with the text, and its
+   resting place far down the content gives that ancestor (the split pane, or
+   the page itself) a scrollbar of its own. Anchor it to the formula. */
+.katex {
+  position: relative;
+}
+
 /* Slim, warm scrollbars */
 * {
   scrollbar-width: thin;

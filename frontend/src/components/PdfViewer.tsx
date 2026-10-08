@@ -129,7 +129,7 @@ export default function PdfViewer({
       </div>
 
       {/* PDF content */}
-      <div ref={containerRef} className="flex-1 overflow-auto bg-muted p-5">
+      <div ref={containerRef} className="relative flex-1 overflow-auto bg-muted p-5">
         <Document file={url} onLoadSuccess={onDocumentLoadSuccess} loading={
           <div className="flex h-48 items-center justify-center text-muted-foreground">
             {t("pdf.loading")}

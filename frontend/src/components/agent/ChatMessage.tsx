@@ -267,7 +267,7 @@ function CitationBadge({
                     <span className="rounded bg-muted px-1.5 py-[1px]">{levelLabel}</span>
                   )}
                 </span>
-                <span className="block max-h-48 overflow-y-auto whitespace-pre-wrap border-l-2 border-primary/40 pl-2.5 leading-relaxed text-foreground/80">
+                <span className="relative block max-h-48 overflow-y-auto whitespace-pre-wrap border-l-2 border-primary/40 pl-2.5 leading-relaxed text-foreground/80">
                   {evidence.quote}
                 </span>
                 {/* Only a PDF passage has a parse version to be out of date against. */}

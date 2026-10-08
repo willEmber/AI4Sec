@@ -63,7 +63,7 @@ export default function SplitPane({
     >
       <div
         style={collapsed ? undefined : { width: `${leftWidth}%` }}
-        className={collapsed ? "min-w-0 flex-1 overflow-auto" : "overflow-auto"}
+        className={collapsed ? "relative min-w-0 flex-1 overflow-auto" : "relative overflow-auto"}
       >
         {left}
       </div>
@@ -103,7 +103,7 @@ export default function SplitPane({
           (e.g. the PDF document) does not reload on expand. */}
       <div
         style={collapsed ? undefined : { width: `${100 - leftWidth}%` }}
-        className={collapsed ? "hidden" : "overflow-auto"}
+        className={collapsed ? "hidden" : "relative overflow-auto"}
       >
         {right}
       </div>

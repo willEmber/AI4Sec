@@ -170,7 +170,7 @@ export default function LibraryPage() {
   );
 
   return (
-    <div className="flex h-[calc(100vh-3.5rem)] flex-col">
+    <div className="flex h-[calc(100dvh-3.5rem)] flex-col">
       {/* Header */}
       <div className="shrink-0 border-b border-border bg-card/60 px-5 py-3">
         <div className="flex items-center justify-between gap-4">
@@ -267,7 +267,7 @@ export default function LibraryPage() {
               </div>
 
               {/* Results / answer / browse */}
-              <div className="flex-1 overflow-auto px-5 py-3">
+              <div className="relative min-h-0 flex-1 overflow-auto px-5 py-3">
                 {tab === "search" ? (
                   searching ? (
                     <CenterSpinner label={t("library.searching")} />
