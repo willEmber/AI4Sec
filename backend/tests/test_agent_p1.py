@@ -540,6 +540,45 @@ class EvidenceTests(AgentDataTestCase):
         self.assertTrue(checks[0].exists)
         self.assertFalse(checks[0].authorized)
 
+    async def test_same_passage_is_citable_by_every_reader_and_session(self) -> None:
+        """A passage somebody already read must still resolve for the next reader.
+
+        Papers are shared and content-addressed, so the same quote is recorded
+        again and again. Each recording has to be its own row: the first
+        reader's row is not the second reader's to resolve, and it goes away
+        with the first reader's conversation.
+        """
+        from app.db import agent_repository as repo
+        from app.services import data_lifecycle, evidence_service
+
+        owner, first, _lit, _version = await self._fixture()
+        second = await repo.create_session(owner_id=owner)
+        other_owner = await self._principal()
+        other = await repo.create_session(owner_id=other_owner)
+
+        async def read(owner_id: str, session_id: str) -> str:
+            stored = await evidence_service.record_fulltext_evidence(
+                paper_id="sha1fff",
+                quote="Routing is top-2 gating.",
+                owner_id=owner_id,
+                session_id=session_id,
+            )
+            return stored.evidence_id
+
+        first_id = await read(owner, first.session_id)
+        second_id = await read(owner, second.session_id)
+        other_id = await read(other_owner, other.session_id)
+        self.assertEqual(len({first_id, second_id, other_id}), 3)
+        # Re-reading inside one conversation is still one row.
+        self.assertEqual(await read(owner, second.session_id), second_id)
+
+        resolved = await evidence_service.resolve(other_id, owner_id=other_owner)
+        self.assertEqual(resolved.owner_id, other_owner)
+
+        await data_lifecycle.delete_session(first.session_id, owner_id=owner)
+        resolved = await evidence_service.resolve(second_id, owner_id=owner)
+        self.assertEqual(resolved.session_id, second.session_id)
+
     async def test_unknown_citation_is_reported_not_raised(self) -> None:
         from app.services import evidence_service
 

@@ -98,11 +98,12 @@ def compute_evidence_id(
     than two, and so that a different quote can never reuse an id an answer has
     already cited.
 
-    `scope`, when given, makes the id private to one owner. Web evidence needs
-    it: two readers running the same web search get the same snippet, and an
-    unscoped id would make the second reader's citation resolve to a row the
-    first reader owns — which the ownership check then refuses. Empty leaves
-    the id exactly as it has always been computed.
+    `scope`, when given, makes the id private to whoever holds the row — the
+    recording session, in practice (`evidence_service._store`). Two readers of
+    one paper, or two conversations of one reader, produce the same passage;
+    an unscoped id would make the later citation resolve to a row the earlier
+    one holds, which the ownership check refuses and which disappears when the
+    earlier conversation is deleted. Empty leaves the id unscoped.
     """
     level = source_level.value if isinstance(source_level, SourceLevel) else str(source_level)
     material = "\x1f".join(

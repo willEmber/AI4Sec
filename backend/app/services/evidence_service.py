@@ -56,8 +56,16 @@ async def _store(
     locator: Locator | None = None,
     source_url: str = "",
     provider: str = "",
-    scope: str = "",
 ) -> Evidence:
+    """Store one excerpt under an id that belongs to the recording session.
+
+    The row carries one `owner_id` and one `session_id`, and both decide its
+    fate: only the owner may resolve it, and deleting the session deletes it.
+    An id derived from the content alone would hand a second reader of the
+    same paper — or the same reader's next conversation — a row somebody else
+    owns, and their citation would stop resolving the moment the ownership
+    check ran or the first conversation was deleted.
+    """
     quote = _truncate(quote)
     locator = locator or Locator()
     evidence = Evidence(
@@ -69,7 +77,7 @@ async def _store(
             parse_version=parse_version,
             locator=locator,
             source_url=source_url,
-            scope=scope,
+            scope=session_id or owner_id,
         ),
         owner_id=owner_id,
         session_id=session_id,
@@ -185,14 +193,8 @@ async def record_web_evidence(
     provider: str = "web",
     literature_id: str = "",
     locator: Locator | None = None,
-    owner_scoped: bool = False,
 ) -> Evidence:
-    """Record an excerpt from a web page or API response.
-
-    `owner_scoped` keys the evidence id to the owner as well (see
-    `compute_evidence_id`). General web results set it; they are the evidence
-    two readers are most likely to hit identically.
-    """
+    """Record an excerpt from a web page or API response."""
     return await _store(
         source_level=SourceLevel.EXTERNAL_WEB,
         quote=quote,
@@ -202,7 +204,6 @@ async def record_web_evidence(
         locator=locator,
         source_url=source_url,
         provider=provider,
-        scope=owner_id if owner_scoped else "",
     )
 
 

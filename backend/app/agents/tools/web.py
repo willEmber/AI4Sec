@@ -260,7 +260,6 @@ async def web_search(
             session_id=ctx.session_id,
             provider=f"{result.provider.lower()}:search",
             locator=Locator(section_path=result.title),
-            owner_scoped=True,
         )
         evidence_ids.append(evidence.evidence_id)
         entry = result.to_dict()
@@ -475,7 +474,6 @@ async def read_web_page(
             session_id=ctx.session_id,
             provider=f"{page.provider.lower()}:page",
             locator=Locator(section_path=path),
-            owner_scoped=True,
         )
         evidence_ids.append(evidence.evidence_id)
         out_chunks.append(
