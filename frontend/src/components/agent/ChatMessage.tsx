@@ -2,11 +2,12 @@
 
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { CITATION_PATTERN, getEvidence } from "@/lib/agent";
 import type { Evidence } from "@/lib/agent";
+import { loadEvidence } from "@/lib/evidenceCache";
 import { useTranslation } from "@/lib/i18n";
+import { citationNumbers } from "@/lib/turns";
 import MarkdownRenderer from "@/components/MarkdownRenderer";
-import { IconCheck, IconCopy, IconExternal } from "@/components/icons";
+import { IconCheck, IconCopy, IconExternal, IconPencil } from "@/components/icons";
 
 interface Props {
   role: "user" | "assistant" | "system";
@@ -14,6 +15,8 @@ interface Props {
   onJumpToPage?: (paperId: string, page: number) => void;
   /** Text still arriving: shows a caret after the last block. */
   streaming?: boolean;
+  /** Put a question back into the composer to ask it differently. */
+  onRewrite?: (content: string) => void;
 }
 
 /**
@@ -24,18 +27,9 @@ interface Props {
  * evidence and shows the excerpt the agent actually read, with its page. That
  * is what makes an answer checkable rather than merely plausible.
  */
-function ChatMessage({ role, content, onJumpToPage, streaming }: Props) {
-  // Numbered by first appearance, so the same source keeps one number
-  // throughout an answer.
-  const numbers = useMemo(() => {
-    const map = new Map<string, number>();
-    const pattern = new RegExp(CITATION_PATTERN.source, "g");
-    let match: RegExpExecArray | null;
-    while ((match = pattern.exec(content)) !== null) {
-      if (!map.has(match[1])) map.set(match[1], map.size + 1);
-    }
-    return map;
-  }, [content]);
+function ChatMessage({ role, content, onJumpToPage, streaming, onRewrite }: Props) {
+  const { t } = useTranslation();
+  const numbers = useMemo(() => citationNumbers(content), [content]);
 
   const renderEvidence = useCallback(
     (evidenceId: string) => (
@@ -50,11 +44,25 @@ function ChatMessage({ role, content, onJumpToPage, streaming }: Props) {
 
   if (role === "user") {
     return (
-      <div className="flex justify-end">
+      <div className="group/question flex flex-col items-end gap-1">
         <div className="max-w-[85%] rounded-2xl rounded-br-md bg-accent px-4 py-2.5 text-foreground">
           <p className="whitespace-pre-wrap break-words text-[0.925rem] leading-relaxed">
             {content}
           </p>
+        </div>
+        <div className="flex items-center gap-1 transition-opacity focus-within:opacity-100 group-hover/question:opacity-100 [@media(hover:hover)]:opacity-0">
+          <CopyButton text={content} />
+          {onRewrite && (
+            <button
+              type="button"
+              onClick={() => onRewrite(content)}
+              title={t("chat.rewrite_hint")}
+              className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            >
+              <IconPencil className="text-[13px]" />
+              <span>{t("chat.rewrite")}</span>
+            </button>
+          )}
         </div>
       </div>
     );
@@ -91,7 +99,7 @@ export function CopyButton({ text, className = "" }: { text: string; className?:
       type="button"
       onClick={() => void copy()}
       title={copied ? t("chat.copied") : t("chat.copy")}
-      className={`inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-[0.7rem] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground ${className}`}
+      className={`inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground ${className}`}
     >
       {copied ? <IconCheck className="text-[13px] text-success" /> : <IconCopy className="text-[13px]" />}
       <span>{copied ? t("chat.copied") : t("chat.copy")}</span>
@@ -154,7 +162,7 @@ function CitationBadge({
     setPlacement(place());
     if (evidence || failed) return;
     try {
-      setEvidence(await getEvidence(evidenceId));
+      setEvidence(await loadEvidence(evidenceId));
     } catch {
       setFailed(true);
     }

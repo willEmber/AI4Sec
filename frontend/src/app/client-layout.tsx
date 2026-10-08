@@ -65,6 +65,7 @@ export default function ClientLayout({
   children: ReactNode;
 }) {
   const pathname = usePathname();
+  const inChat = pathname === "/chat" || pathname.startsWith("/chat/");
 
   useEffect(() => {
     // Traffic collection must never affect page rendering or navigation.
@@ -73,7 +74,9 @@ export default function ClientLayout({
 
   return (
     <LanguageProvider initialLocale={initialLocale} hasStoredLocale={hasStoredLocale}>
-      <NavBar />
+      {/* A conversation is a full-height workspace with its own sidebar, which
+          carries what the top bar carries elsewhere. */}
+      {!inChat && <NavBar />}
       <main>{children}</main>
     </LanguageProvider>
   );

@@ -104,7 +104,7 @@ function ToolRow({ tool }: { tool: ToolActivity }) {
               {subject}
             </span>
           )}
-          <span className="ml-auto flex shrink-0 items-center gap-1.5 pl-2 text-[0.68rem] text-muted-foreground">
+          <span className="ml-auto flex shrink-0 items-center gap-1.5 pl-2 text-[0.7rem] text-muted-foreground">
             {reused && (
               <span className="rounded bg-muted px-1 py-[1px]">{t("chat.tool.reused")}</span>
             )}
@@ -126,15 +126,15 @@ function ToolRow({ tool }: { tool: ToolActivity }) {
           </span>
         </div>
 
-        {counts && <div className="text-[0.7rem] text-muted-foreground">{counts}</div>}
+        {counts && <div className="text-xs text-muted-foreground">{counts}</div>}
 
         {tool.error && (
-          <div className="mt-0.5 line-clamp-2 text-[0.7rem] text-destructive/90" title={tool.error.message}>
+          <div className="mt-0.5 line-clamp-2 text-xs text-destructive/90" title={tool.error.message}>
             {tool.error.message || tool.error.code}
           </div>
         )}
         {tool.note && !tool.steps?.length && !tool.error && (
-          <div className="mt-0.5 line-clamp-2 text-[0.7rem] text-muted-foreground/90" title={tool.note}>
+          <div className="mt-0.5 line-clamp-2 text-xs text-muted-foreground/90" title={tool.note}>
             {tool.note}
           </div>
         )}
@@ -195,7 +195,7 @@ function StepList({
             style={{ width: `${Math.round((done / steps.length) * 100)}%` }}
           />
         </div>
-        <span className="text-[0.65rem] tabular-nums text-muted-foreground">
+        <span className="text-[0.7rem] tabular-nums text-muted-foreground">
           {done}/{steps.length}
         </span>
       </div>
@@ -211,7 +211,7 @@ function StepList({
           return (
             <li
               key={step.step}
-              className={`flex items-center gap-1.5 text-[0.7rem] ${
+              className={`flex items-center gap-1.5 text-xs ${
                 finished ? "text-muted-foreground" : "text-foreground"
               }`}
             >

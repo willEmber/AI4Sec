@@ -354,3 +354,92 @@ export function IconAlert(props: IconProps) {
     </Svg>
   );
 }
+
+/** Run it again. */
+export function IconRefresh(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M20 11a8 8 0 0 0-14.3-4.5L4 8.5" />
+      <path d="M4 4v4.5h4.5" />
+      <path d="M4 13a8 8 0 0 0 14.3 4.5l1.7-2" />
+      <path d="M20 20v-4.5h-4.5" />
+    </Svg>
+  );
+}
+
+/** Edit / rewrite. */
+export function IconPencil(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M4 20h4L19 9l-4-4L4 16v4Z" />
+      <path d="m13.5 6.5 4 4" />
+    </Svg>
+  );
+}
+
+/** More actions. */
+export function IconMore(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <circle cx="5" cy="12" r="1.2" fill="currentColor" />
+      <circle cx="12" cy="12" r="1.2" fill="currentColor" />
+      <circle cx="19" cy="12" r="1.2" fill="currentColor" />
+    </Svg>
+  );
+}
+
+/** Attach a file. */
+export function IconPaperclip(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="m20 11.5-8.2 8.2a5 5 0 0 1-7.1-7.1l8.5-8.5a3.3 3.3 0 0 1 4.7 4.7l-8.5 8.5a1.7 1.7 0 0 1-2.4-2.4l7.8-7.8" />
+    </Svg>
+  );
+}
+
+/** Open the navigation drawer. */
+export function IconMenu(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M4 7h16M4 12h16M4 17h16" />
+    </Svg>
+  );
+}
+
+/** Close. */
+export function IconX(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M6 6l12 12M18 6 6 18" />
+    </Svg>
+  );
+}
+
+/** A project. */
+export function IconFolder(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M3.5 7.5a2 2 0 0 1 2-2h4l2 2.5h7a2 2 0 0 1 2 2v7.5a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2v-10Z" />
+    </Svg>
+  );
+}
+
+/** Delete. */
+export function IconTrash(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M4.5 7h15M9.5 7V4.5h5V7M6.5 7l.8 12.5h9.4L17.5 7" />
+      <path d="M10 11v5M14 11v5" />
+    </Svg>
+  );
+}
+
+/** Quoted sources. */
+export function IconQuote(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M9.5 7.5H6a1.5 1.5 0 0 0-1.5 1.5v3A1.5 1.5 0 0 0 6 13.5h2.5v1a2.5 2.5 0 0 1-2.5 2.5" />
+      <path d="M19 7.5h-3.5A1.5 1.5 0 0 0 14 9v3a1.5 1.5 0 0 0 1.5 1.5H18v1a2.5 2.5 0 0 1-2.5 2.5" />
+    </Svg>
+  );
+}

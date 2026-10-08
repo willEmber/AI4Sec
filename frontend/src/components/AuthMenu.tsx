@@ -23,14 +23,15 @@ const KNOWN_ERRORS = new Set([
 ]);
 
 /**
- * Login / account control for the navbar.
+ * Login / account control for the navbar, or (`placement="above"`) for the
+ * foot of the conversation sidebar, where the panel has to open upwards.
  *
  * Hidden entirely in single_user mode, where nobody logs in. Signed out it
  * lists the configured providers and, when an administrator is configured,
  * a username/password form; signed in it shows the avatar, today's usage and
  * logout.
  */
-export function AuthMenu() {
+export function AuthMenu({ placement = "below" }: { placement?: "below" | "above" } = {}) {
   const { t } = useTranslation();
   const [me, setMe] = useState<AuthMe | null>(null);
   const [open, setOpen] = useState(false);
@@ -181,7 +182,11 @@ export function AuthMenu() {
       )}
 
       {open && (
-        <div className="absolute right-0 top-full z-50 mt-2 w-64 rounded-xl border border-border bg-background p-3 shadow-lg">
+        <div
+          className={`absolute z-50 w-64 rounded-xl border border-border bg-background p-3 shadow-lg ${
+            placement === "above" ? "bottom-full left-0 mb-2" : "right-0 top-full mt-2"
+          }`}
+        >
           {error && <p className="mb-2 text-xs text-red-600 dark:text-red-400">{error}</p>}
 
           {me.authenticated ? (

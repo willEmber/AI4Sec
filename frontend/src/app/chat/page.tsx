@@ -1,47 +1,37 @@
 "use client";
 
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { createSession, deleteSession, listProjects, listSessions } from "@/lib/agent";
-import type { AgentMode, AgentProject, AgentSession } from "@/lib/agent";
+import { createSession, describeApiError, listProjects, postMessage } from "@/lib/agent";
+import type { AgentMode, AgentProject } from "@/lib/agent";
 import { listModels, listRecentRuns, uploadPaper } from "@/lib/api";
 import type { RecentRunResponse } from "@/lib/types";
 import { useTranslation } from "@/lib/i18n";
-import {
-  IconArrowRight,
-  IconLens,
-  IconPlus,
-  IconSnap,
-  IconSparkles,
-  IconSphere,
-  IconUpload,
-} from "@/components/icons";
-import type { ComponentType } from "react";
+import { useChatShell } from "@/components/agent/ChatShell";
+import Composer from "@/components/agent/Composer";
+import { IconBook, IconMenu } from "@/components/icons";
 
 const MODES: AgentMode[] = ["auto", "snap", "lens", "sphere"];
-const MODE_ICON: Record<AgentMode, ComponentType<{ className?: string }>> = {
-  auto: IconSparkles,
-  snap: IconSnap,
-  lens: IconLens,
-  sphere: IconSphere,
-};
+const RECENT_PAPERS = 6;
 
 /**
- * The entry to the platform: start a conversation.
+ * The entry to the platform: a message box.
  *
- * Three ways in. Drop a PDF and a session opens on it; pick a paper already in
- * the workspace; or open an empty conversation and let the agent find papers.
- * `?paper=<id>` (from a report page) and `?new=1` (from the sidebar) skip the
- * choice; `?mode=` carries a preselected mode into the new session, and
- * `?project=` files it under that research project.
+ * Typing a question and sending it is what starts a conversation — the session
+ * is created at that moment, not when the page opens, so looking at this page
+ * leaves nothing behind. Attaching a PDF or picking a recent paper creates the
+ * session straight away instead: a conversation with a paper in it is not
+ * empty, and its parse starts while the reader is still typing.
+ *
+ * `?paper=<id>` (from a report page) skips the choice; `?mode=` preselects a
+ * mode and `?project=` files the new session under that research project.
  *
  * Reading the query string opts the page out of prerendering, so it needs a
  * Suspense boundary of its own.
  */
 export default function ChatEntryPage() {
   return (
-    <Suspense fallback={<main className="mx-auto max-w-3xl px-6 py-12" />}>
+    <Suspense fallback={<div className="h-full" />}>
       <ChatEntry />
     </Suspense>
   );
@@ -52,31 +42,30 @@ function ChatEntry() {
   const searchParams = useSearchParams();
   const presetPaperId = searchParams.get("paper") || "";
   const presetMode = (searchParams.get("mode") || "auto") as AgentMode;
-  const wantsNew = searchParams.get("new") === "1";
   const presetProjectId = searchParams.get("project") || "";
   const { t, locale } = useTranslation();
+  const { refreshSessions, openNav, setCurrentProject } = useChatShell();
 
-  const [sessions, setSessions] = useState<AgentSession[] | null>(null);
   const [projects, setProjects] = useState<AgentProject[]>([]);
-  const [runs, setRuns] = useState<RecentRunResponse[] | null>(null);
+  const [runs, setRuns] = useState<RecentRunResponse[]>([]);
   const [models, setModels] = useState<string[]>([]);
   const [llmModel, setLlmModel] = useState("");
+  const [draft, setDraft] = useState("");
   const [mode, setMode] = useState<AgentMode>(MODES.includes(presetMode) ? presetMode : "auto");
-  const [creating, setCreating] = useState("");
+  const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
   const [dragOver, setDragOver] = useState(false);
-  const fileRef = useRef<HTMLInputElement>(null);
+  // A session whose first message was refused (quota, network): the retry
+  // posts into it instead of creating a second one.
+  const createdRef = useRef("");
 
   useEffect(() => {
-    listSessions()
-      .then((data) => setSessions(data.sessions))
-      .catch(() => setSessions([]));
     listProjects()
       .then((data) => setProjects(data.projects))
-      .catch(() => setProjects([]));
+      .catch(() => {});
     listRecentRuns(40, false)
       .then(setRuns)
-      .catch(() => setRuns([]));
+      .catch(() => {});
     listModels()
       .then((res) => {
         // Conversations offer only the models verified against the agent's
@@ -85,293 +74,197 @@ function ChatEntry() {
         setModels(offered);
         setLlmModel(res.agent_default || offered[0] || "");
       })
-      .catch(() => setModels([]));
+      .catch(() => {});
   }, []);
+
+  const presetProject = projects.find((p) => p.project_id === presetProjectId) ?? null;
+  useEffect(() => {
+    setCurrentProject(presetProject);
+  }, [presetProject, setCurrentProject]);
 
   // One row per paper: the same PDF is usually analysed several times, and the
   // agent reads the paper, not the run.
   const papers = useMemo(() => {
     const seen = new Map<string, RecentRunResponse>();
-    for (const run of runs ?? []) {
+    for (const run of runs) {
       if (run.paper_id && !seen.has(run.paper_id)) seen.set(run.paper_id, run);
     }
-    return [...seen.values()];
+    return [...seen.values()].slice(0, RECENT_PAPERS);
   }, [runs]);
 
-  const open = useCallback(
-    async (paperIds: string[], title: string, key: string) => {
-      if (creating) return;
-      setCreating(key);
-      setError("");
-      try {
-        const session = await createSession({
-          title,
-          language: locale === "zh" ? "zh" : "en",
-          llm_model: llmModel,
-          paper_ids: paperIds,
-          project_id: presetProjectId,
-        });
-        const query = mode !== "auto" ? `?mode=${mode}` : "";
-        router.push(`/chat/${session.session_id}${query}`);
-      } catch (err) {
-        setError(String(err));
-        setCreating("");
-      }
-    },
-    [creating, locale, llmModel, mode, router, presetProjectId],
+  const create = useCallback(
+    (paperIds: string[], title: string) =>
+      createSession({
+        title,
+        language: locale === "zh" ? "zh" : "en",
+        llm_model: llmModel,
+        paper_ids: paperIds,
+        project_id: presetProjectId,
+      }),
+    [locale, llmModel, presetProjectId],
   );
 
-  const presetProject = projects.find((p) => p.project_id === presetProjectId);
-
-  const handleFile = useCallback(
-    async (file: File | undefined) => {
-      if (!file || creating) return;
-      if (!file.name.toLowerCase().endsWith(".pdf")) {
-        setError(t("upload.drop_error"));
-        return;
-      }
-      setCreating("upload");
+  /** Open a conversation on a paper; the mode chosen here travels with it. */
+  const openOnPaper = useCallback(
+    async (paperId: string, title: string, key: string) => {
+      if (busy) return;
+      setBusy(key);
       setError("");
       try {
-        const uploaded = await uploadPaper(file);
-        await open([uploaded.paper_id], file.name.replace(/\.pdf$/i, ""), "upload");
+        const session = await create([paperId], title);
+        refreshSessions();
+        router.push(`/chat/${session.session_id}${mode !== "auto" ? `?mode=${mode}` : ""}`);
       } catch (err) {
-        setError(err instanceof Error ? err.message : String(err));
-        setCreating("");
+        setError(describeApiError(err, t));
+        setBusy("");
       }
     },
-    [creating, open, t],
+    [busy, create, mode, refreshSessions, router, t],
   );
 
-  // Arriving with ?paper=… or ?new=1 means the choice is already made.
+  const send = useCallback(async () => {
+    const content = draft.trim();
+    if (!content || busy) return;
+    setBusy("send");
+    setError("");
+    try {
+      if (!createdRef.current) createdRef.current = (await create([], "")).session_id;
+      await postMessage(createdRef.current, {
+        content,
+        clientRequestId: crypto.randomUUID(),
+        mode,
+      });
+      refreshSessions();
+      // The conversation page attaches to the run that is now in flight.
+      router.push(`/chat/${createdRef.current}`);
+    } catch (err) {
+      setError(describeApiError(err, t));
+      setBusy("");
+    }
+  }, [draft, busy, create, mode, refreshSessions, router, t]);
+
+  const attach = useCallback(
+    async (file: File) => {
+      const uploaded = await uploadPaper(file);
+      await openOnPaper(uploaded.paper_id, file.name.replace(/\.pdf$/i, ""), "upload");
+    },
+    [openOnPaper],
+  );
+
+  // Arriving with ?paper=… means the choice is already made.
   useEffect(() => {
-    if (creating) return;
-    if (presetPaperId) void open([presetPaperId], "", presetPaperId);
-    else if (wantsNew) void open([], "", "new");
+    if (presetPaperId) void openOnPaper(presetPaperId, "", presetPaperId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [presetPaperId, wantsNew]);
+  }, [presetPaperId]);
 
   return (
-    <main className="mx-auto max-w-3xl px-6 py-12">
-      <div className="mb-8">
-        <p className="mb-2 inline-flex items-center gap-1.5 text-xs font-medium uppercase tracking-wider text-accent-foreground">
-          <IconSparkles className="h-4 w-4" />
-          {t("chat.entry.eyebrow")}
-        </p>
-        <h1 className="font-display text-3xl font-bold text-foreground">
-          {t("chat.entry.title")}
-        </h1>
-        <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-          {t("chat.entry.subtitle")}
-        </p>
+    <div
+      className="relative flex h-full flex-col"
+      onDragOver={(e) => {
+        if (!e.dataTransfer.types.includes("Files")) return;
+        e.preventDefault();
+        setDragOver(true);
+      }}
+      onDragLeave={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragOver(false);
+      }}
+      onDrop={(e) => {
+        e.preventDefault();
+        setDragOver(false);
+        const file = e.dataTransfer.files[0];
+        if (!file) return;
+        if (!file.name.toLowerCase().endsWith(".pdf")) {
+          setError(t("upload.drop_error"));
+          return;
+        }
+        attach(file).catch((err) => setError(describeApiError(err, t)));
+      }}
+    >
+      <div className="flex h-12 shrink-0 items-center px-3 lg:hidden">
+        <button
+          type="button"
+          onClick={openNav}
+          title={t("chat.nav.open")}
+          aria-label={t("chat.nav.open")}
+          className="flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+        >
+          <IconMenu className="text-[18px]" />
+        </button>
       </div>
 
-      {error && (
-        <p className="mb-6 rounded-lg border border-border bg-muted px-3 py-2 text-xs text-destructive">
-          {error}
-        </p>
-      )}
+      <div className="flex min-h-0 flex-1 flex-col items-center overflow-y-auto px-4 sm:px-6">
+        {/* Sits a little above centre: the eye lands on the box, not the middle of the page. */}
+        <div className="w-full max-w-2xl pb-10 pt-[16vh]">
+          <h1 className="font-display text-center text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
+            {t("chat.entry.greeting")}
+          </h1>
+          <p className="mx-auto mt-3 max-w-md text-center text-sm leading-relaxed text-muted-foreground">
+            {t("chat.entry.greeting_sub")}
+          </p>
 
-      {presetProject && (
-        <p className="mb-6 rounded-lg border border-border bg-accent px-3 py-2 text-xs text-accent-foreground">
-          {t("chat.entry.in_project", { title: presetProject.title || t("project.untitled") })}
-        </p>
-      )}
+          <div className="mt-8">
+            {presetProject && (
+              <p className="mb-2 rounded-lg bg-accent px-3 py-2 text-xs text-accent-foreground">
+                {t("chat.entry.in_project", { title: presetProject.title || t("project.untitled") })}
+              </p>
+            )}
+            {error && (
+              <p className="mb-2 rounded-lg border border-destructive/25 bg-destructive/5 px-3 py-2 text-xs text-destructive">
+                {error}
+              </p>
+            )}
+            <Composer
+              value={draft}
+              onChange={setDraft}
+              mode={mode}
+              onModeChange={setMode}
+              onSend={() => void send()}
+              sending={Boolean(busy)}
+              onAttach={attach}
+              model={llmModel}
+              models={models}
+              onModelChange={setLlmModel}
+              autoFocus
+            />
+          </div>
 
-      {/* Drop zone: the fastest way in. */}
-      <section
-        onDragOver={(e) => {
-          e.preventDefault();
-          setDragOver(true);
-        }}
-        onDragLeave={() => setDragOver(false)}
-        onDrop={(e) => {
-          e.preventDefault();
-          setDragOver(false);
-          void handleFile(e.dataTransfer.files[0]);
-        }}
-        onClick={() => !creating && fileRef.current?.click()}
-        className={`mb-6 cursor-pointer rounded-2xl border-2 border-dashed p-8 text-center transition-colors ${
-          dragOver ? "border-primary bg-accent" : "border-border bg-card hover:border-foreground/20"
-        } ${creating ? "opacity-60" : ""}`}
-      >
-        <input
-          ref={fileRef}
-          type="file"
-          accept=".pdf,application/pdf"
-          className="hidden"
-          onChange={(e) => void handleFile(e.target.files?.[0])}
-        />
-        <span className="mx-auto flex h-11 w-11 items-center justify-center rounded-2xl bg-muted text-xl text-muted-foreground">
-          {creating === "upload" ? (
-            <span className="h-5 w-5 animate-spin rounded-full border-2 border-border border-t-primary" />
-          ) : (
-            <IconUpload />
+          {papers.length > 0 && (
+            <section className="mt-8">
+              <h2 className="mb-2 px-1 text-xs text-muted-foreground">{t("chat.entry.recent_papers")}</h2>
+              <div className="grid gap-2 sm:grid-cols-2">
+                {papers.map((paper) => (
+                  <button
+                    key={paper.paper_id}
+                    type="button"
+                    disabled={Boolean(busy)}
+                    onClick={() => void openOnPaper(paper.paper_id, paper.paper_title, paper.paper_id)}
+                    className="flex items-start gap-2.5 rounded-xl border border-border bg-card px-3 py-2.5 text-left transition-colors hover:border-foreground/20 disabled:opacity-60"
+                  >
+                    {busy === paper.paper_id ? (
+                      <span className="mt-0.5 inline-block h-3.5 w-3.5 shrink-0 animate-spin rounded-full border-[1.5px] border-border border-t-primary" />
+                    ) : (
+                      <IconBook className="mt-0.5 shrink-0 text-[14px] text-muted-foreground" />
+                    )}
+                    <span className="line-clamp-2 min-w-0 text-[0.8125rem] leading-snug text-foreground/90">
+                      {paper.paper_title || paper.paper_id.slice(0, 16)}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </section>
           )}
-        </span>
-        <p className="mt-3 font-medium">
-          {creating === "upload" ? t("chat.entry.opening") : t("chat.entry.drop")}
-        </p>
-        <p className="mt-1 text-xs text-muted-foreground">{t("chat.entry.drop_hint")}</p>
-      </section>
-
-      {/* Mode + model for the session about to be created. */}
-      <section className="mb-8 grid gap-3 sm:grid-cols-[1fr_auto]">
-        <div className="flex flex-wrap gap-2">
-          {MODES.map((m) => {
-            const Icon = MODE_ICON[m];
-            const active = m === mode;
-            return (
-              <button
-                key={m}
-                type="button"
-                onClick={() => setMode(m)}
-                title={t(`chat.mode.${m}.desc`)}
-                className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs transition-colors ${
-                  active
-                    ? "border-primary bg-accent text-accent-foreground"
-                    : "border-border text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                <Icon className="text-[13px]" />
-                {t(`chat.mode.${m}.label`)}
-              </button>
-            );
-          })}
         </div>
-        {models.length > 0 && (
-          <select
-            value={llmModel}
-            onChange={(e) => setLlmModel(e.target.value)}
-            title={t("upload.model_label")}
-            className="rounded-lg border border-border bg-card px-3 py-1.5 text-xs text-foreground focus:border-primary focus:outline-none"
-          >
-            {models.map((m) => (
-              <option key={m} value={m}>
-                {m}
-              </option>
-            ))}
-          </select>
-        )}
-      </section>
+      </div>
 
-      <section className="mb-10">
-        <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-[0.7rem] font-semibold uppercase tracking-wider text-muted-foreground">
-            {t("chat.entry.pick_paper")}
-          </h2>
-          <button
-            type="button"
-            disabled={Boolean(creating)}
-            onClick={() => void open([], "", "new")}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground disabled:opacity-60"
-          >
-            <IconPlus className="text-[12px]" />
-            {creating === "new" ? t("chat.entry.opening") : t("chat.entry.start_empty")}
-          </button>
-        </div>
+      {dragOver && <DropOverlay label={t("chat.entry.drop")} />}
+    </div>
+  );
+}
 
-        {papers.length === 0 && (
-          <div className="rounded-xl border border-dashed border-border px-5 py-6 text-center">
-            <p className="text-sm text-muted-foreground">{t("chat.entry.no_papers")}</p>
-          </div>
-        )}
-
-        <div className="space-y-2">
-          {papers.map((paper) => (
-            <button
-              key={paper.paper_id}
-              type="button"
-              disabled={Boolean(creating)}
-              onClick={() => void open([paper.paper_id], paper.paper_title, paper.paper_id)}
-              className="lift flex w-full items-center justify-between gap-4 rounded-xl border border-border bg-card px-4 py-3 text-left disabled:opacity-60"
-            >
-              <span className="min-w-0">
-                <span className="line-clamp-2 block text-sm font-medium text-foreground">
-                  {paper.paper_title || paper.paper_id.slice(0, 16)}
-                </span>
-              </span>
-              <span className="shrink-0 text-xs text-muted-foreground">
-                {creating === paper.paper_id ? (
-                  t("chat.entry.opening")
-                ) : (
-                  <IconArrowRight className="h-4 w-4" />
-                )}
-              </span>
-            </button>
-          ))}
-        </div>
-      </section>
-
-      {projects.length > 0 && (
-        <section className="mb-10">
-          <div className="mb-3 flex items-center justify-between">
-            <h2 className="text-[0.7rem] font-semibold uppercase tracking-wider text-muted-foreground">
-              {t("chat.entry.projects")}
-            </h2>
-            <Link href="/projects" className="text-xs text-muted-foreground hover:text-foreground">
-              {t("chat.entry.projects_all")}
-            </Link>
-          </div>
-          <div className="grid gap-2 sm:grid-cols-2">
-            {projects.slice(0, 6).map((project) => (
-              <Link
-                key={project.project_id}
-                href={`/projects/${project.project_id}`}
-                className="lift flex items-center justify-between gap-3 rounded-xl border border-border bg-card px-4 py-2.5"
-              >
-                <span className="truncate text-sm text-foreground">
-                  {project.title || t("project.untitled")}
-                </span>
-                <span className="shrink-0 text-[0.7rem] text-muted-foreground">
-                  {t("project.sessions", { count: project.session_count })}
-                </span>
-              </Link>
-            ))}
-          </div>
-        </section>
-      )}
-
-      <section>
-        <h2 className="mb-3 text-[0.7rem] font-semibold uppercase tracking-wider text-muted-foreground">
-          {t("chat.sessions.heading")}
-        </h2>
-        {sessions !== null && sessions.length === 0 && (
-          <p className="text-xs text-muted-foreground">{t("chat.sessions.empty")}</p>
-        )}
-        <div className="space-y-1">
-          {(sessions ?? []).map((session) => (
-            <div
-              key={session.session_id}
-              className="group flex items-center rounded-lg text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-            >
-              <Link href={`/chat/${session.session_id}`} className="min-w-0 flex-1 truncate px-3 py-2">
-                {session.title || t("chat.sessions.untitled")}
-              </Link>
-              <button
-                type="button"
-                onClick={() => {
-                  if (!window.confirm(t("chat.sessions.delete_confirm"))) return;
-                  setSessions((prev) => (prev ?? []).filter((s) => s.session_id !== session.session_id));
-                  deleteSession(session.session_id).catch(() => {});
-                }}
-                title={t("chat.sessions.delete")}
-                aria-label={t("chat.sessions.delete")}
-                className="mr-2 flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-muted-foreground opacity-0 transition-opacity hover:bg-destructive/15 hover:text-destructive focus:opacity-100 group-hover:opacity-100"
-              >
-                ✕
-              </button>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      <p className="mt-10 text-center text-[0.7rem] text-muted-foreground">
-        {t("chat.entry.classic_hint")}{" "}
-        <Link href="/upload" className="underline hover:text-foreground">
-          {t("chat.entry.classic_link")}
-        </Link>
-      </p>
-    </main>
+function DropOverlay({ label }: { label: string }) {
+  return (
+    <div className="pointer-events-none absolute inset-3 z-20 flex items-center justify-center rounded-2xl border-2 border-dashed border-primary bg-accent/80 text-sm font-medium text-accent-foreground">
+      {label}
+    </div>
   );
 }

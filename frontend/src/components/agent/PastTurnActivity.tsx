@@ -58,7 +58,9 @@ export default function PastTurnActivity({ runId, run, initialTools }: Props) {
   const reportedCalls = typeof run?.usage?.tool_calls === "number" ? run.usage.tool_calls : null;
   // A turn that answered from what it already had did no visible work; a
   // "0 steps" box under it would only be noise.
-  if (reportedCalls === 0 && !tools?.length) return null;
+  // The same goes for a turn that ran on this page and is known to have
+  // called nothing (stopped before its first step).
+  if (!tools?.length && (reportedCalls === 0 || initialTools !== undefined)) return null;
 
   const steps = tools?.length ?? reportedCalls;
   const evidence = tools?.reduce((n, tool) => n + tool.evidenceCount, 0) ?? 0;
@@ -73,30 +75,30 @@ export default function PastTurnActivity({ runId, run, initialTools }: Props) {
   ].filter(Boolean);
 
   return (
-    <div className="rounded-xl border border-border/80 bg-card/50">
+    <div>
       <button
         type="button"
         onClick={() => void toggle()}
         aria-expanded={open}
-        className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-xs text-muted-foreground transition-colors hover:text-foreground"
+        className="-ml-1.5 flex max-w-full items-center gap-1.5 rounded-md px-1.5 py-1 text-left text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
       >
         <IconTool className="shrink-0 text-[13px]" />
-        <span className="min-w-0 flex-1 truncate">
+        <span className="min-w-0 truncate">
           <span className="font-medium text-foreground/80">{t("chat.process.title")}</span>
           <span className="mx-1.5 opacity-40">·</span>
           {bits.join(" · ")}
         </span>
         <IconChevronRight
-          className={`shrink-0 text-[13px] transition-transform ${open ? "rotate-90" : ""}`}
+          className={`shrink-0 text-[12px] transition-transform ${open ? "rotate-90" : ""}`}
         />
       </button>
       {open && (
-        <div className="animate-fade-in border-t border-border/70 px-1.5 py-1.5">
+        <div className="animate-fade-in ml-0.5 mt-1 border-l border-border/80 pl-1">
           {loading && (
-            <p className="px-2 py-1 text-[0.7rem] text-muted-foreground">{t("chat.history.loading")}</p>
+            <p className="px-2 py-1 text-xs text-muted-foreground">{t("chat.history.loading")}</p>
           )}
           {!loading && tools !== null && tools.length === 0 && (
-            <p className="px-2 py-1 text-[0.7rem] text-muted-foreground">{t("chat.history.empty")}</p>
+            <p className="px-2 py-1 text-xs text-muted-foreground">{t("chat.history.empty")}</p>
           )}
           {!loading && tools !== null && tools.length > 0 && <ToolActivityList tools={tools} />}
         </div>

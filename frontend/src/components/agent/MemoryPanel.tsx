@@ -11,6 +11,8 @@ interface Props {
   refreshToken: number;
   /** The conversation's research project; "" outside one. */
   projectId?: string;
+  /** Fills a panel of its own: always open, no heading to fold it under. */
+  embedded?: boolean;
 }
 
 /**
@@ -24,7 +26,7 @@ interface Props {
  * Inside a project the panel shows what the agent will actually see there:
  * global memories plus this project's, never another project's.
  */
-export default function MemoryPanel({ refreshToken, projectId = "" }: Props) {
+export default function MemoryPanel({ refreshToken, projectId = "", embedded = false }: Props) {
   const { t } = useTranslation();
   const [memories, setMemories] = useState<AgentMemory[] | null>(null);
   const [open, setOpen] = useState(false);
@@ -80,21 +82,23 @@ export default function MemoryPanel({ refreshToken, projectId = "" }: Props) {
   const count = memories?.length ?? 0;
 
   return (
-    <div className="border-t border-border">
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="flex w-full items-center justify-between px-4 py-3 text-left"
-      >
-        <span className="text-[0.7rem] font-semibold uppercase tracking-wider text-muted-foreground">
-          {t("chat.memory.heading")}
-          {count > 0 && <span className="ml-1.5 opacity-70">({count})</span>}
-        </span>
-        <span className="text-[0.7rem] text-muted-foreground">{open ? "−" : "+"}</span>
-      </button>
+    <div className={embedded ? "h-full overflow-y-auto" : "border-t border-border"}>
+      {!embedded && (
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          className="flex w-full items-center justify-between px-4 py-3 text-left"
+        >
+          <span className="text-xs font-semibold text-muted-foreground">
+            {t("chat.memory.heading")}
+            {count > 0 && <span className="ml-1.5 opacity-70">({count})</span>}
+          </span>
+          <span className="text-xs text-muted-foreground">{open ? "−" : "+"}</span>
+        </button>
+      )}
 
-      {open && (
-        <div className="relative max-h-56 overflow-y-auto px-2 pb-3">
+      {(open || embedded) && (
+        <div className={embedded ? "p-3" : "relative max-h-56 overflow-y-auto px-2 pb-3"}>
           {memories !== null && memories.length === 0 && (
             <p className="px-2 pb-2 text-xs leading-relaxed text-muted-foreground">
               {t("chat.memory.empty")}
@@ -121,7 +125,7 @@ export default function MemoryPanel({ refreshToken, projectId = "" }: Props) {
                 disabled={busy}
                 onClick={() => void remove(memory.memory_id)}
                 title={t("chat.memory.forget")}
-                className="shrink-0 text-[0.7rem] text-muted-foreground opacity-0 transition-opacity hover:text-destructive group-hover:opacity-100 disabled:opacity-40"
+                className="shrink-0 text-xs text-muted-foreground transition-opacity hover:text-destructive group-hover:opacity-100 disabled:opacity-40 [@media(hover:hover)]:opacity-0"
               >
                 ✕
               </button>
@@ -153,7 +157,7 @@ export default function MemoryPanel({ refreshToken, projectId = "" }: Props) {
             </button>
           </div>
           {projectId && (
-            <label className="mt-1 flex items-center gap-1.5 px-2 text-[0.7rem] text-muted-foreground">
+            <label className="mt-1 flex items-center gap-1.5 px-2 text-xs text-muted-foreground">
               <input
                 type="checkbox"
                 checked={projectOnly}
@@ -163,7 +167,7 @@ export default function MemoryPanel({ refreshToken, projectId = "" }: Props) {
             </label>
           )}
           {error && <p className="mt-1 px-2 text-[0.7rem] text-destructive">{error}</p>}
-          <p className="mt-2 px-2 text-[0.65rem] leading-relaxed text-muted-foreground">
+          <p className="mt-2 px-2 text-xs leading-relaxed text-muted-foreground">
             {t("chat.memory.hint")}
           </p>
         </div>
