@@ -604,6 +604,48 @@ class ActivityReplayTests(AgentP2TestCase):
         self.assertEqual([e.seq for e in events], sorted(e.seq for e in events))
 
 
+class RemoteTurnStreamTests(AgentP2TestCase):
+    """A stream for a turn some other process executes."""
+
+    async def test_events_written_elsewhere_reach_an_open_stream(self) -> None:
+        from unittest.mock import patch
+
+        from app.api import agent as agent_api
+        from app.db import agent_repository as repo
+        from app.models.agent_models import EventType
+        from app.services import identity
+
+        run, _ = await repo.create_run(session_id=self.session.session_id, owner_id=self.owner)
+        ticket = identity.seal("stream", {"p": self.owner, "r": run.run_id}, ttl_seconds=60)
+
+        with patch.object(agent_api, "_SSE_POLL_SECONDS", 0.05):
+            response = await agent_api.stream_events(
+                request=None, run_id=run.run_id, after=0, ticket=ticket, last_event_id=""
+            )
+            frames = response.body_iterator
+
+            # Straight into the table, as another replica's turn would: this
+            # process's listeners are never told.
+            await repo.append_event(
+                session_id=self.session.session_id,
+                type=EventType.TOOL_STARTED,
+                payload={"tool": "search_papers"},
+                run_id=run.run_id,
+            )
+            first = await asyncio.wait_for(anext(frames), timeout=5)
+            self.assertIn("tool.started", first)
+
+            await repo.append_event(
+                session_id=self.session.session_id,
+                type=EventType.RUN_COMPLETED,
+                payload={},
+                run_id=run.run_id,
+            )
+            rest = [frame async for frame in frames]
+        self.assertEqual(len(rest), 1)
+        self.assertIn("run.completed", rest[0])
+
+
 class ActivityApiTests(unittest.TestCase):
     """The replay endpoint, including who is allowed to read it."""
 

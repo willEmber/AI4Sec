@@ -12,7 +12,9 @@ enough to read someone else's upload (acceptance case A16).
 
 from __future__ import annotations
 
+import asyncio
 import logging
+import re
 from typing import Any
 
 from langchain.tools import ToolRuntime, tool
@@ -21,7 +23,7 @@ from app.agents.context import AgentContext
 from app.db import agent_repository as repo
 from app.db import database as db
 from app.models.agent_models import ErrorCode, ToolResult
-from app.services import evidence_service, paper_catalog
+from app.services import evidence_service
 from app.services.ir_extract import compact_table_text
 from app.services.qa_retrieval import (
     PaperNode,
@@ -175,6 +177,33 @@ async def get_paper_outline(
     ).to_json()
 
 
+async def _record_nodes(
+    ctx: AgentContext, paper_id: str, nodes: list[PaperNode]
+) -> list[str]:
+    """Register passages of one paper as evidence; their ids, in order."""
+    return await evidence_service.record_fulltext_evidence_many(
+        paper_id=paper_id,
+        passages=[
+            (
+                node.text,
+                evidence_service.locator_from_node(
+                    {
+                        "node_id": node.node_id,
+                        "title_path": node.title_path,
+                        "page_start": node.page_start,
+                        "page_end": node.page_end,
+                        "block_start": node.block_start,
+                        "block_end": node.block_end,
+                    }
+                ),
+            )
+            for node in nodes
+        ],
+        owner_id=ctx.owner_id,
+        session_id=ctx.session_id,
+    )
+
+
 async def _search_one(
     ctx: AgentContext, paper_id: str, question: str, limit: int
 ) -> tuple[list[dict[str, Any]], list[str]]:
@@ -183,29 +212,12 @@ async def _search_one(
     if not ranked:
         return [], []
 
-    literature_id = await paper_catalog.literature_for_paper(paper_id)
-    hits: list[dict[str, Any]] = []
-    evidence_ids: list[str] = []
-    for _score, node in ranked:
-        evidence = await evidence_service.record_fulltext_evidence(
-            paper_id=paper_id,
-            quote=node.text,
-            owner_id=ctx.owner_id,
-            session_id=ctx.session_id,
-            locator=evidence_service.locator_from_node(
-                {
-                    "node_id": node.node_id,
-                    "title_path": node.title_path,
-                    "page_start": node.page_start,
-                    "page_end": node.page_end,
-                    "block_start": node.block_start,
-                    "block_end": node.block_end,
-                }
-            ),
-            literature_id=literature_id,
-        )
-        evidence_ids.append(evidence.evidence_id)
-        hits.append(_node_payload(node, evidence_id=evidence.evidence_id))
+    nodes = [node for _score, node in ranked]
+    evidence_ids = await _record_nodes(ctx, paper_id, nodes)
+    hits = [
+        _node_payload(node, evidence_id=evidence_id)
+        for node, evidence_id in zip(nodes, evidence_ids)
+    ]
     return hits, evidence_ids
 
 
@@ -222,7 +234,10 @@ async def search_paper_content(
     Returns short excerpts with page numbers and an evidence_id for each, which
     you cite in your answer. Good for locating where something is discussed;
     when an excerpt is too thin to settle the question, follow it with
-    read_paper_section. Omit paper_id when the session holds a single paper.
+    read_paper_section. Matching is by wording, not meaning: write `question`
+    in the language the paper is written in, with the terms the paper itself
+    would use — a Chinese question finds nothing in an English paper.
+    Omit paper_id when the session holds a single paper.
     To compare papers, pass paper_ids — the same question is run against each
     and the results come back grouped by paper, so differences in setup and
     results line up.
@@ -250,14 +265,37 @@ async def search_paper_content(
         # reporting it as a failure would invite a pointless retry.
         return ToolResult.ok(
             {"paper_id": paper_id, "question": question, "hits": []},
-            note="No passage matched. The paper may not discuss this; consider "
-            "the outline to check which sections exist.",
+            note=_no_match_note(
+                question,
+                "No passage matched. The paper may not discuss this; consider "
+                "the outline to check which sections exist.",
+            ),
         ).to_json()
 
     return ToolResult.ok(
         {"paper_id": paper_id, "question": question, "hits": hits},
         evidence_ids=evidence_ids,
     ).to_json()
+
+
+_CJK_RE = re.compile(r"[\u4e00-\u9fff]")
+
+
+def _no_match_note(question: str, note: str) -> str:
+    """The empty-result note, saying first when the wording may be the reason.
+
+    Passages are matched on their words. A question in Chinese has no words in
+    common with an English paper, and "nothing matched" would then be read as
+    "the paper does not say" — and answered by reading whole sections instead.
+    """
+    if not _CJK_RE.search(question):
+        return note
+    return (
+        "Nothing matched this wording, which says little: matching is by words, "
+        "and the question is in Chinese. If the paper is in another language, "
+        "search again in that language before concluding anything. Otherwise: "
+        + note
+    )
 
 
 async def _search_across(
@@ -279,9 +317,11 @@ async def _search_across(
     evidence_ids: list[str] = []
     silent: list[str] = []
 
-    for pid in allowed:
+    async def one(pid: str) -> tuple[list[dict[str, Any]], list[str], str]:
         hits, ids = await _search_one(ctx, pid, question, per_paper)
-        title = await _paper_title(pid)
+        return hits, ids, await _paper_title(pid)
+
+    for pid, (hits, ids, title) in zip(allowed, await asyncio.gather(*map(one, allowed))):
         groups.append(
             {"paper_id": pid, "title": title, "hits": hits}
         )
@@ -293,8 +333,11 @@ async def _search_across(
     if not evidence_ids:
         return ToolResult.ok(
             data,
-            note="None of these papers discuss this. Check their outlines, or say "
-            "the comparison cannot be made on this point.",
+            note=_no_match_note(
+                question,
+                "None of these papers discuss this. Check their outlines, or say "
+                "the comparison cannot be made on this point.",
+            ),
         ).to_json()
     if silent:
         return ToolResult.partial(
@@ -368,9 +411,8 @@ async def read_paper_section(
             note="The section is present in the outline but parsed with no body text.",
         ).to_json()
 
-    literature_id = await paper_catalog.literature_for_paper(paper_id)
     blocks: list[dict[str, Any]] = []
-    evidence_ids: list[str] = []
+    kept: list[PaperNode] = []
     used = 0
     truncated = False
     for node in children:
@@ -379,26 +421,11 @@ async def read_paper_section(
         if used > MAX_SECTION_CHARS:
             truncated = True
             break
-        evidence = await evidence_service.record_fulltext_evidence(
-            paper_id=paper_id,
-            quote=node.text,
-            owner_id=ctx.owner_id,
-            session_id=ctx.session_id,
-            locator=evidence_service.locator_from_node(
-                {
-                    "node_id": node.node_id,
-                    "title_path": node.title_path,
-                    "page_start": node.page_start,
-                    "page_end": node.page_end,
-                    "block_start": node.block_start,
-                    "block_end": node.block_end,
-                }
-            ),
-            literature_id=literature_id,
-        )
-        payload["evidence_id"] = evidence.evidence_id
-        evidence_ids.append(evidence.evidence_id)
+        kept.append(node)
         blocks.append(payload)
+    evidence_ids = await _record_nodes(ctx, paper_id, kept)
+    for payload, evidence_id in zip(blocks, evidence_ids):
+        payload["evidence_id"] = evidence_id
 
     data = {
         "paper_id": paper_id,

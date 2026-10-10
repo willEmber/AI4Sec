@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 import re
-from collections import defaultdict
+from collections import OrderedDict, defaultdict
 from dataclasses import dataclass
 from typing import Any
 
@@ -480,7 +480,36 @@ async def store_paper_nodes(paper_ir: PaperIR) -> int:
     return len(nodes)
 
 
+# Parsed papers kept in memory, newest use last. A turn calls the reading tools
+# several times on the same paper, and each call used to pull every node's
+# text out of the database again.
+_NODE_CACHE_PAPERS = 16
+_node_cache: OrderedDict[str, tuple[str, list[PaperNode]]] = OrderedDict()
+
+
+async def _nodes_stamp(paper_id: str) -> str:
+    """What identifies the stored nodes of a paper, or `""` when it has none.
+
+    `store_paper_nodes` deletes and reinserts every row in one transaction, so
+    the root row's `xmin` — the transaction that wrote it — changes exactly
+    when the nodes do, on whichever replica the re-parse ran. `paper_versions`
+    cannot serve: its row is written after the nodes, best effort, and papers
+    parsed before it existed have none.
+    """
+    row = await db.fetch_one(
+        "SELECT xmin::text AS stamp FROM paper_nodes WHERE node_id = ?",
+        (f"{paper_id}:paper",),
+    )
+    return (row or {}).get("stamp") or ""
+
+
 async def load_paper_nodes(paper_id: str) -> list[PaperNode]:
+    stamp = await _nodes_stamp(paper_id)
+    cached = _node_cache.get(paper_id)
+    if stamp and cached is not None and cached[0] == stamp:
+        _node_cache.move_to_end(paper_id)
+        return list(cached[1])
+
     rows = await db.fetch_all(
         """
         SELECT node_id, paper_id, parent_id, depth, node_type, block_type, sub_type,
@@ -492,7 +521,17 @@ async def load_paper_nodes(paper_id: str) -> list[PaperNode]:
         """,
         (paper_id,),
     )
-    return [_paper_node_from_row(row) for row in rows]
+    nodes = [_paper_node_from_row(row) for row in rows]
+    # The stamp was read before the rows, so a re-parse landing in between
+    # leaves new rows under the old stamp — which the next call sees as stale.
+    if stamp and nodes:
+        _node_cache[paper_id] = (stamp, nodes)
+        _node_cache.move_to_end(paper_id)
+        while len(_node_cache) > _NODE_CACHE_PAPERS:
+            _node_cache.popitem(last=False)
+    else:
+        _node_cache.pop(paper_id, None)
+    return list(nodes)
 
 
 def _fts_query(tokens: list[str]) -> str:

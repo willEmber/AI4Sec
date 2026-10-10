@@ -225,6 +225,62 @@ class ReadingToolTests(AgentP2TestCase):
         self.assertEqual(result["data"]["hits"], [])
         self.assertIn("outline", result["note"])
 
+    async def test_a_chinese_question_with_no_match_points_at_the_wording(self) -> None:
+        """Matching is lexical, so silence on a Chinese query is not a finding."""
+        from app.agents.tools import search_paper_content
+
+        result = await self._call(search_paper_content, question="路由器的负载均衡损失")
+        self.assertEqual(result["status"], "ok")
+        self.assertEqual(result["data"]["hits"], [])
+        self.assertIn("search again in that language", result["note"])
+
+    async def test_batched_evidence_gets_the_ids_single_records_get(self) -> None:
+        """A passage must be one citation however it was registered."""
+        from app.models.evidence_models import Locator
+        from app.services import evidence_service
+
+        locator = Locator(node_id="paper1:c30", page_start=5, page_end=5)
+        quote = "On WMT14 English-German the router reaches 29.7 BLEU."
+        single = await evidence_service.record_fulltext_evidence(
+            paper_id="paper1",
+            quote=quote,
+            owner_id=self.owner,
+            session_id=self.session.session_id,
+            locator=locator,
+        )
+        batched = await evidence_service.record_fulltext_evidence_many(
+            paper_id="paper1",
+            passages=[(quote, locator), ("Another passage.", Locator(node_id="paper1:c31"))],
+            owner_id=self.owner,
+            session_id=self.session.session_id,
+        )
+        self.assertEqual(batched[0], single.evidence_id)
+        resolved = await evidence_service.resolve(batched[1], owner_id=self.owner)
+        self.assertEqual(resolved.quote, "Another passage.")
+
+    async def test_nodes_are_reused_until_the_paper_is_parsed_again(self) -> None:
+        from unittest.mock import patch
+
+        from app.db import database as db
+        from app.services import qa_retrieval
+
+        first = await qa_retrieval.load_paper_nodes("paper1")
+        with patch.object(
+            qa_retrieval.db, "fetch_all", side_effect=AssertionError("rows were read again")
+        ):
+            self.assertEqual(await qa_retrieval.load_paper_nodes("paper1"), first)
+
+        # A re-parse replaces every row in one transaction, the root included.
+        async with db.transaction() as tx:
+            await tx.execute("DELETE FROM paper_nodes WHERE paper_id = ?", ("paper1",))
+            await tx.execute(
+                """INSERT INTO paper_nodes (node_id, paper_id, node_type, title, text)
+                   VALUES (?, ?, 'paper', ?, ?)""",
+                ("paper1:paper", "paper1", "Parsed Again", "Parsed Again"),
+            )
+        again = await qa_retrieval.load_paper_nodes("paper1")
+        self.assertEqual([n.title for n in again], ["Parsed Again"])
+
     async def test_section_read_includes_equations_and_tables(self) -> None:
         from app.agents.tools import read_paper_section
 

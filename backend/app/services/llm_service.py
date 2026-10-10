@@ -4,6 +4,7 @@ import asyncio
 import logging
 import random
 import time
+import weakref
 from typing import Any
 
 import httpx
@@ -18,6 +19,37 @@ logger = logging.getLogger("scholar.llm")
 # largest one (40960 tokens, the Lens report) takes ~1040s at the slowest rate
 # measured on qwen3.8-max (39.5 tok/s).
 _TIMEOUT_CAP = 1500.0
+
+
+# One client per event loop, shared by every call. A report makes dozens of
+# utility calls to the same gateway, and a client per call meant a TCP and TLS
+# handshake per call. Keyed by loop because a client's connections belong to
+# the loop that opened them; the timeout is per request, since it depends on
+# the prompt and the budget.
+_clients: weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, httpx.AsyncClient] = (
+    weakref.WeakKeyDictionary()
+)
+
+
+def _shared_client() -> httpx.AsyncClient:
+    loop = asyncio.get_running_loop()
+    client = _clients.get(loop)
+    if client is None or client.is_closed:
+        client = httpx.AsyncClient(
+            limits=httpx.Limits(
+                max_connections=None, max_keepalive_connections=20, keepalive_expiry=30.0
+            )
+        )
+        _clients[loop] = client
+    return client
+
+
+async def close_shared_client() -> None:
+    """Close this loop's client, at shutdown."""
+    client = _clients.pop(asyncio.get_running_loop(), None)
+    if client is not None:
+        await client.aclose()
+
 
 class LLMEmptyResponseError(RuntimeError):
     """The gateway accepted the request but returned no assistant text.
@@ -198,12 +230,12 @@ class LLMService:
                 timeout = httpx.Timeout(
                     connect=30.0, read=read_timeout, write=30.0, pool=30.0,
                 )
-                async with httpx.AsyncClient(timeout=timeout) as client:
-                    resp = await client.post(
-                        url,
-                        headers=self._headers(provider),
-                        json=payload,
-                    )
+                resp = await _shared_client().post(
+                    url,
+                    headers=self._headers(provider),
+                    json=payload,
+                    timeout=timeout,
+                )
                 req_elapsed = time.perf_counter() - t_req
 
                 # ── HTTP 429 special handling ──
@@ -309,17 +341,19 @@ class LLMService:
                 )
                 await asyncio.sleep(delay)
 
-            except httpx.ConnectError as e:
+            # RemoteProtocolError: the gateway closed a kept-alive connection
+            # just as it was reused, so the request never reached it.
+            except (httpx.ConnectError, httpx.RemoteProtocolError) as e:
                 connect_failures += 1
                 if connect_failures >= 2 or attempt > self.max_retries:
                     logger.error(
-                        f"LLM chat: ConnectError giving up after {connect_failures} connect failures "
+                        f"LLM chat: {type(e).__name__} giving up after {connect_failures} connect failures "
                         f"in {time.perf_counter()-t0:.1f}s — {e}"
                     )
                     raise
                 delay = self._compute_delay(attempt)
                 logger.warning(
-                    f"LLM chat: ConnectError (attempt {attempt}/{self.max_retries}), "
+                    f"LLM chat: {type(e).__name__} (attempt {attempt}/{self.max_retries}), "
                     f"retry in {delay:.1f}s — {e}"
                 )
                 await asyncio.sleep(delay)

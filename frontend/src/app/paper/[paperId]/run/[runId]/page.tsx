@@ -7,7 +7,7 @@ import { cancelRun, deleteRun, getRun, getRunOutput, getPaperPdfUrl, getPaper, g
 import { useRunStream } from "@/hooks/useRunStream";
 import { useTranslation } from "@/lib/i18n";
 import MarkdownRenderer from "@/components/MarkdownRenderer";
-import PdfViewer from "@/components/PdfViewer";
+import PdfViewer from "@/components/LazyPdfViewer";
 import SplitPane from "@/components/SplitPane";
 import RankBadges from "@/components/RankBadges";
 import SphereReport from "@/components/sphere/SphereReport";

@@ -269,7 +269,9 @@ class _RecordingClient:
     async def __aexit__(self, *exc: Any) -> None:
         return None
 
-    async def post(self, url: str, *, headers: dict[str, str], json: dict[str, Any]) -> _FakeResponse:
+    async def post(
+        self, url: str, *, headers: dict[str, str], json: dict[str, Any], timeout: Any = None
+    ) -> _FakeResponse:
         type(self).calls.append({"url": url, "headers": headers, "json": json})
         return type(self).response
 
@@ -281,7 +283,7 @@ class LLMServiceRoutingTests(unittest.IsolatedAsyncioTestCase):
     async def _chat(self, model: str, response: _FakeResponse) -> str:
         _RecordingClient.response = response
         with _with_settings(), patch(
-            "app.services.llm_service.httpx.AsyncClient", _RecordingClient
+            "app.services.llm_service._shared_client", _RecordingClient
         ):
             return await LLMService(retry_base_delay=0.0).chat(
                 [{"role": "user", "content": "hi"}], model=model, max_tokens=100

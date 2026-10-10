@@ -44,7 +44,7 @@ def _truncate(quote: str) -> str:
     return quote[:MAX_QUOTE_CHARS].rstrip() + " …"
 
 
-async def _store(
+def _build(
     *,
     source_level: SourceLevel,
     quote: str,
@@ -57,7 +57,7 @@ async def _store(
     source_url: str = "",
     provider: str = "",
 ) -> Evidence:
-    """Store one excerpt under an id that belongs to the recording session.
+    """One excerpt under an id that belongs to the recording session.
 
     The row carries one `owner_id` and one `session_id`, and both decide its
     fate: only the owner may resolve it, and deleting the session deletes it.
@@ -68,7 +68,7 @@ async def _store(
     """
     quote = _truncate(quote)
     locator = locator or Locator()
-    evidence = Evidence(
+    return Evidence(
         evidence_id=compute_evidence_id(
             source_level=source_level,
             quote=quote,
@@ -91,7 +91,10 @@ async def _store(
         source_url=source_url,
         provider=provider,
     )
-    return await repo.insert_evidence(evidence)
+
+
+async def _store(**fields: Any) -> Evidence:
+    return await repo.insert_evidence(_build(**fields))
 
 
 async def record_fulltext_evidence(
@@ -126,6 +129,43 @@ async def record_fulltext_evidence(
         locator=locator,
         provider="mineru",
     )
+
+
+async def record_fulltext_evidence_many(
+    *,
+    paper_id: str,
+    passages: list[tuple[str, Locator]],
+    owner_id: str,
+    session_id: str,
+    literature_id: str = "",
+) -> list[str]:
+    """Record several excerpts of one parsed PDF; their evidence ids, in order.
+
+    What `record_fulltext_evidence` does per passage, in two queries instead of
+    three each — a section read registers every block it returns.
+    """
+    if not passages:
+        return []
+    current = await paper_catalog.get_current_version(paper_id)
+    parse_version = current["version_id"] if current else ""
+    if not literature_id:
+        literature_id = await paper_catalog.literature_for_paper(paper_id)
+    evidences = [
+        _build(
+            source_level=SourceLevel.FULLTEXT,
+            quote=quote,
+            owner_id=owner_id,
+            session_id=session_id,
+            literature_id=literature_id,
+            paper_id=paper_id,
+            parse_version=parse_version,
+            locator=locator,
+            provider="mineru",
+        )
+        for quote, locator in passages
+    ]
+    await repo.insert_evidence_many(evidences)
+    return [e.evidence_id for e in evidences]
 
 
 async def record_abstract_evidence(

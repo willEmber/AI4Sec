@@ -52,7 +52,7 @@ import SourcesTab from "@/components/agent/SourcesTab";
 import ToolActivityList, { toolLabel } from "@/components/agent/ToolActivityList";
 import TurnRail from "@/components/agent/TurnRail";
 import Menu, { MenuItem } from "@/components/Menu";
-import PdfViewer from "@/components/PdfViewer";
+import PdfViewer from "@/components/LazyPdfViewer";
 import SplitPane from "@/components/SplitPane";
 import {
   IconAlert,

@@ -56,6 +56,9 @@ from app.services.llm_gateway import get_registry
 
 logger = logging.getLogger("scholar.agent.runner")
 
+# How often a streaming turn re-reads its cancel flag.
+CANCEL_POLL_SECONDS = 1.0
+
 # Live listeners per session. Purely an optimisation over polling the event
 # table; a listener that arrives late reads the table instead and misses
 # nothing.
@@ -427,6 +430,7 @@ async def _execute_turn(
         )
 
         cancelled = False
+        next_cancel_check = 0.0
         async for stream_mode, chunk in agent.astream(
             {
                 "messages": [
@@ -442,9 +446,16 @@ async def _execute_turn(
         ):
             if stream_mode != "messages":
                 continue
-            if await repo.is_cancel_requested(run.run_id):
-                cancelled = True
-                break
+            # Throttled: this loop turns once per streamed chunk, and a query
+            # per token put thousands of round trips in the answer's path.
+            # `request_stop` interrupts a turn this process runs at once; the
+            # flag is what reaches a turn whose cancel landed on another replica.
+            now = time.monotonic()
+            if now >= next_cancel_check:
+                next_cancel_check = now + CANCEL_POLL_SECONDS
+                if await repo.is_cancel_requested(run.run_id):
+                    cancelled = True
+                    break
 
             message, _meta = chunk
             if isinstance(message, ToolMessage):

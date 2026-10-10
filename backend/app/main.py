@@ -143,6 +143,13 @@ async def lifespan(app: FastAPI):
         logger.exception("Failed to stop background parses")
 
     try:
+        from app.services.llm_service import close_shared_client
+
+        await close_shared_client()
+    except Exception:
+        logger.exception("Failed to close the LLM HTTP client")
+
+    try:
         from app.services.agent_runner import close_agent_checkpointer
 
         await close_agent_checkpointer()

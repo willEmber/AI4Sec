@@ -1096,6 +1096,30 @@ def _row_to_evidence(row: dict[str, Any]) -> Evidence:
     )
 
 
+_INSERT_EVIDENCE_SQL = """INSERT INTO evidence
+               (evidence_id, owner_id, session_id, literature_id, paper_id, parse_version,
+                source_level, locator_json, quote, content_hash, source_url, provider)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT (evidence_id) DO NOTHING"""
+
+
+def _evidence_params(evidence: Evidence) -> tuple[Any, ...]:
+    return (
+        evidence.evidence_id,
+        evidence.owner_id,
+        evidence.session_id,
+        evidence.literature_id,
+        evidence.paper_id,
+        evidence.parse_version,
+        evidence.source_level.value,
+        json.dumps(evidence.locator.model_dump(), ensure_ascii=False),
+        evidence.quote,
+        evidence.content_hash,
+        evidence.source_url,
+        evidence.provider,
+    )
+
+
 async def insert_evidence(evidence: Evidence) -> Evidence:
     """Store evidence. Idempotent: re-reading a passage reuses the existing row.
 
@@ -1103,31 +1127,22 @@ async def insert_evidence(evidence: Evidence) -> Evidence:
     id is already present, the stored row is by definition the same content,
     and overwriting it would defeat the point.
     """
-    await db.execute(
-        """INSERT INTO evidence
-               (evidence_id, owner_id, session_id, literature_id, paper_id, parse_version,
-                source_level, locator_json, quote, content_hash, source_url, provider)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-           ON CONFLICT (evidence_id) DO NOTHING""",
-        (
-            evidence.evidence_id,
-            evidence.owner_id,
-            evidence.session_id,
-            evidence.literature_id,
-            evidence.paper_id,
-            evidence.parse_version,
-            evidence.source_level.value,
-            json.dumps(evidence.locator.model_dump(), ensure_ascii=False),
-            evidence.quote,
-            evidence.content_hash,
-            evidence.source_url,
-            evidence.provider,
-        ),
-    )
+    await db.execute(_INSERT_EVIDENCE_SQL, _evidence_params(evidence))
     row = await db.fetch_one(
         "SELECT * FROM evidence WHERE evidence_id = ?", (evidence.evidence_id,)
     )
     return _row_to_evidence(row)
+
+
+async def insert_evidence_many(evidences: list[Evidence]) -> None:
+    """Store several pieces of evidence in one round trip, as `insert_evidence` would.
+
+    Nothing is read back: the ids are derived from the content, so the caller
+    already holds them.
+    """
+    if not evidences:
+        return
+    await db.execute_many(_INSERT_EVIDENCE_SQL, [_evidence_params(e) for e in evidences])
 
 
 async def get_evidence(evidence_id: str, *, owner_id: str = "") -> Evidence:

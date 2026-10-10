@@ -4,8 +4,7 @@ import unittest
 from typing import Any
 from unittest.mock import patch
 
-import httpx
-
+from app.services import llm_service
 from app.services.llm_service import (
     LLMEmptyResponseError,
     LLMService,
@@ -111,9 +110,7 @@ class _FakeClient:
 
 
 def _patched_client(payload: dict[str, Any]):
-    return patch.object(
-        httpx, "AsyncClient", lambda **kw: _FakeClient(payload, **kw)
-    )
+    return patch.object(llm_service, "_shared_client", lambda: _FakeClient(payload))
 
 
 class TestChatEmptyResponse(unittest.IsolatedAsyncioTestCase):

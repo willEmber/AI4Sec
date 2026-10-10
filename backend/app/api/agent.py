@@ -65,6 +65,9 @@ router = APIRouter(prefix="/agent", tags=["agent"])
 # How long an idle stream waits before sending a keepalive. Proxies routinely
 # drop a silent connection at 60s, and a turn can think for longer than that.
 _SSE_KEEPALIVE_SECONDS = 15.0
+# How often a stream reads the event table for a turn this process is not the
+# one executing.
+_SSE_POLL_SECONDS = 1.0
 # A stream ticket only has to outlive the gap between asking for it and
 # opening the stream; reconnects ask again.
 _STREAM_TICKET_SECONDS = 300
@@ -666,22 +669,39 @@ async def stream_events(
                 if _is_terminal(event.type.value):
                     return
 
+            loop = asyncio.get_running_loop()
+            last_sent = loop.time()
             while True:
+                # The queue only hears a turn this process executes. One that
+                # runs on another replica — or is closed by another replica's
+                # recovery sweep — reaches this stream through the table.
+                local = agent_runner.is_executing(run_id)
                 try:
-                    event = await asyncio.wait_for(
-                        queue.get(), timeout=_SSE_KEEPALIVE_SECONDS
-                    )
+                    events = [
+                        await asyncio.wait_for(
+                            queue.get(),
+                            timeout=_SSE_KEEPALIVE_SECONDS if local else _SSE_POLL_SECONDS,
+                        )
+                    ]
                 except asyncio.TimeoutError:
-                    yield ": keepalive\n\n"
-                    continue
-                if event.run_id and event.run_id != run_id:
-                    continue
-                if event.seq <= highest:
-                    continue   # already replayed from the table
-                highest = event.seq
-                yield _sse(event.to_sse())
-                if _is_terminal(event.type.value):
-                    return
+                    events = (
+                        []
+                        if local
+                        else await repo.list_events(run.session_id, after_seq=highest)
+                    )
+                    if not events and loop.time() - last_sent >= _SSE_KEEPALIVE_SECONDS:
+                        last_sent = loop.time()
+                        yield ": keepalive\n\n"
+                for event in events:
+                    if event.seq <= highest:
+                        continue   # already replayed from the table
+                    highest = event.seq
+                    if event.run_id and event.run_id != run_id:
+                        continue
+                    last_sent = loop.time()
+                    yield _sse(event.to_sse())
+                    if _is_terminal(event.type.value):
+                        return
         finally:
             agent_runner.unsubscribe(run.session_id, queue)
 
