@@ -1,7 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { createMemory, deleteMemory, listMemories } from "@/lib/agent";
+import {
+  createMemory,
+  deleteMemory,
+  describeApiError,
+  listMemories,
+  updateMemory,
+} from "@/lib/agent";
 import type { AgentMemory } from "@/lib/agent";
 import { useTranslation } from "@/lib/i18n";
 import { IconPlus } from "@/components/icons";
@@ -24,7 +30,9 @@ interface Props {
  * already knows what they want should not have to phrase it as a request.
  *
  * Inside a project the panel shows what the agent will actually see there:
- * global memories plus this project's, never another project's.
+ * global memories plus this project's, never another project's. Ones the
+ * agent saved without the reader having said them come first, waiting to be
+ * confirmed; editing and the other projects' memories are on the account page.
  */
 export default function MemoryPanel({ refreshToken, projectId = "", embedded = false }: Props) {
   const { t } = useTranslation();
@@ -37,8 +45,7 @@ export default function MemoryPanel({ refreshToken, projectId = "", embedded = f
 
   const reload = useCallback(async () => {
     try {
-      const data = await listMemories();
-      setMemories(data.memories.filter((m) => !m.project_id || m.project_id === projectId));
+      setMemories((await listMemories(projectId)).memories);
     } catch {
       setMemories([]);
     }
@@ -55,12 +62,27 @@ export default function MemoryPanel({ refreshToken, projectId = "", embedded = f
         await deleteMemory(memoryId);
         setMemories((prev) => (prev ?? []).filter((m) => m.memory_id !== memoryId));
       } catch (err) {
-        setError(String(err));
+        setError(describeApiError(err, t));
       } finally {
         setBusy(false);
       }
     },
-    [],
+    [t],
+  );
+
+  const confirm = useCallback(
+    async (memoryId: string) => {
+      setBusy(true);
+      try {
+        await updateMemory(memoryId, { confirm: true });
+        await reload();
+      } catch (err) {
+        setError(describeApiError(err, t));
+      } finally {
+        setBusy(false);
+      }
+    },
+    [reload, t],
   );
 
   const add = useCallback(async () => {
@@ -73,13 +95,15 @@ export default function MemoryPanel({ refreshToken, projectId = "", embedded = f
       setDraft("");
       await reload();
     } catch (err) {
-      setError(String(err));
+      setError(describeApiError(err, t));
     } finally {
       setBusy(false);
     }
-  }, [draft, reload, projectId, projectOnly]);
+  }, [draft, reload, projectId, projectOnly, t]);
 
-  const count = memories?.length ?? 0;
+  const pending = (memories ?? []).filter((m) => m.pending);
+  const kept = (memories ?? []).filter((m) => !m.pending);
+  const count = kept.length;
 
   return (
     <div className={embedded ? "h-full overflow-y-auto" : "border-t border-border"}>
@@ -104,7 +128,40 @@ export default function MemoryPanel({ refreshToken, projectId = "", embedded = f
               {t("chat.memory.empty")}
             </p>
           )}
-          {(memories ?? []).map((memory) => (
+          {pending.length > 0 && (
+            <div className="mb-3 rounded-lg border border-accent-foreground/30 bg-accent p-2">
+              <p className="px-1 text-xs font-medium text-foreground">
+                {t("chat.memory.pending_heading")}
+              </p>
+              <p className="mb-1.5 px-1 text-[0.7rem] leading-relaxed text-muted-foreground">
+                {t("chat.memory.pending_hint")}
+              </p>
+              {pending.map((memory) => (
+                <div key={memory.memory_id} className="flex items-start gap-1.5 px-1 py-1">
+                  <span className="min-w-0 flex-1 text-xs leading-snug text-foreground">
+                    {memory.content}
+                  </span>
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => void confirm(memory.memory_id)}
+                    className="shrink-0 rounded border border-border px-1.5 py-0.5 text-[0.7rem] text-foreground hover:bg-card disabled:opacity-40"
+                  >
+                    {t("chat.memory.confirm")}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => void remove(memory.memory_id)}
+                    className="shrink-0 rounded border border-border px-1.5 py-0.5 text-[0.7rem] text-muted-foreground hover:text-destructive disabled:opacity-40"
+                  >
+                    {t("chat.memory.discard")}
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+          {kept.map((memory) => (
             <div
               key={memory.memory_id}
               className="group mb-1 flex items-start gap-2 rounded-lg px-2 py-1.5 hover:bg-card/70"
@@ -168,7 +225,10 @@ export default function MemoryPanel({ refreshToken, projectId = "", embedded = f
           )}
           {error && <p className="mt-1 px-2 text-[0.7rem] text-destructive">{error}</p>}
           <p className="mt-2 px-2 text-xs leading-relaxed text-muted-foreground">
-            {t("chat.memory.hint")}
+            {t("chat.memory.hint")}{" "}
+            <a href="/account?tab=memory" className="underline underline-offset-2 hover:text-foreground">
+              {t("chat.memory.manage")}
+            </a>
           </p>
         </div>
       )}

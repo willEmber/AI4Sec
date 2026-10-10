@@ -27,6 +27,8 @@ import logging
 import uuid
 from typing import Any
 
+from psycopg.errors import UniqueViolation
+
 from app.db import database as db
 from app.models.agent_models import (
     ACTIVE_RUN_STATUSES,
@@ -71,6 +73,14 @@ class EvidenceNotFound(AgentRepositoryError):
 
 class ProjectNotFound(AgentRepositoryError):
     """No such project, or it belongs to someone else (same rule as sessions)."""
+
+
+class MemoryLimitReached(AgentRepositoryError):
+    """The principal already holds as many memories as one may."""
+
+
+class MemoryConflict(AgentRepositoryError):
+    """The same text is already a memory in that scope (HTTP 409)."""
 
 
 def _json_loads(value: Any, default: Any) -> Any:
@@ -863,6 +873,24 @@ async def list_session_artifacts(session_id: str, *, limit: int = 100) -> list[S
 
 # ── Long-term memory ────────────────────────────────────────────────────────
 
+# Every memory a principal may hold, pending ones included. It is also what a
+# listing returns at most, so one read shows a reader everything they have.
+MAX_MEMORIES_PER_OWNER = 500
+
+_MEMORY_UPSERT = """
+    INSERT INTO agent_memories
+        (memory_id, owner_id, kind, content, source_session_id, source_run_id,
+         project_id, pending, replaces_id)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT (owner_id, project_id, content) WHERE active = 1
+    DO UPDATE SET kind = EXCLUDED.kind,
+                  updated_at = now(),
+                  pending = LEAST(agent_memories.pending, EXCLUDED.pending),
+                  replaces_id = CASE
+                      WHEN agent_memories.pending = 1 AND EXCLUDED.replaces_id <> ''
+                      THEN EXCLUDED.replaces_id ELSE agent_memories.replaces_id END
+    RETURNING *"""
+
 
 def _row_to_memory(row: dict[str, Any]) -> AgentMemory:
     try:
@@ -877,10 +905,87 @@ def _row_to_memory(row: dict[str, Any]) -> AgentMemory:
         source_session_id=row["source_session_id"],
         source_run_id=row["source_run_id"],
         project_id=row.get("project_id") or "",
+        pending=bool(row.get("pending")),
         active=bool(row["active"]),
         created_at=row["created_at"],
         updated_at=row["updated_at"],
     )
+
+
+async def _delete_memory(
+    tx: db.Transaction, memory_id: str, owner_id: str, reach_project_id: str | None
+) -> bool:
+    """Delete one memory; with a reach, only a confirmed one a turn there can see."""
+    reach, params = "", [memory_id, owner_id]
+    if reach_project_id is not None:
+        reach = " AND pending = 0 AND (project_id = '' OR project_id = ?)"
+        params.append(reach_project_id)
+    deleted = await tx.execute_returning(
+        "DELETE FROM agent_memories WHERE memory_id = ? AND owner_id = ? AND active = 1"
+        f"{reach} RETURNING memory_id",
+        params,
+    )
+    return deleted is not None
+
+
+async def save_memory(
+    *,
+    owner_id: str,
+    content: str,
+    kind: MemoryKind = MemoryKind.PREFERENCE,
+    source_session_id: str = "",
+    source_run_id: str = "",
+    project_id: str = "",
+    pending: bool = False,
+    replaces: str = "",
+    reach_project_id: str | None = None,
+) -> tuple[AgentMemory, bool]:
+    """Store a memory and, in the same transaction, drop the one it replaces.
+
+    Returns `(memory, replaced)`. Saving the same text twice in the same scope
+    updates the existing row instead of adding a duplicate — the model tends
+    to re-state a preference it has already kept — and a confirmed row is
+    never turned back into a pending one that way.
+
+    A `pending` save replaces nothing yet: it records `replaces` and the old
+    memory goes when the reader confirms (`update_memory(confirm=True)`).
+    `reach_project_id` limits what may be replaced to what a turn in that
+    project can see. The caller checks that `project_id` is the owner's.
+    Raises `MemoryLimitReached` past `MAX_MEMORIES_PER_OWNER`.
+    """
+    content = content.strip()
+    replaces = replaces.strip()
+    async with db.transaction() as tx:
+        held = await tx.fetch_one(
+            "SELECT count(*) AS n FROM agent_memories WHERE owner_id = ? AND active = 1",
+            (owner_id,),
+        )
+        if held and int(held["n"]) >= MAX_MEMORIES_PER_OWNER:
+            same = await tx.fetch_one(
+                "SELECT 1 AS one FROM agent_memories "
+                "WHERE owner_id = ? AND project_id = ? AND content = ? AND active = 1",
+                (owner_id, project_id, content),
+            )
+            if same is None:
+                raise MemoryLimitReached(MAX_MEMORIES_PER_OWNER)
+        row = await tx.fetch_one(
+            _MEMORY_UPSERT,
+            (
+                f"mem_{uuid.uuid4().hex[:20]}",
+                owner_id,
+                kind.value,
+                content,
+                source_session_id,
+                source_run_id,
+                project_id,
+                int(pending),
+                replaces if pending else "",
+            ),
+        )
+        replaced = False
+        if replaces and not pending and replaces != row["memory_id"]:
+            replaced = await _delete_memory(tx, replaces, owner_id, reach_project_id)
+    return _row_to_memory(row), replaced
 
 
 async def add_memory(
@@ -891,47 +996,49 @@ async def add_memory(
     source_session_id: str = "",
     source_run_id: str = "",
     project_id: str = "",
+    pending: bool = False,
 ) -> AgentMemory:
-    """Store a memory for a principal, globally or for one of their projects.
+    """`save_memory` for a memory that replaces nothing."""
+    memory, _ = await save_memory(
+        owner_id=owner_id,
+        content=content,
+        kind=kind,
+        source_session_id=source_session_id,
+        source_run_id=source_run_id,
+        project_id=project_id,
+        pending=pending,
+    )
+    return memory
 
-    Saving the same text twice in the same scope updates the existing row
-    instead of adding a duplicate — the model tends to re-state a preference
-    it has already kept. The caller checks that `project_id` is the owner's.
+
+async def list_memories(
+    owner_id: str,
+    *,
+    project_id: str | None = None,
+    include_global: bool = True,
+    include_pending: bool = True,
+    limit: int = MAX_MEMORIES_PER_OWNER,
+) -> list[AgentMemory]:
+    """A principal's memories, newest first.
+
+    `project_id=None` is everything they hold. With a project it is that
+    project's memories plus, unless `include_global` is off, the global ones —
+    the scope is part of the query, so a `limit` cannot cut out the rows the
+    caller was going to keep.
     """
-    content = content.strip()
-    existing = await db.fetch_one(
-        "SELECT * FROM agent_memories "
-        "WHERE owner_id = ? AND project_id = ? AND content = ? AND active = 1",
-        (owner_id, project_id, content),
-    )
-    if existing is not None:
-        await db.execute(
-            "UPDATE agent_memories SET kind = ?, updated_at = now() WHERE memory_id = ?",
-            (kind.value, existing["memory_id"]),
-        )
-        row = await db.fetch_one(
-            "SELECT * FROM agent_memories WHERE memory_id = ?", (existing["memory_id"],)
-        )
-        return _row_to_memory(row)
-
-    memory_id = f"mem_{uuid.uuid4().hex[:20]}"
-    await db.execute(
-        """INSERT INTO agent_memories
-               (memory_id, owner_id, kind, content, source_session_id, source_run_id,
-                project_id)
-           VALUES (?, ?, ?, ?, ?, ?, ?)""",
-        (memory_id, owner_id, kind.value, content, source_session_id, source_run_id, project_id),
-    )
-    row = await db.fetch_one("SELECT * FROM agent_memories WHERE memory_id = ?", (memory_id,))
-    return _row_to_memory(row)
-
-
-async def list_memories(owner_id: str, *, limit: int = 100) -> list[AgentMemory]:
+    clauses, params = ["owner_id = ?", "active = 1"], [owner_id]
+    if project_id is not None:
+        if include_global and project_id:
+            clauses.append("(project_id = '' OR project_id = ?)")
+        else:
+            clauses.append("project_id = ?")
+        params.append(project_id)
+    if not include_pending:
+        clauses.append("pending = 0")
     rows = await db.fetch_all(
-        """SELECT * FROM agent_memories
-            WHERE owner_id = ? AND active = 1
-            ORDER BY updated_at DESC, created_at DESC, memory_id DESC LIMIT ?""",
-        (owner_id, limit),
+        f"SELECT * FROM agent_memories WHERE {' AND '.join(clauses)} "
+        "ORDER BY updated_at DESC, created_at DESC, memory_id DESC LIMIT ?",
+        (*params, limit),
     )
     return [_row_to_memory(r) for r in rows]
 
@@ -942,11 +1049,13 @@ async def list_memories_for_prompt(
     """The memories a turn sees: its project's first, then global ones, within `limit`.
 
     Another project's memories never appear — "I am working on X" saved in one
-    project would be wrong context in the next.
+    project would be wrong context in the next. Nor does a pending one: it is
+    waiting for the reader precisely because it may not be theirs.
     """
     rows = await db.fetch_all(
         """SELECT * FROM agent_memories
-            WHERE owner_id = ? AND active = 1 AND (project_id = '' OR project_id = ?)
+            WHERE owner_id = ? AND active = 1 AND pending = 0
+              AND (project_id = '' OR project_id = ?)
             ORDER BY (project_id = ''), updated_at DESC, created_at DESC, memory_id DESC
             LIMIT ?""",
         (owner_id, project_id, limit),
@@ -958,7 +1067,8 @@ async def count_memories_for_prompt(owner_id: str, *, project_id: str = "") -> i
     """How many memories `list_memories_for_prompt` would return without its limit."""
     row = await db.fetch_one(
         """SELECT count(*) AS n FROM agent_memories
-            WHERE owner_id = ? AND active = 1 AND (project_id = '' OR project_id = ?)""",
+            WHERE owner_id = ? AND active = 1 AND pending = 0
+              AND (project_id = '' OR project_id = ?)""",
         (owner_id, project_id),
     )
     return int(row["n"]) if row else 0
@@ -971,15 +1081,74 @@ async def get_memory(memory_id: str, *, owner_id: str) -> AgentMemory | None:
     return _row_to_memory(row)
 
 
-async def deactivate_memory(memory_id: str, *, owner_id: str) -> bool:
-    """Forget a memory. Soft-deleted so an audit of a past answer still resolves it."""
-    updated = await db.execute_returning(
-        """UPDATE agent_memories SET active = 0, updated_at = now()
-            WHERE memory_id = ? AND owner_id = ? AND active = 1
-           RETURNING memory_id""",
-        (memory_id, owner_id),
+async def list_owner_paper_ids(owner_id: str) -> set[str]:
+    """Every `paper_id` in any of a principal's conversations."""
+    rows = await db.fetch_all(
+        """SELECT DISTINCT sp.paper_id FROM session_papers sp
+             JOIN agent_sessions s ON s.session_id = sp.session_id
+            WHERE s.owner_id = ? AND sp.paper_id <> ''""",
+        (owner_id,),
     )
-    return updated is not None
+    return {r["paper_id"] for r in rows}
+
+
+async def update_memory(
+    memory_id: str,
+    *,
+    owner_id: str,
+    content: str | None = None,
+    kind: MemoryKind | None = None,
+    project_id: str | None = None,
+    confirm: bool = False,
+) -> AgentMemory | None:
+    """Edit a memory, or confirm a pending one. `None` for "no such memory".
+
+    Fields left as `None` are not changed. Confirming makes the memory visible
+    to turns and drops the one it was saved to replace, together. The caller
+    checks that `project_id` is the owner's. Raises `MemoryConflict` when the
+    edit would make it the same text as another memory in the same scope.
+    """
+    try:
+        async with db.transaction() as tx:
+            row = await tx.fetch_one(
+                "SELECT * FROM agent_memories "
+                "WHERE memory_id = ? AND owner_id = ? AND active = 1 FOR UPDATE",
+                (memory_id, owner_id),
+            )
+            if row is None:
+                return None
+            confirming = confirm and bool(row["pending"])
+            if confirming and row["replaces_id"]:
+                await _delete_memory(tx, row["replaces_id"], owner_id, None)
+            row = await tx.fetch_one(
+                """UPDATE agent_memories
+                      SET content = ?, kind = ?, project_id = ?, pending = ?,
+                          replaces_id = ?, updated_at = now()
+                    WHERE memory_id = ? RETURNING *""",
+                (
+                    row["content"] if content is None else content.strip(),
+                    row["kind"] if kind is None else kind.value,
+                    row["project_id"] if project_id is None else project_id,
+                    0 if confirming else row["pending"],
+                    "" if confirming else row["replaces_id"],
+                    memory_id,
+                ),
+            )
+    except UniqueViolation:
+        raise MemoryConflict(memory_id) from None
+    return _row_to_memory(row)
+
+
+async def delete_memory(
+    memory_id: str, *, owner_id: str, reach_project_id: str | None = None
+) -> bool:
+    """Forget a memory: the row is deleted, not flagged.
+
+    `reach_project_id` is for a turn, which may only forget what it can see —
+    confirmed memories that are global or its own project's.
+    """
+    async with db.transaction() as tx:
+        return await _delete_memory(tx, memory_id, owner_id, reach_project_id)
 
 
 # ── Session papers ──────────────────────────────────────────────────────────

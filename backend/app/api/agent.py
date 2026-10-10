@@ -42,6 +42,7 @@ from app.models.agent_models import (
     PostMessageResponse,
     SessionContextStats,
     SessionDetailResponse,
+    UpdateMemoryRequest,
     UpdateProjectRequest,
     UpdateSessionRequest,
 )
@@ -380,13 +381,50 @@ async def post_message(
 # ── Long-term memory ────────────────────────────────────────────────────────
 
 
+async def _owned_project(project_id: str | None, principal_id: str) -> str | None:
+    """`project_id` stripped, once it is known to be the caller's (or empty)."""
+    if project_id is None:
+        return None
+    project_id = project_id.strip()
+    if project_id:
+        try:
+            await repo.get_project(project_id, owner_id=principal_id)
+        except repo.ProjectNotFound:
+            raise HTTPException(status_code=404, detail="No such project.") from None
+    return project_id
+
+
+async def _memory_text(content: str, principal_id: str) -> str:
+    """`content` as it may be stored: the rules `save_memory` applies."""
+    from app.agents.tools.memory import looks_like_secret, memory_text_problem
+
+    content = (content or "").strip()
+    problem = memory_text_problem(content)
+    if problem:
+        raise HTTPException(status_code=422, detail=problem)
+    if looks_like_secret(content) and looks_like_secret(
+        content, await repo.list_owner_paper_ids(principal_id)
+    ):
+        raise HTTPException(status_code=422, detail="Credentials are never stored.")
+    return content
+
+
 @router.get("/memories")
 async def list_memories(
+    project_id: str | None = Query(default=None, max_length=64),
     principal_id: str = Depends(require_principal),
 ) -> dict[str, Any]:
-    """What the agent remembers about the calling principal."""
-    memories = await repo.list_memories(principal_id)
-    return {"memories": [m.model_dump(mode="json") for m in memories]}
+    """What the agent remembers about the calling principal.
+
+    Everything by default. With `project_id` it is what a conversation in that
+    project works with — its memories and the global ones — and with an empty
+    `project_id`, what one outside any project does.
+    """
+    memories = await repo.list_memories(principal_id, project_id=project_id)
+    return {
+        "memories": [m.model_dump(mode="json") for m in memories],
+        "limit": repo.MAX_MEMORIES_PER_OWNER,
+    }
 
 
 @router.post("/memories")
@@ -396,25 +434,51 @@ async def create_memory(
     body: CreateMemoryRequest,
     principal_id: str = Depends(require_principal),
 ) -> dict[str, Any]:
-    """Let the reader add a memory by hand. Same rules as the tool."""
-    from app.agents.tools.memory import MAX_MEMORY_CHARS, looks_like_secret
+    """Let the reader add a memory by hand. Same rules as the tool, except
+    that what the reader types needs no confirming."""
+    content = await _memory_text(body.content, principal_id)
+    project_id = await _owned_project(body.project_id, principal_id) or ""
+    try:
+        memory = await repo.add_memory(
+            owner_id=principal_id, content=content, kind=body.kind, project_id=project_id
+        )
+    except repo.MemoryLimitReached:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "memory_limit",
+                "message": f"At most {repo.MAX_MEMORIES_PER_OWNER} memories are kept.",
+            },
+        ) from None
+    return memory.model_dump(mode="json")
 
-    content = (body.content or "").strip()
-    if not content:
-        raise HTTPException(status_code=422, detail="content must not be empty.")
-    if len(content) > MAX_MEMORY_CHARS:
-        raise HTTPException(status_code=422, detail=f"content must be under {MAX_MEMORY_CHARS} characters.")
-    if looks_like_secret(content):
-        raise HTTPException(status_code=422, detail="Credentials are never stored.")
-    project_id = body.project_id.strip()
-    if project_id:
-        try:
-            await repo.get_project(project_id, owner_id=principal_id)
-        except repo.ProjectNotFound:
-            raise HTTPException(status_code=404, detail="No such project.") from None
-    memory = await repo.add_memory(
-        owner_id=principal_id, content=content, kind=body.kind, project_id=project_id
-    )
+
+@router.patch("/memories/{memory_id}")
+@limiter.limit("60/minute")
+async def update_memory(
+    request: Request,
+    memory_id: str,
+    body: UpdateMemoryRequest,
+    principal_id: str = Depends(require_principal),
+) -> dict[str, Any]:
+    """Edit a memory's text, kind or scope, or confirm one the agent saved."""
+    content = None if body.content is None else await _memory_text(body.content, principal_id)
+    try:
+        memory = await repo.update_memory(
+            memory_id,
+            owner_id=principal_id,
+            content=content,
+            kind=body.kind,
+            project_id=await _owned_project(body.project_id, principal_id),
+            confirm=body.confirm,
+        )
+    except repo.MemoryConflict:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "memory_exists", "message": "That is already a memory there."},
+        ) from None
+    if memory is None:
+        raise HTTPException(status_code=404, detail="No such memory.")
     return memory.model_dump(mode="json")
 
 
@@ -457,7 +521,9 @@ async def get_project(
         raise HTTPException(status_code=404, detail="No such project.") from None
     sessions = await repo.list_sessions(principal_id, project_id=project_id, limit=200)
     papers = await repo.list_project_papers(project_id)
-    memories = [m for m in await repo.list_memories(principal_id) if m.project_id == project_id]
+    memories = await repo.list_memories(
+        principal_id, project_id=project_id, include_global=False
+    )
     return {
         "project": project.model_dump(),
         "sessions": [s.model_dump() for s in sessions],
@@ -536,7 +602,7 @@ async def delete_memory(
     memory_id: str,
     principal_id: str = Depends(require_principal),
 ) -> dict[str, Any]:
-    removed = await repo.deactivate_memory(memory_id, owner_id=principal_id)
+    removed = await repo.delete_memory(memory_id, owner_id=principal_id)
     if not removed:
         raise HTTPException(status_code=404, detail="No such memory.")
     return {"memory_id": memory_id, "deleted": True}

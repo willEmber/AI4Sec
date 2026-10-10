@@ -12,12 +12,17 @@ project is not wrong context in the next. The project is the session's, taken
 from the trusted context; the model can only choose between "this project"
 and "everywhere".
 
-Two boundaries are enforced in code, not asked of the model:
+Three boundaries are enforced in code, not asked of the model:
 
 * Memories are written under the identity in the trusted runtime context. The
   model cannot choose whose memory it writes to.
 * Anything shaped like a credential is refused. A reader pasting an API key
   into a chat must not find it in their memory list a week later.
+* A memory has to be traceable to something the reader said in this
+  conversation. One that is not — a sentence a paper or a web page told the
+  agent to remember, say — is kept as *pending*: no turn sees it until the
+  reader confirms it. A memory outlives the conversation, so an instruction
+  planted in a document would otherwise steer every later one.
 """
 
 from __future__ import annotations
@@ -30,22 +35,44 @@ from langchain.tools import ToolRuntime, tool
 
 from app.agents.context import AgentContext
 from app.db import agent_repository as repo
-from app.models.agent_models import ErrorCode, EventType, MemoryKind, ToolResult
+from app.models.agent_models import (
+    AgentMemory,
+    ErrorCode,
+    EventType,
+    MemoryKind,
+    MessageRole,
+    ToolResult,
+)
 
 logger = logging.getLogger("scholar.agents.tools.memory")
 
 MAX_MEMORY_CHARS = 500
-# What `list_memories` returns: everything a reader plausibly has, since it is
-# the way to see what the prompt's ceiling left out.
-MAX_LISTED_MEMORIES = 500
 
-# Token-like runs and the usual key prefixes. Coarse on purpose: a false
-# positive costs one refused memory, a false negative leaks a secret.
-_SECRET_RE = re.compile(
-    r"(sk-[A-Za-z0-9_-]{16,}|AKIA[0-9A-Z]{16}|ghp_[A-Za-z0-9]{30,}|"
-    r"\b(api[_-]?key|secret|token|password|passwd)\b\s*[:=]\s*\S{6,}|"
-    r"\b[A-Za-z0-9_-]{40,}\b)",
-    re.IGNORECASE,
+# Coarse on purpose: a false positive costs one refused memory, a false
+# negative leaks a secret. Two shapes are let through because a reader of ML
+# papers writes them all the time: a setting with a plain number ("token =
+# 100000") and a long identifier with no digits in it.
+_KEY_PREFIX_RE = re.compile(r"sk-[A-Za-z0-9_-]{16,}|AKIA[0-9A-Z]{16}|ghp_[A-Za-z0-9]{30,}")
+_ASSIGNED_RE = re.compile(
+    r"\b(?:api[_-]?key|secret|token|password|passwd)\b\s*[:=]\s*(\S{6,})", re.IGNORECASE
+)
+_LONG_RUN_RE = re.compile(r"\b[A-Za-z0-9_-]{40,}\b")
+_PLAIN_NUMBER_RE = re.compile(r"[\d.,_%]+[A-Za-z]{0,2}[.,;，。；]?")
+
+# How much of a memory's wording has to come from the reader's own messages.
+# Below half: the memory is a rewording, and "the reader prefers …" around
+# what they said must not sink it.
+GROUNDED_SHARE = 0.4
+_WORD_RE = re.compile(r"[a-z0-9]+")
+_HAN_RE = re.compile(r"[\u4e00-\u9fff]+")
+# How a memory talks *about* the reader, which the reader never says.
+_FRAMING_RE = re.compile(r"用户|读者|希望|喜欢|偏好|要求|习惯")
+_STOPWORDS = frozenset(
+    "the and for with that this from are was were has have had not but you your "
+    "they them their she her his him its our who what when how any all can will "
+    "would should about into over than then also only reader user readers users "
+    "prefer prefers preferred want wants like likes need needs ask asks asked "
+    "always answer answers".split()
 )
 
 
@@ -61,7 +88,61 @@ def looks_like_secret(text: str, known_ids: Iterable[str] = ()) -> bool:
     for known in known_ids:
         if known:
             text = text.replace(known, "")
-    return _SECRET_RE.search(text) is not None
+    if _KEY_PREFIX_RE.search(text):
+        return True
+    if any(not _PLAIN_NUMBER_RE.fullmatch(m.group(1)) for m in _ASSIGNED_RE.finditer(text)):
+        return True
+    return any(
+        re.search(r"\d", run) and re.search(r"[A-Za-z]", run)
+        for run in _LONG_RUN_RE.findall(text)
+    )
+
+
+def memory_text_problem(text: str) -> str:
+    """Why `text` cannot be a memory at all, or `""`. The secret check is separate."""
+    if not text:
+        return "content must not be empty."
+    if len(text) > MAX_MEMORY_CHARS:
+        return f"A memory must be under {MAX_MEMORY_CHARS} characters; keep it to one durable point."
+    return ""
+
+
+def _terms(text: str) -> set[str]:
+    """Words and Han bigrams of `text`, the units grounding is counted in."""
+    text = _FRAMING_RE.sub(" ", (text or "").lower())
+    terms = set()
+    for word in _WORD_RE.findall(text):
+        if len(word) > 3 and word.endswith("s"):
+            word = word[:-1]
+        if len(word) > 2 and word not in _STOPWORDS:
+            terms.add(word)
+    for run in _HAN_RE.findall(text):
+        terms.update(run[i : i + 2] for i in range(max(len(run) - 1, 1)))
+    return terms
+
+
+def grounded_in(text: str, said: Iterable[str]) -> bool:
+    """Whether enough of `text` repeats what the reader `said`."""
+    terms = _terms(text)
+    if not terms:
+        return False
+    heard: set[str] = set()
+    for message in said:
+        heard |= _terms(message)
+    return len(terms & heard) / len(terms) >= GROUNDED_SHARE
+
+
+async def _reader_said(ctx: AgentContext) -> list[str]:
+    """The reader's own messages in this conversation, from the stored rows.
+
+    Not from the model's message state: that is where paper and web text sit
+    too, and a compaction may have summarised the reader's words away.
+    """
+    return [
+        m.content
+        for m in await repo.list_messages(ctx.session_id)
+        if m.role == MessageRole.USER
+    ]
 
 
 async def _paper_handles(ctx: AgentContext) -> set[str]:
@@ -74,20 +155,7 @@ async def _paper_handles(ctx: AgentContext) -> set[str]:
     return {p.paper_id for p in papers if p.paper_id}
 
 
-async def _memory_in_reach(ctx: AgentContext, memory_id: str) -> bool:
-    """Whether `memory_id` is an active memory this conversation can see.
-
-    The reader's own, and global or this project's — the same set the prompt
-    and `list_memories` show. An id from another project cannot be listed
-    here, so it should not be removable from here either.
-    """
-    memory = await repo.get_memory(memory_id, owner_id=ctx.owner_id)
-    if memory is None or not memory.active:
-        return False
-    return not memory.project_id or memory.project_id == ctx.project_id
-
-
-async def _emit_saved(ctx: AgentContext, memory_id: str, kind: str, content: str) -> None:
+async def _emit_saved(ctx: AgentContext, memory: AgentMemory, replaced: str = "") -> None:
     from app.services import agent_runner
 
     try:
@@ -95,10 +163,17 @@ async def _emit_saved(ctx: AgentContext, memory_id: str, kind: str, content: str
             session_id=ctx.session_id,
             run_id=ctx.run_id,
             type=EventType.MEMORY_SAVED,
-            payload={"memory_id": memory_id, "kind": kind, "preview": content[:120]},
+            payload={
+                "memory_id": memory.memory_id,
+                "kind": memory.kind.value,
+                "preview": memory.content[:120],
+                "scope": "project" if memory.project_id else "global",
+                "pending": memory.pending,
+                "replaced": replaced,
+            },
         )
     except Exception:  # noqa: BLE001 — the memory is saved; the notice is best effort
-        logger.debug("memory.saved event not published for %s", memory_id)
+        logger.debug("memory.saved event not published for %s", memory.memory_id)
 
 
 @tool(parse_docstring=False)
@@ -119,22 +194,17 @@ async def save_memory(
     conversation), or "auto": a `project` memory stays in the project, anything
     else is global. Do not store paper content, one-off requests, or anything
     transient; do not store credentials. Write the memory as a short,
-    self-contained sentence. When this corrects or supersedes a memory you
-    already hold, pass that memory's id as `replaces` and it is forgotten in
-    the same call.
+    self-contained sentence in the reader's own language and close to their
+    own words: a memory that cannot be traced to something the reader said in
+    this conversation is not used until they confirm it. When this corrects or
+    supersedes a memory you already hold, pass that memory's id as `replaces`
+    and it is forgotten in the same call.
     """
     ctx = runtime.context
     text = (content or "").strip()
-    if not text:
-        return ToolResult.failed(
-            ErrorCode.INVALID_ARGUMENT, "content must not be empty.", retryable=False
-        ).to_json()
-    if len(text) > MAX_MEMORY_CHARS:
-        return ToolResult.failed(
-            ErrorCode.INVALID_ARGUMENT,
-            f"A memory must be under {MAX_MEMORY_CHARS} characters; keep it to one durable point.",
-            retryable=False,
-        ).to_json()
+    problem = memory_text_problem(text)
+    if problem:
+        return ToolResult.failed(ErrorCode.INVALID_ARGUMENT, problem, retryable=False).to_json()
     if looks_like_secret(text) and looks_like_secret(text, await _paper_handles(ctx)):
         return ToolResult.failed(
             ErrorCode.FORBIDDEN,
@@ -147,35 +217,58 @@ async def save_memory(
         memory_kind = MemoryKind.FACT
 
     project_id, scope_note = _memory_project(ctx, memory_kind, scope)
-    memory = await repo.add_memory(
-        owner_id=ctx.owner_id,
-        content=text,
-        kind=memory_kind,
-        source_session_id=ctx.session_id,
-        source_run_id=ctx.run_id,
-        project_id=project_id,
-    )
-    await _emit_saved(ctx, memory.memory_id, memory.kind.value, memory.content)
+    wanted = (replaces or "").strip()
+    try:
+        memory, was_replaced = await repo.save_memory(
+            owner_id=ctx.owner_id,
+            content=text,
+            kind=memory_kind,
+            source_session_id=ctx.session_id,
+            source_run_id=ctx.run_id,
+            project_id=project_id,
+            pending=not grounded_in(text, await _reader_said(ctx)),
+            replaces=wanted,
+            reach_project_id=ctx.project_id,
+        )
+    except repo.MemoryLimitReached:
+        return ToolResult.failed(
+            ErrorCode.FORBIDDEN,
+            f"The reader already has {repo.MAX_MEMORIES_PER_OWNER} memories, the most one may "
+            "hold. Tell them; nothing more is saved until some are deleted.",
+            retryable=False,
+        ).to_json()
+    replaced = wanted if was_replaced else ""
+    await _emit_saved(ctx, memory, replaced)
 
-    replaced = (replaces or "").strip()
-    if replaced and replaced != memory.memory_id:
-        if await _memory_in_reach(ctx, replaced):
-            await repo.deactivate_memory(replaced, owner_id=ctx.owner_id)
-            scope_note = f"It replaces {replaced}. {scope_note}"
-        else:
-            scope_note = f"No active memory {replaced}, so nothing was replaced. {scope_note}"
-            replaced = ""
+    data = {
+        "memory_id": memory.memory_id,
+        "kind": memory.kind.value,
+        "content": memory.content,
+        "scope": "project" if memory.project_id else "global",
+        "pending": memory.pending,
+        "replaced": replaced,
+    }
+    if memory.pending:
+        return ToolResult.ok(
+            data,
+            note=(
+                "Not in use yet: this could not be traced to something the reader said in "
+                "this conversation, so it waits for them to confirm it in the memory panel"
+                + (f", and {wanted} stays until they do" if wanted else "")
+                + f". Tell the reader that; do not save it again. {scope_note}"
+            ).strip(),
+        ).to_json()
+    if wanted:
+        scope_note = (
+            f"It replaces {wanted}. {scope_note}"
+            if was_replaced
+            else f"No memory {wanted} in reach, so nothing was replaced. {scope_note}"
+        )
     where = (
         "future conversations in this project" if memory.project_id else "future conversations"
     )
     return ToolResult.ok(
-        {
-            "memory_id": memory.memory_id,
-            "kind": memory.kind.value,
-            "content": memory.content,
-            "scope": "project" if memory.project_id else "global",
-            "replaced": replaced if replaced != memory.memory_id else "",
-        },
+        data,
         note=f"Saved. It will be available in {where}; the reader can delete it. {scope_note}".strip(),
     ).to_json()
 
@@ -205,7 +298,10 @@ async def list_memories(runtime: ToolRuntime[AgentContext]) -> str:
     what you remember.
     """
     ctx = runtime.context
-    memories = await repo.list_memories(ctx.owner_id, limit=MAX_LISTED_MEMORIES)
+    # Pending ones are left out: they are not the agent's until confirmed.
+    memories = await repo.list_memories(
+        ctx.owner_id, project_id=ctx.project_id, include_pending=False
+    )
     return ToolResult.ok(
         {
             "memories": [
@@ -216,8 +312,6 @@ async def list_memories(runtime: ToolRuntime[AgentContext]) -> str:
                     "scope": "project" if m.project_id else "global",
                 }
                 for m in memories
-                # Another project's memories are not this conversation's business.
-                if not m.project_id or m.project_id == ctx.project_id
             ]
         }
     ).to_json()
@@ -236,12 +330,12 @@ async def forget_memory(memory_id: str, runtime: ToolRuntime[AgentContext]) -> s
         return ToolResult.failed(
             ErrorCode.INVALID_ARGUMENT, "memory_id must not be empty.", retryable=False
         ).to_json()
-    removed = await _memory_in_reach(ctx, memory_id) and await repo.deactivate_memory(
-        memory_id, owner_id=ctx.owner_id
+    removed = await repo.delete_memory(
+        memory_id, owner_id=ctx.owner_id, reach_project_id=ctx.project_id
     )
     if not removed:
         return ToolResult.unavailable(
-            ErrorCode.EVIDENCE_NOT_FOUND, f"No active memory {memory_id}."
+            ErrorCode.EVIDENCE_NOT_FOUND, f"No memory {memory_id} in reach."
         ).to_json()
     return ToolResult.ok({"memory_id": memory_id, "forgotten": True}).to_json()
 

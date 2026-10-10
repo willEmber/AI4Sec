@@ -403,6 +403,15 @@ class OpenProjectPaperTests(P8TestCase):
 
 
 class ProjectMemoryAndPromptTests(P8TestCase):
+    async def asyncSetUp(self) -> None:
+        await super().asyncSetUp()
+        # A memory has to be traceable to what the reader said here.
+        await self._turn(
+            self.session.session_id,
+            "I work on MoE routing and study routing in PyTorch; I prefer tables.",
+            "Noted.",
+        )
+
     async def test_project_memories_stay_in_their_project(self) -> None:
         """A29."""
         from app.agents.tools import list_memories, save_memory
@@ -443,8 +452,7 @@ class ProjectMemoryAndPromptTests(P8TestCase):
         self.assertEqual(refused["status"], "unavailable")
         saved = await self._call(save_memory, content="Uses PyTorch", replaces=theirs.memory_id)
         self.assertEqual(saved["data"]["replaced"], "")
-        kept = await repo.get_memory(theirs.memory_id, owner_id=self.owner)
-        self.assertTrue(kept.active)
+        self.assertIsNotNone(await repo.get_memory(theirs.memory_id, owner_id=self.owner))
 
         # A global memory is everyone's to drop, and the project's own is too.
         mine = await self._call(save_memory, content="Works on routing", kind="project")
@@ -483,7 +491,7 @@ class ProjectMemoryAndPromptTests(P8TestCase):
         prompt = build_system_prompt(
             language="en", papers=[], memories=memories, project=project, project_papers=others
         )
-        self.assertEqual(PROMPT_VERSION, "p9-memory-1")
+        self.assertEqual(PROMPT_VERSION, "p9-memory-2")
         self.assertIn('## Research project', prompt)
         self.assertIn('"MoE routing"', prompt)
         self.assertIn("Compare routers on WMT14.", prompt)
@@ -647,6 +655,34 @@ class ProjectApiTests(unittest.TestCase):
         self.assertEqual(saved.json()["project_id"], pid)
         detail = self._as(me, "GET", f"/api/agent/projects/{pid}").json()
         self.assertEqual([m["content"] for m in detail["memories"]], ["Works on MoE"])
+
+        # A listing is scoped by the query, not by the page that shows it.
+        glob = self._as(me, "POST", "/api/agent/memories", json={"content": "Prefers tables"}).json()
+        everything = self._as(me, "GET", "/api/agent/memories").json()
+        self.assertEqual(len(everything["memories"]), 2)
+        outside = self._as(me, "GET", "/api/agent/memories?project_id=").json()["memories"]
+        self.assertEqual([m["content"] for m in outside], ["Prefers tables"])
+
+        # Editing: text, kind and scope; never into a copy of another memory.
+        mid = glob["memory_id"]
+        edited = self._as(
+            me, "PATCH", f"/api/agent/memories/{mid}",
+            json={"content": "Prefers lists", "kind": "instruction", "project_id": pid},
+        )
+        self.assertEqual(edited.status_code, 200, edited.text)
+        self.assertEqual(
+            (edited.json()["content"], edited.json()["kind"], edited.json()["project_id"]),
+            ("Prefers lists", "instruction", pid),
+        )
+        clash = self._as(me, "PATCH", f"/api/agent/memories/{mid}", json={"content": "Works on MoE"})
+        self.assertEqual(clash.status_code, 409)
+        self.assertEqual(clash.json()["detail"]["code"], "memory_exists")
+        stranger = self._visitor()
+        self.assertEqual(
+            self._as(stranger, "PATCH", f"/api/agent/memories/{mid}", json={"content": "x"}).status_code, 404
+        )
+        self.assertEqual(self._as(me, "DELETE", f"/api/agent/memories/{mid}").status_code, 200)
+        self.assertEqual(len(self._as(me, "GET", "/api/agent/memories").json()["memories"]), 1)
 
 
 if __name__ == "__main__":

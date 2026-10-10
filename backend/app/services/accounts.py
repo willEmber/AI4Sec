@@ -365,6 +365,14 @@ async def merge_anonymous(anonymous_id: str, account_id: str) -> bool:
         )
         if row is None or row["kind"] != "anonymous" or row["merged_into"]:
             return False
+        # The account may already hold the same memory, and a scope keeps a
+        # text once: the account's copy stands.
+        await tx.execute(
+            """DELETE FROM agent_memories a USING agent_memories b
+                WHERE a.owner_id = ? AND b.owner_id = ? AND a.active = 1 AND b.active = 1
+                  AND a.project_id = b.project_id AND a.content = b.content""",
+            (anonymous_id, account_id),
+        )
         moved: dict[str, int] = {}
         for table in _OWNED_TABLES:
             moved[table] = await tx.execute(

@@ -35,8 +35,17 @@ interface UseAgentStreamReturn {
   papersChanged: number;
   /** Increments when the agent saved a memory, so the memory panel refreshes. */
   memoriesChanged: number;
+  /** The memory the agent saved last, for the notice under the conversation. */
+  savedMemory: SavedMemory | null;
   start: (runId: string) => void;
   stop: () => void;
+}
+
+export interface SavedMemory {
+  memory_id: string;
+  preview: string;
+  /** Waiting for the reader: nothing uses it until they confirm. */
+  pending: boolean;
 }
 
 /**
@@ -57,6 +66,7 @@ export function useAgentStream(): UseAgentStreamReturn {
   const [evidenceIds, setEvidenceIds] = useState<string[]>([]);
   const [papersChanged, setPapersChanged] = useState(0);
   const [memoriesChanged, setMemoriesChanged] = useState(0);
+  const [savedMemory, setSavedMemory] = useState<SavedMemory | null>(null);
 
   const sourceRef = useRef<EventSource | null>(null);
   const seqRef = useRef(0);
@@ -93,6 +103,11 @@ export function useAgentStream(): UseAgentStreamReturn {
 
       case "memory.saved":
         setMemoriesChanged((n) => n + 1);
+        setSavedMemory({
+          memory_id: String(payload.memory_id || ""),
+          preview: String(payload.preview || ""),
+          pending: Boolean(payload.pending),
+        });
         break;
 
       case "run.completed":
@@ -206,6 +221,7 @@ export function useAgentStream(): UseAgentStreamReturn {
     evidenceIds,
     papersChanged,
     memoriesChanged,
+    savedMemory,
     start,
     stop,
   };

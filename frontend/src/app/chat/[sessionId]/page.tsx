@@ -32,6 +32,7 @@ import type {
 } from "@/lib/agent";
 import { getPaperPdfUrl, uploadPaper } from "@/lib/api";
 import { useAgentStream } from "@/hooks/useAgentStream";
+import type { SavedMemory } from "@/hooks/useAgentStream";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
 import { usePersistentState } from "@/hooks/usePersistentState";
 import { sealActivity } from "@/lib/agentEvents";
@@ -44,6 +45,7 @@ import { useChatShell } from "@/components/agent/ChatShell";
 import Composer from "@/components/agent/Composer";
 import ContextPanel from "@/components/agent/ContextPanel";
 import type { PanelTab } from "@/components/agent/ContextPanel";
+import MemoryNotice from "@/components/agent/MemoryNotice";
 import MemoryPanel from "@/components/agent/MemoryPanel";
 import PaperList from "@/components/agent/PaperList";
 import PastTurnActivity from "@/components/agent/PastTurnActivity";
@@ -128,6 +130,7 @@ function ChatSession() {
   const [awayFromBottom, setAwayFromBottom] = useState(false);
   const [knownPaperIds, setKnownPaperIds] = useState<Set<string>>(new Set());
   const [memoriesToken, setMemoriesToken] = useState(0);
+  const [memoryNotice, setMemoryNotice] = useState<SavedMemory | null>(null);
 
   const stream = useAgentStream();
   const {
@@ -136,6 +139,7 @@ function ChatSession() {
     finishedRunId,
     papersChanged,
     memoriesChanged,
+    savedMemory,
   } = stream;
   const scrollerRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -254,6 +258,10 @@ function ChatSession() {
     if (!memoriesChanged) return;
     setMemoriesToken((n) => n + 1);
   }, [memoriesChanged]);
+
+  useEffect(() => {
+    if (savedMemory?.memory_id) setMemoryNotice(savedMemory);
+  }, [savedMemory]);
 
   const papers: SessionPaper[] = detail?.papers ?? [];
   const runs: AgentRun[] = detail?.runs ?? [];
@@ -890,6 +898,16 @@ function ChatSession() {
           {loadError && (
             <div className="mb-2">
               <Notice tone="error">{loadError}</Notice>
+            </div>
+          )}
+          {memoryNotice && (
+            <div className="mb-2">
+              <MemoryNotice
+                key={memoryNotice.memory_id}
+                memory={memoryNotice}
+                onChanged={() => setMemoriesToken((n) => n + 1)}
+                onDismiss={() => setMemoryNotice(null)}
+              />
             </div>
           )}
           <Composer

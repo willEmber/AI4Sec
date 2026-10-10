@@ -65,6 +65,8 @@ export function describeApiError(err: unknown, t: (key: string) => string): stri
       return t(err.detail.kind === "anonymous" ? "auth.quotaExceededAnon" : "auth.quotaExceeded");
     }
     if (err.code === "login_required") return t("auth.loginRequired");
+    if (err.code === "memory_limit") return t("memory.error.limit");
+    if (err.code === "memory_exists") return t("memory.error.exists");
     return err.message;
   }
   return err instanceof Error ? err.message : String(err);
@@ -128,6 +130,11 @@ export interface AgentMemory {
   source_run_id: string;
   /** "" for a global memory; otherwise only that project's conversations see it. */
   project_id: string;
+  /**
+   * The agent saved it without the reader having said it. No conversation
+   * uses it until the reader confirms.
+   */
+  pending: boolean;
   active: boolean;
   created_at: string;
   updated_at: string;
@@ -380,8 +387,16 @@ export async function attachPapers(
   });
 }
 
-export async function listMemories(): Promise<{ memories: AgentMemory[] }> {
-  return agentRequest("/agent/memories");
+/**
+ * The reader's memories. Everything by default; with `projectId`, what a
+ * conversation in that project works with (its own and the global ones), and
+ * with `""`, what one outside any project does.
+ */
+export async function listMemories(
+  projectId?: string,
+): Promise<{ memories: AgentMemory[]; limit: number }> {
+  const query = projectId === undefined ? "" : `?project_id=${encodeURIComponent(projectId)}`;
+  return agentRequest(`/agent/memories${query}`);
 }
 
 export async function createMemory(input: {
@@ -396,6 +411,17 @@ export async function createMemory(input: {
       kind: input.kind || "preference",
       project_id: input.project_id || "",
     }),
+  });
+}
+
+/** Edit a memory, or (`confirm`) accept one the agent saved on its own. */
+export async function updateMemory(
+  memoryId: string,
+  patch: { content?: string; kind?: MemoryKind; project_id?: string; confirm?: boolean },
+): Promise<AgentMemory> {
+  return agentRequest(`/agent/memories/${memoryId}`, {
+    method: "PATCH",
+    body: JSON.stringify(patch),
   });
 }
 

@@ -111,6 +111,8 @@ class AccountServiceTests(unittest.IsolatedAsyncioTestCase):
             "INSERT INTO runs (run_id, paper_id, mode, owner_id) VALUES ('r1', 'p1', 'snap', ?)", (anon,)
         )
         user = await accounts.upsert_user(await self._profile())
+        # The account already holds the same memory: one copy survives the merge.
+        await repo.add_memory(owner_id=user, content="Prefers tables")
 
         self.assertTrue(await accounts.merge_anonymous(anon, user))
         self.assertEqual((await repo.get_session(session.session_id, owner_id=user)).session_id, session.session_id)

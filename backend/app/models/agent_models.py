@@ -345,6 +345,9 @@ class AgentMemory(BaseModel):
     source_run_id: str = ""
     # '' is a global memory; otherwise it reaches only that project's sessions.
     project_id: str = ""
+    # Saved by the agent without the reader having said it; no turn sees it
+    # until the reader confirms.
+    pending: bool = False
     active: bool = True
     created_at: str = ""
     updated_at: str = ""
@@ -395,6 +398,16 @@ class CreateMemoryRequest(BaseModel):
     kind: MemoryKind = MemoryKind.PREFERENCE
     # One of the caller's projects, or '' for a global memory.
     project_id: str = ""
+
+
+class UpdateMemoryRequest(BaseModel):
+    """Fields left as `None` are not changed; `project_id=""` makes the memory global."""
+
+    content: str | None = None
+    kind: MemoryKind | None = None
+    project_id: str | None = None
+    # Accept a pending memory. There is no way to make one pending again.
+    confirm: bool = False
 
 
 class CreateProjectRequest(BaseModel):

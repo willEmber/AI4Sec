@@ -5,9 +5,7 @@ import { useCallback, useEffect, useRef, useState, type FormEvent } from "react"
 import { AgentApiError } from "@/lib/agent";
 import {
   adminLogin,
-  deleteMyData,
   getMe,
-  getMyData,
   logout,
   startLogin,
   takeAuthError,
@@ -26,10 +24,11 @@ const KNOWN_ERRORS = new Set([
  * Login / account control for the navbar, or (`placement="above"`) for the
  * foot of the conversation sidebar, where the panel has to open upwards.
  *
- * Hidden entirely in single_user mode, where nobody logs in. Signed out it
- * lists the configured providers and, when an administrator is configured,
- * a username/password form; signed in it shows the avatar, today's usage and
- * logout.
+ * In single_user mode, where nobody logs in, it is only the link to the
+ * account page. Signed out it lists the configured providers and, when an
+ * administrator is configured, a username/password form; signed in it shows
+ * the avatar, today's usage and logout. Either way it leads to the account
+ * page, where memories, projects and deleting one's data live.
  */
 export function AuthMenu({ placement = "below" }: { placement?: "below" | "above" } = {}) {
   const { t } = useTranslation();
@@ -67,7 +66,19 @@ export function AuthMenu({ placement = "below" }: { placement?: "below" | "above
     return () => document.removeEventListener("mousedown", onClick);
   }, [open]);
 
-  if (!me || me.mode === "single_user") return null;
+  if (!me) return null;
+  // Nobody logs in here, but the one local reader still has memories and
+  // projects to manage.
+  if (me.mode === "single_user") {
+    return (
+      <a
+        href="/account"
+        className="rounded-full border border-border px-3 py-1.5 text-sm font-medium text-muted-foreground transition-colors hover:border-foreground/25 hover:text-foreground"
+      >
+        {t("account.title")}
+      </a>
+    );
+  }
 
   const login = async (provider: string) => {
     setBusy(true);
@@ -101,36 +112,6 @@ export function AuthMenu({ placement = "below" }: { placement?: "below" | "above
     }
   };
 
-  const eraseMyData = async () => {
-    setBusy(true);
-    setError("");
-    try {
-      const owned = await getMyData();
-      const sure = window.confirm(
-        t("auth.deleteDataConfirm", { sessions: owned.sessions, runs: owned.runs }),
-      );
-      if (!sure) {
-        setBusy(false);
-        return;
-      }
-      await deleteMyData();
-      // Nothing the page shows exists any more.
-      window.location.href = "/";
-    } catch (err) {
-      setError(String(err instanceof Error ? err.message : err));
-      setBusy(false);
-    }
-  };
-  const eraseButton = (
-    <button
-      onClick={eraseMyData}
-      disabled={busy}
-      className="mt-2 w-full rounded-lg px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:text-destructive disabled:opacity-50"
-    >
-      {t("auth.deleteData")}
-    </button>
-  );
-
   const signOut = async () => {
     setBusy(true);
     try {
@@ -148,6 +129,25 @@ export function AuthMenu({ placement = "below" }: { placement?: "below" | "above
       : t("auth.quotaTodayUnlimited", { runs: quota.runs })
     : "";
   const name = me.user?.display_name || me.user?.email || "";
+  const accountLinks = (
+    <div className="mt-3 flex flex-col border-t border-border pt-2">
+      {(
+        [
+          ["/account", "account.title"],
+          ["/account?tab=memory", "account.tab.memory"],
+          ["/account?tab=projects", "account.tab.projects"],
+        ] as const
+      ).map(([href, key]) => (
+        <a
+          key={href}
+          href={href}
+          className="rounded-lg px-2 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+        >
+          {t(key)}
+        </a>
+      ))}
+    </div>
+  );
 
   return (
     <div ref={rootRef} className="relative">
@@ -196,14 +196,14 @@ export function AuthMenu({ placement = "below" }: { placement?: "below" | "above
                 <p className="truncate text-xs text-muted-foreground">{me.user.email}</p>
               )}
               {quotaLine && <p className="mt-2 text-xs text-muted-foreground">{quotaLine}</p>}
+              {accountLinks}
               <button
                 onClick={signOut}
                 disabled={busy}
-                className="mt-3 w-full rounded-lg border border-border px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50"
+                className="mt-2 w-full rounded-lg border border-border px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50"
               >
                 {t("auth.logout")}
               </button>
-              {me.user?.role !== "admin" && eraseButton}
             </>
           ) : me.providers.length || me.admin_login ? (
             <>
@@ -261,7 +261,7 @@ export function AuthMenu({ placement = "below" }: { placement?: "below" | "above
                 <p className="mt-3 text-xs text-muted-foreground">{t("auth.anonymousHint")}</p>
               )}
               {quotaLine && <p className="mt-1 text-xs text-muted-foreground">{quotaLine}</p>}
-              {me.kind === "anonymous" && eraseButton}
+              {accountLinks}
             </>
           ) : (
             <p className="text-sm text-muted-foreground">{t("auth.noProviders")}</p>
