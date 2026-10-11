@@ -32,11 +32,11 @@ function NavBar() {
       <div className="flex h-full items-center gap-6 px-4 sm:px-6">
         <a href="/" className="flex items-center gap-2.5 font-semibold tracking-tight">
           <Image
-            src="/scholar.png"
+            src="/logo.png"
             alt="Scholar"
-            width={28}
-            height={28}
-            className="h-7 w-7 rounded-lg object-contain"
+            width={32}
+            height={32}
+            className="h-8 w-8 object-contain"
             priority
           />
           <span className="text-[15px]">{t("nav.brand")}</span>

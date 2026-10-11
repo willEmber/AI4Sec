@@ -181,7 +181,7 @@ export default function ChatNav({
       <div className="flex h-12 shrink-0 items-center justify-between pl-4 pr-2">
         {/* A plain link, like the rest of the top-level navigation: a full load. */}
         <a href="/" className="flex items-center gap-2 font-semibold tracking-tight">
-          <Image src="/scholar.png" alt="" width={24} height={24} className="h-6 w-6 rounded-md object-contain" />
+          <Image src="/logo.png" alt="" width={28} height={28} className="h-7 w-7 object-contain" />
           <span className="text-[15px]">{t("nav.brand")}</span>
         </a>
         <button
