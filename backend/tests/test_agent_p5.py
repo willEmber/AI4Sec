@@ -315,6 +315,17 @@ class ModeToolTests(AgentP2TestCase):
     async def _async(value: Any) -> Any:
         return value
 
+    async def test_a_report_over_the_ceiling_is_cut_at_a_line_end_and_says_so(self) -> None:
+        from app.agents.tools import modes
+
+        with mock.patch.object(modes, "REPORT_MAX_CHARS", 40):
+            result = await self._run_snap([])
+
+        data = result["data"]
+        self.assertTrue(data["report_truncated"])
+        self.assertEqual(data["report"], "# Snap\n")
+        self.assertIn("Only the first", result["note"])
+
     async def test_snap_writes_a_legacy_run_and_announces_the_artifact(self) -> None:
         from app.db import agent_repository as repo
         from app.db import database as db
@@ -329,7 +340,7 @@ class ModeToolTests(AgentP2TestCase):
         data = result["data"]
         self.assertEqual(data["mode"], "snap")
         self.assertFalse(data["reused"])
-        self.assertIn("Verdict: read it", data["report_excerpt"])
+        self.assertIn("Verdict: read it", data["report"])
         self.assertEqual(data["report_url"], f"/paper/paper1/run/{data['run_id']}")
         # The report is on screen; the model is told to summarise, not cite.
         self.assertIn("do not reproduce", result["note"])

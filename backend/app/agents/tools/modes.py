@@ -20,9 +20,9 @@ so the conversation shows the same step names the report page shows.
 language and model through `agent_jobs`, so asking twice returns the first
 report — and says so.
 
-What the model receives is small on purpose: the report is already on the
-reader's screen as a card, so the tool returns an excerpt for the model to
-summarise from, not the whole document to repeat.
+The model receives the report itself, so a follow-up about any part of it can
+be answered; the reader already has it as a card, so the note tells the model
+to summarise rather than repeat it.
 """
 
 from __future__ import annotations
@@ -50,9 +50,10 @@ from app.workflows import progress
 
 logger = logging.getLogger("scholar.agents.tools.modes")
 
-# How much of the finished report the model is shown. Enough to summarise
-# faithfully; far less than the report, which the reader already has.
-REPORT_EXCERPT_CHARS = 6_000
+# How much of the finished report the model is shown. Reports are usually well
+# under this, so the model reads them whole; at 6k it saw only the opening and
+# could not answer a question about a later part.
+REPORT_MAX_CHARS = 30_000
 
 MODE_LABELS = {
     "snap": {"zh": "快速洞察 (Insight Snap)", "en": "Insight Snap"},
@@ -372,8 +373,12 @@ async def _run_mode(
     )
 
     markdown = report["markdown"] or ""
-    excerpt = markdown[:REPORT_EXCERPT_CHARS]
-    truncated = len(markdown) > REPORT_EXCERPT_CHARS
+    truncated = len(markdown) > REPORT_MAX_CHARS
+    shown = markdown
+    if truncated:
+        # Cut at a line end, so no sentence or table row stops mid-way.
+        shown = markdown[:REPORT_MAX_CHARS]
+        shown = shown[: shown.rfind("\n")] if "\n" in shown else shown
     label = MODE_LABELS[mode]["zh" if ctx.language == "zh" else "en"]
     data = {
         "run_id": run_id,
@@ -383,8 +388,8 @@ async def _run_mode(
         "title": title,
         "reused": handle.reused,
         "report_url": f"/paper/{paper_id}/run/{run_id}",
-        "report_excerpt": excerpt,
-        "excerpt_truncated": truncated,
+        "report": shown,
+        "report_truncated": truncated,
     }
     note = (
         "The full report is already displayed to the reader as a card in this "
@@ -392,6 +397,11 @@ async def _run_mode(
         "anything that deserves attention; do not reproduce the report. Cite nothing "
         "from it with [ev_...] — it is a report, not paper text."
     )
+    if truncated:
+        note += (
+            f" Only the first {len(shown)} of {len(markdown)} characters are shown "
+            "here; say so if asked about a part you cannot see."
+        )
     if handle.reused:
         note = "An identical report already existed and was shown again. " + note
     return ToolResult.ok(data, note=note).to_json()
