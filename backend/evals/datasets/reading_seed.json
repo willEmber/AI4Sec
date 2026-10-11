@@ -1,0 +1,290 @@
+{
+  "name": "reading_seed",
+  "version": "1",
+  "description": "Seed set for the reading agent: two public papers on diffusion super-resolution and watermarking. Key points were written from the parsed text of the exact files named below; page and table numbers follow those files.",
+  "papers": {
+    "sinsr": {
+      "paper_id": "1806f4c0a7af40a9a5cb5928039eddee9bb032ad",
+      "title": "SinSR: Diffusion-Based Image Super-Resolution in a Single Step",
+      "source": "arXiv:2311.14760 (CVPR 2024 camera-ready)"
+    },
+    "supermark": {
+      "paper_id": "e2ce9240cb0c45b50b763dc9442fe57266302164",
+      "title": "SuperMark: Robust and Training-free Image Watermarking via Diffusion-based Super-Resolution",
+      "source": "anonymous double-blind submission PDF (OpenReview)"
+    }
+  },
+  "cases": [
+    {
+      "id": "sinsr-overview",
+      "category": "method",
+      "papers": ["sinsr"],
+      "question": "这篇论文要解决什么问题，提出的方法核心是什么？",
+      "key_points": [
+        "要解决的问题是基于扩散模型的超分辨率需要较多推理步数（例如 ResShift 仍需 15 步），影响实际应用",
+        "从 ResShift 原本随机的采样过程推导出一个确定性采样过程，得到输入噪声与生成的高分辨率图像之间的确定性映射",
+        "把这个确定性映射蒸馏到学生网络，使其只用一步推理完成超分辨率",
+        "提出一致性保持损失（consistency-preserving loss），在蒸馏时利用真实（ground-truth）图像，使学生模型不只受限于教师模型",
+        "单步即可达到与教师模型和已有 SOTA 方法相当甚至更好的效果，推理最高约 10 倍加速"
+      ]
+    },
+    {
+      "id": "sinsr-imagenet-results",
+      "category": "numeric",
+      "papers": ["sinsr"],
+      "question": "在 ImageNet-Test 上，SinSR 单步模型和 ResShift-15 的 PSNR、SSIM、LPIPS、CLIPIQA、MUSIQ 分别是多少？",
+      "key_points": [
+        "SinSR-1 的 PSNR 为 24.56，SSIM 为 0.657",
+        "SinSR-1 的 LPIPS 为 0.221，CLIPIQA 为 0.611，MUSIQ 为 53.357",
+        "ResShift-15 的 PSNR 为 24.90，SSIM 为 0.673",
+        "ResShift-15 的 LPIPS 为 0.228，CLIPIQA 为 0.603，MUSIQ 为 53.897"
+      ]
+    },
+    {
+      "id": "sinsr-runtime",
+      "category": "numeric",
+      "papers": ["sinsr"],
+      "question": "SinSR 的推理速度比 ResShift-15 快多少？请给出论文里的具体运行时间和测试条件。",
+      "key_points": [
+        "batch size 为 64 时，SinSR-1 每张图 0.012s，ResShift-15 为 0.047s",
+        "batch size 为 1 时，SinSR-1 为 0.058s，ResShift-15 为 0.633s",
+        "运行时间是在 ×4（64→256）超分任务上、单块 A100 GPU 上测得的"
+      ]
+    },
+    {
+      "id": "sinsr-training-cost",
+      "category": "numeric",
+      "papers": ["sinsr"],
+      "question": "SinSR 的训练开销和从头训练 ResShift 相比如何？",
+      "key_points": [
+        "SinSR 微调 30k 次迭代，ResShift 从头训练 500k 次迭代",
+        "SinSR 每次迭代约 7.41 秒，ResShift 约 1.32 秒",
+        "SinSR 总训练时间约 2.57 天，ResShift 约 7.64 天",
+        "SinSR 单次迭代更慢是因为训练时需要求解 ODE（运行教师模型的确定性采样）来生成配对数据，但学生模型由教师模型初始化、收敛快，总时间仍更短"
+      ]
+    },
+    {
+      "id": "sinsr-consistency-loss",
+      "category": "equation",
+      "papers": ["sinsr"],
+      "question": "一致性保持损失（consistency preserving loss）的公式是什么？它和整体训练目标是什么关系？",
+      "key_points": [
+        "先由学生网络预测真实高分辨率图像 x_0 的反演（latent code）：x̂_T = detach(f(x_0, y, 0))",
+        "一致性保持损失为 L_gt = L_MSE(f(x̂_T, y, T), x_0)，即从预测的反演重建出的图像与真实图像之间的均方误差",
+        "整体训练目标是蒸馏损失 L_distill、反演损失 L_inverse 和 L_gt 三项之和",
+        "三项损失的权重相等"
+      ]
+    },
+    {
+      "id": "sinsr-deterministic-ablation",
+      "category": "numeric",
+      "papers": ["sinsr"],
+      "question": "如果不用论文提出的确定性采样，而用 ResShift 默认的随机采样来生成蒸馏用的训练数据，效果会差多少？",
+      "key_points": [
+        "对比是在 RealSet65 上进行的，且只使用蒸馏损失",
+        "使用 ResShift 默认采样时 CLIPIQA 为 0.4166，MUSIQ 为 51.53",
+        "使用确定性采样（SinSR distill only）时 CLIPIQA 为 0.6822，MUSIQ 为 61.27",
+        "不使用确定性教师模型时生成结果细节模糊"
+      ]
+    },
+    {
+      "id": "sinsr-realworld-en",
+      "category": "fact",
+      "language": "en",
+      "papers": ["sinsr"],
+      "question": "Which real-world datasets is SinSR evaluated on, how large are they, and what does SinSR-1 score on them?",
+      "key_points": [
+        "The real-world datasets are RealSR and RealSet65",
+        "RealSR contains 100 real images captured by two different cameras",
+        "RealSet65 contains 65 low-resolution images collected from widely used datasets and the internet",
+        "On RealSR, SinSR-1 scores CLIPIQA 0.6887 and MUSIQ 61.582",
+        "On RealSet65, SinSR-1 scores CLIPIQA 0.7150 and MUSIQ 62.169"
+      ]
+    },
+    {
+      "id": "sinsr-small-model",
+      "category": "reasoning",
+      "papers": ["sinsr"],
+      "question": "论文凭什么说“直接学习 x_T 到 x_0 的确定性映射比在不同噪声水平下去噪更容易”？有什么实验证据？",
+      "key_points": [
+        "证据是把模型参数量从约 118.6M 缩小到约 24.3M 后，比较两种训练方式的小模型（在 RealSet65 上）",
+        "按扩散损失训练的小模型 ResShift（24.32M）CLIPIQA 为 0.5365、MUSIQ 为 52.71，相比标准大小的 ResShift（0.6537 / 61.33）下降明显",
+        "直接学习确定性映射的小模型 SinSR distill only（24.32M）CLIPIQA 为 0.6499、MUSIQ 为 58.71，下降小得多",
+        "结论是扩散（去噪）训练对模型容量更敏感，说明确定性映射相对更容易学"
+      ]
+    },
+    {
+      "id": "sinsr-tradeoff",
+      "category": "reasoning",
+      "papers": ["sinsr"],
+      "question": "把推理步数从 15 步降到 1 步，SinSR 在 ImageNet-Test 上有没有付出代价？哪些指标变差、哪些变好？",
+      "key_points": [
+        "PSNR 和 SSIM 略有下降（PSNR 24.90 → 24.56，SSIM 0.673 → 0.657）",
+        "LPIPS 更好（0.228 → 0.221）",
+        "CLIPIQA 更好（0.603 → 0.611）",
+        "MUSIQ 在 ImageNet-Test 上略低于 ResShift-15（53.357 对 53.897）"
+      ]
+    },
+    {
+      "id": "sinsr-rectified-flow-en",
+      "category": "reasoning",
+      "language": "en",
+      "papers": ["sinsr"],
+      "question": "Does SinSR compare against Rectified Flow, and what does that comparison show about iterative distillation?",
+      "key_points": [
+        "Yes: ResShift accelerated with Rectified Flow (reflow followed by distillation) is compared with SinSR (distill only) on ImageNet-Test",
+        "With Rectified Flow: LPIPS 0.2322, MUSIQ 51.05, CLIPIQA 0.5753",
+        "SinSR (distill only): LPIPS 0.2221, MUSIQ 53.32, CLIPIQA 0.6072",
+        "The iterative distillation degrades the final model because of accumulated error, so a more sophisticated distillation strategy brings no obvious benefit here"
+      ]
+    },
+    {
+      "id": "sinsr-no-div2k",
+      "category": "unanswerable",
+      "papers": ["sinsr"],
+      "answerable": false,
+      "question": "SinSR 在 DIV2K 验证集上的 PSNR 和 SSIM 是多少？",
+      "note": "the paper never evaluates on DIV2K; its results are on ImageNet-Test, RealSR and RealSet65."
+    },
+    {
+      "id": "sinsr-no-user-study",
+      "category": "unanswerable",
+      "papers": ["sinsr"],
+      "answerable": false,
+      "question": "论文做的用户主观评测（user study）有多少名参与者，偏好 SinSR 的比例是多少？",
+      "note": "the paper reports no user study; perceptual quality is measured only with CLIPIQA and MUSIQ."
+    },
+    {
+      "id": "supermark-overview",
+      "category": "method",
+      "papers": ["supermark"],
+      "question": "SuperMark 是怎么嵌入和提取水印的？为什么说它是 training-free 的？",
+      "key_points": [
+        "嵌入时先用已有的噪声注入方法（默认 Gaussian Shading）把水印信息嵌入初始高斯噪声",
+        "再用预训练的扩散超分辨率（SR）模型对带水印的噪声去噪，得到最终的水印图像",
+        "提取时通过 DDIM Inversion 把水印图像还原成初始的带水印噪声，再从噪声中提取水印",
+        "嵌入和提取都使用同一个预训练 SR 模型，不需要训练编码器/解码器或额外微调，所以是 training-free"
+      ]
+    },
+    {
+      "id": "supermark-implementation",
+      "category": "fact",
+      "papers": ["supermark"],
+      "question": "SuperMark 的默认实验配置是什么？包括用的超分模型、采样步数、以及关键超参数。",
+      "key_points": [
+        "默认超分模型是 SD-Upscaler",
+        "采样和反演都使用 25 步",
+        "guidance scale 为 1.0，prompt 为空（Null），noise level 为 0",
+        "低分辨率图像尺寸 S_low 为 128，强度因子 f_s 为 0.4",
+        "水印注入使用 Gaussian Shading，嵌入 32 比特"
+      ]
+    },
+    {
+      "id": "supermark-headline-en",
+      "category": "numeric",
+      "language": "en",
+      "papers": ["supermark"],
+      "question": "What fidelity and watermark extraction accuracy does SuperMark report on MS-COCO in its default setting?",
+      "key_points": [
+        "PSNR of about 32.49 (32.4978)",
+        "SSIM of about 0.93 (0.9322)",
+        "Bit accuracy of 99.46% under normal distortions",
+        "Bit accuracy of 89.29% under adaptive attacks",
+        "The default evaluation set is 500 randomly selected MS-COCO images"
+      ]
+    },
+    {
+      "id": "supermark-datasets",
+      "category": "numeric",
+      "papers": ["supermark"],
+      "question": "SuperMark 在不同数据集上的表现有什么差异？哪个数据集保真度最高，哪个在自适应攻击下最差？",
+      "key_points": [
+        "除 COCO 外还在 DiffusionDB、WikiArt、CLIC、MetFACE 上测试",
+        "MetFACE 的 PSNR 最高，为 37.2351",
+        "自适应攻击下提取准确率最低的是 MetFACE，为 0.8330",
+        "自适应攻击下提取准确率最高的是 WikiArt，为 0.9064",
+        "各数据集在常规失真下的准确率都在 0.99 以上"
+      ]
+    },
+    {
+      "id": "supermark-resolution",
+      "category": "numeric",
+      "papers": ["supermark"],
+      "question": "图像分辨率变化时，SuperMark 能嵌入的比特数和保真度怎么变化？",
+      "key_points": [
+        "分辨率 256 时嵌入 8 比特，PSNR 为 29.5828",
+        "分辨率 512 时嵌入 32 比特，PSNR 为 32.4978",
+        "分辨率 768 时嵌入 72 比特，PSNR 为 34.5080",
+        "分辨率越高保真度越好，同时对常规失真和自适应攻击的鲁棒性基本保持",
+        "论文的解释是 SR 模型对高分辨率图像的放大更有效，而低分辨率图像需要补充更多细节、生成空间更大"
+      ]
+    },
+    {
+      "id": "supermark-ldmsr",
+      "category": "reasoning",
+      "papers": ["supermark"],
+      "question": "把 SD-Upscaler 换成 LDM-SR 后效果如何？为什么这组对比只嵌入 16 比特？",
+      "key_points": [
+        "LDM-SR 的 VAE 只有 3 个潜在通道，无法配置 32 比特水印，所以两种模型都用 16 比特以保证公平",
+        "保真度相近：LDM-SR 的 PSNR 为 32.3906，SD-Upscaler 为 32.4747",
+        "常规失真下两者鲁棒性相当（平均约 0.99）",
+        "自适应攻击下 SD-Upscaler 更鲁棒，例如 InsP2P 上 0.9066 对 0.8716",
+        "论文据此认为 SR 模型能力越强，SuperMark 的表现越好"
+      ]
+    },
+    {
+      "id": "supermark-steps",
+      "category": "reasoning",
+      "papers": ["supermark"],
+      "question": "推理步数和反演步数分别对 SuperMark 的保真度和鲁棒性有什么影响？",
+      "key_points": [
+        "反演（inversion）步数对保真度和鲁棒性影响都很小",
+        "增加推理（inference）步数会使保真度略有下降",
+        "增加推理步数会显著提升鲁棒性，尤其是在自适应攻击下",
+        "论文的解释是更多推理步数让 SR 模型生成更多细节，使水印图像与原图差异变大，但这些细节在反演时提供了更多可逆像素"
+      ]
+    },
+    {
+      "id": "supermark-no-lpips",
+      "category": "unanswerable",
+      "papers": ["supermark"],
+      "answerable": false,
+      "question": "SuperMark 水印图像的 LPIPS 是多少？",
+      "note": "the paper measures fidelity only with PSNR and SSIM and never reports LPIPS."
+    },
+    {
+      "id": "supermark-no-tpr-en",
+      "category": "unanswerable",
+      "language": "en",
+      "papers": ["supermark"],
+      "answerable": false,
+      "question": "What true positive rate at 1% false positive rate does SuperMark achieve for watermark detection?",
+      "note": "the paper reports bit accuracy only; it gives no TPR/FPR detection figures."
+    },
+    {
+      "id": "cross-sinsr-in-supermark",
+      "category": "multi_paper",
+      "papers": ["sinsr", "supermark"],
+      "question": "SuperMark 论文是怎么提到 SinSR 的？结合 SinSR 论文本身的结果，SinSR 能帮 SuperMark 解决什么问题？",
+      "key_points": [
+        "SuperMark 承认自己需要多步迭代的推理和反演来嵌入、提取水印，推理开销大",
+        "SuperMark 把 SinSR 作为通过蒸馏实现单步超分的例子，认为可用来减少采样步数",
+        "SuperMark 还提到 SinSR 的反演（inversion）精度更好，可进一步增强鲁棒性",
+        "SinSR 论文中，推理步数由 15 步降到 1 步，推理最高约 10 倍加速",
+        "SinSR 论文中，其学习到的反演（learned inversion）与 DDIM inversion 相比保真度更好"
+      ]
+    },
+    {
+      "id": "cross-ddim-inversion",
+      "category": "multi_paper",
+      "papers": ["sinsr", "supermark"],
+      "question": "对比这两篇论文：它们各自把 DDIM inversion 用在什么地方、怎么评价它？",
+      "key_points": [
+        "SuperMark 用 DDIM Inversion 把水印图像还原为初始带水印噪声，作为水印提取的核心步骤",
+        "SuperMark 认为 DDIM Inversion 对各种失真/扰动具有很强的鲁棒性，这是其鲁棒性的来源",
+        "SinSR 没有采用 DDIM inversion，而是让学生网络学习反演（learned inversion），用于一致性保持损失",
+        "SinSR 把 DDIM inversion 作为对比对象，认为学习到的反演保真度更好、对 x_T 的估计更准确"
+      ]
+    }
+  ]
+}

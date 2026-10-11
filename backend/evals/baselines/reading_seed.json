@@ -1,0 +1,87 @@
+{
+  "meta": {
+    "dataset": "reading_seed",
+    "dataset_version": "1",
+    "model": "qwen3.8-max",
+    "prompt_version": "p13-guard-1",
+    "commit": "f359686",
+    "generated_at": "2026-10-12T02:19:47+0900",
+    "partial": false,
+    "judge_model": "qwen3.8-flash",
+    "judge_prompt_version": "judge-1",
+    "rejudged_at": "2026-10-12T02:23:11+0900",
+    "control": ""
+  },
+  "summary": {
+    "cases": 23,
+    "skipped": 0,
+    "completion_rate": 1.0,
+    "correctness": 0.9776,
+    "cases_with_contradiction": 1,
+    "answerable_cases": 19,
+    "abstention_accuracy": 1.0,
+    "fabrication_rate": 0.0,
+    "unanswerable_cases": 4,
+    "citation_precision": 0.9636,
+    "citation_recall": 0.6012,
+    "citations_judged": 330,
+    "citations_invented": 0,
+    "statements_needing_support": 321,
+    "uncited_claims": 85,
+    "answers_without_citation": 0,
+    "grouped_citation_markers": 3,
+    "judge_errors": 1,
+    "cost": {
+      "tool_calls_mean": 6.8261,
+      "llm_calls_mean": 4.1739,
+      "tokens_mean": 88226.3478,
+      "tokens_total": 2029206,
+      "wall_seconds_mean": 89.0043,
+      "wall_seconds_median": 69.6
+    },
+    "by_category": {
+      "equation": {
+        "cases": 1,
+        "correctness": 1.0,
+        "cases_with_contradiction": 0,
+        "citation_precision": 0.9444,
+        "citation_recall": 0.5263
+      },
+      "fact": {
+        "cases": 2,
+        "correctness": 1.0,
+        "cases_with_contradiction": 0,
+        "citation_precision": 0.9412,
+        "citation_recall": 0.75
+      },
+      "method": {
+        "cases": 2,
+        "correctness": 1.0,
+        "cases_with_contradiction": 0,
+        "citation_precision": 0.9577,
+        "citation_recall": 0.7451
+      },
+      "multi_paper": {
+        "cases": 2,
+        "correctness": 1.0,
+        "cases_with_contradiction": 0,
+        "citation_precision": 0.9643,
+        "citation_recall": 0.4918
+      },
+      "numeric": {
+        "cases": 7,
+        "correctness": 0.9821,
+        "cases_with_contradiction": 0,
+        "citation_precision": 0.9863,
+        "citation_recall": 0.6133
+      },
+      "reasoning": {
+        "cases": 5,
+        "correctness": 0.94,
+        "cases_with_contradiction": 1,
+        "citation_precision": 0.9855,
+        "citation_recall": 0.5844
+      }
+    }
+  }
+}
