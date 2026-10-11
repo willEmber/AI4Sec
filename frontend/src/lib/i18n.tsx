@@ -825,7 +825,7 @@ const translations: Record<Locale, Record<string, string>> = {
     "chat.empty.no_paper_title": "还没有论文。",
     "chat.empty.no_paper_hint":
       "从左侧上传 PDF，或直接描述你要找的论文——Agent 可以搜索、下载并解析它。",
-    "chat.thinking": "正在理解问题、规划要读什么…",
+    "chat.thinking": "正在理解问题…",
     "chat.thinking_slow": "模型仍在思考，复杂问题可能需要一两分钟，并没有卡住。",
     "chat.tool.preview": "结果",
     "chat.tool.min_citations": "被引 ≥{count}",
@@ -1391,7 +1391,7 @@ interface LanguageContextValue {
 
 const LanguageContext = createContext<LanguageContextValue>({
   locale: DEFAULT_LOCALE,
-  setLocale: () => {},
+  setLocale: () => { },
   t: (key) => key,
 });
 
