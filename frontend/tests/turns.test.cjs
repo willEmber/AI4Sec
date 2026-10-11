@@ -12,7 +12,7 @@ const code = ts.transpileModule(fs.readFileSync(file, "utf8"), {
 }).outputText;
 const compiled = new Module(file, module);
 compiled._compile(code, file);
-const { groupTurns, dateBucket, citationNumbers } = compiled.exports;
+const { groupTurns, dateBucket, citationNumbers, normalizeCitations } = compiled.exports;
 
 const msg = (role, run_id, content = "") => ({ role, run_id, content, message_id: `${role}-${run_id}-${content}` });
 
@@ -51,4 +51,31 @@ test("a source cited twice keeps its first number", () => {
   const b = "ev_" + "b".repeat(20);
   const numbers = citationNumbers(`x [${a}] y [${b}] z [${a}]`);
   assert.deepEqual([...numbers], [[a, 1], [b, 2]]);
+});
+
+test("loosely written citations are read as the strict form", () => {
+  const a = "ev_257df75b1a02265f61a2";
+  const b = "ev_cc46429f2a39108a8e16";
+  const strict = `[${a}][${b}]`;
+  for (const loose of [
+    `[${a}, ${b}]`,
+    `[${a}，${b}]`,
+    `[${a}、${b}]`,
+    `[${a}; ${b}]`,
+    `[${a} ${b}]`,
+    `[ ${a} ,${b} ]`,
+    `【${a}，${b}】`,
+    `[\`${a}\`, \`${b}\`]`,
+  ]) {
+    assert.equal(normalizeCitations(`x ${loose} y`), `x ${strict} y`, loose);
+  }
+  assert.equal(normalizeCitations(`【${a}】`), `[${a}]`);
+  assert.deepEqual([...citationNumbers(`x [${b}, ${a}] y [${a}]`)], [[b, 1], [a, 2]]);
+});
+
+test("text that is not a citation is left alone", () => {
+  const a = "ev_257df75b1a02265f61a2";
+  for (const text of [`[${a}]`, `[see ${a}]`, `[ev_123, ev_456]`, `[a, b]`, `[${a}](#x)`, `bare ${a}`]) {
+    assert.equal(normalizeCitations(text), text);
+  }
 });

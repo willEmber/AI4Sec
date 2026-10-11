@@ -47,6 +47,26 @@ export function dateBucket(ms: number, now: number): DateBucket {
   return "earlier";
 }
 
+const EVIDENCE_ID = "ev_[0-9a-f]{20}";
+// What weaker models write instead of `[ev_a][ev_b]`: several ids in one
+// bracket, full-width brackets, padding, or the id in backticks.
+const LOOSE_CITATION_RE = new RegExp(
+  `[\\[【［]\\s*(\`?${EVIDENCE_ID}\`?(?:(?:\\s*[,，、;；]\\s*|\\s+)\`?${EVIDENCE_ID}\`?)*)\\s*[\\]】］]`,
+  "g",
+);
+const EVIDENCE_ID_RE = new RegExp(EVIDENCE_ID, "g");
+
+/**
+ * Rewrite `[ev_a, ev_b]` and its relatives as `[ev_a][ev_b]`, the form
+ * everything else reads. The backend counts those as citations either way (it
+ * scans for known ids), so without this the page showed cited ids as raw text.
+ */
+export function normalizeCitations(content: string): string {
+  return content.replace(LOOSE_CITATION_RE, (_match, ids: string) =>
+    (ids.match(EVIDENCE_ID_RE) ?? []).map((id) => `[${id}]`).join(""),
+  );
+}
+
 /**
  * Citation ids in an answer, numbered by first appearance, so one source
  * keeps one number throughout the answer and in the list under it.
@@ -54,8 +74,9 @@ export function dateBucket(ms: number, now: number): DateBucket {
 export function citationNumbers(content: string): Map<string, number> {
   const map = new Map<string, number>();
   const pattern = /\[(ev_[0-9a-f]{20})\]/g;
+  const normalized = normalizeCitations(content);
   let match: RegExpExecArray | null;
-  while ((match = pattern.exec(content)) !== null) {
+  while ((match = pattern.exec(normalized)) !== null) {
     if (!map.has(match[1])) map.set(match[1], map.size + 1);
   }
   return map;

@@ -8,6 +8,7 @@ import rehypeRaw from "rehype-raw";
 import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
 import type { ReactNode } from "react";
 import { CITATION_PATTERN } from "@/lib/agent";
+import { normalizeCitations } from "@/lib/turns";
 import { isLocalImageSrc } from "@/lib/safeUrl";
 import { useTranslation } from "@/lib/i18n";
 
@@ -67,12 +68,13 @@ export function normalizeDisplayMath(content: string): string {
   return wrapped.replace(/@@mathcode(\d+)@@/g, (_match, i: string) => codeBlocks[Number(i)]);
 }
 
-// Agent answers cite evidence as `[ev_<20 hex>]`. Turned into links so the
+// Agent answers cite evidence as `[ev_<20 hex>]` (looser spellings are
+// normalised first). Turned into links so the
 // citation survives Markdown parsing as one node the caller can render.
 const EVIDENCE_HREF_RE = /^#cite-ev-(ev_[0-9a-f]{20})$/;
 
 export function prepareEvidenceMarkdown(content: string): string {
-  return content.replace(
+  return normalizeCitations(content).replace(
     new RegExp(CITATION_PATTERN.source, "g"),
     (_match, id: string) => `[${id}](#cite-ev-${id})`,
   );
