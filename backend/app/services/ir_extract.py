@@ -180,15 +180,66 @@ def extract_figures(paper_ir: PaperIR) -> list[dict]:
 # ──────────────────────────────────────────────────────────────────────
 
 _TR_RE = re.compile(r"<tr[^>]*>(.*?)</tr>", re.IGNORECASE | re.DOTALL)
-_CELL_RE = re.compile(r"<t[hd][^>]*>(.*?)</t[hd]>", re.IGNORECASE | re.DOTALL)
+_CELL_RE = re.compile(r"<t[hd]([^>]*)>(.*?)</t[hd]>", re.IGNORECASE | re.DOTALL)
+_SPAN_RE = re.compile(r"\b(col|row)span\s*=\s*[\"']?(\d+)", re.IGNORECASE)
 _TAG_RE = re.compile(r"<[^>]+>")
 _WS_RE = re.compile(r"\s+")
+# A span wider than any real table is a parse artefact, not a layout.
+_MAX_SPAN = 60
 
 
 def _clean_cell(raw: str, max_chars: int) -> str:
     text = _html.unescape(_TAG_RE.sub(" ", raw))
     text = _WS_RE.sub(" ", text).strip().replace("|", "\\|")
     return text[:max_chars]
+
+
+def _spans(attrs: str) -> tuple[int, int]:
+    """`(colspan, rowspan)` of a cell, each at least 1."""
+    found = {kind.lower(): int(count) for kind, count in _SPAN_RE.findall(attrs)}
+    return (
+        min(max(found.get("col", 1), 1), _MAX_SPAN),
+        min(max(found.get("row", 1), 1), _MAX_SPAN),
+    )
+
+
+def html_table_grid(html_text: str, *, max_cell_chars: int = 60) -> list[list[str]]:
+    """The table as rows of cells, with every span laid out on the grid.
+
+    A cell spanning several columns or rows has its text repeated in each
+    position it covers. Leaving spans out shifts everything to its right: a
+    "Normal Distortions" header over six columns pushed the next group's
+    header onto the wrong numbers, and a parameter count shared by three models
+    read as belonging to one, with the others blank.
+    """
+    grid: list[list[str]] = []
+    # Column -> (rows still to fill, text), for cells spanning down from above.
+    hanging: dict[int, tuple[int, str]] = {}
+
+    for row_html in _TR_RE.findall(html_text):
+        row: list[str] = []
+
+        def fill_hanging() -> None:
+            while len(row) in hanging:
+                left, text = hanging[len(row)]
+                if left <= 1:
+                    del hanging[len(row)]
+                else:
+                    hanging[len(row)] = (left - 1, text)
+                row.append(text)
+
+        for attrs, raw in _CELL_RE.findall(row_html):
+            fill_hanging()
+            text = _clean_cell(raw, max_cell_chars)
+            colspan, rowspan = _spans(attrs)
+            for _ in range(colspan):
+                if rowspan > 1:
+                    hanging[len(row)] = (rowspan - 1, text)
+                row.append(text)
+        fill_hanging()
+        if any(row):
+            grid.append(row)
+    return grid
 
 
 def html_table_to_pipe(
@@ -201,34 +252,47 @@ def html_table_to_pipe(
     """Rewrite an HTML ``<table>`` as a Markdown pipe table.
 
     Returns ``""`` when the input has no parseable rows, so callers can fall
-    back to the raw text. ``colspan``/``rowspan`` are ignored — the cell text is
-    kept in place, which is enough for a model to read the numbers even if the
-    header alignment of a multi-level table is imperfect.
+    back to the raw text. Spans are laid out by `html_table_grid`. A table
+    larger than ``max_rows`` × ``max_cols`` is cut, and the last line says what
+    was left out — a reader shown ten of fourteen columns with nothing to say
+    so takes the table for complete.
     """
-    rows: list[list[str]] = []
-    for row_html in _TR_RE.findall(html_text):
-        cells = [_clean_cell(c, max_cell_chars) for c in _CELL_RE.findall(row_html)]
-        if any(cells):
-            rows.append(cells[:max_cols])
-        if len(rows) >= max_rows:
-            break
-
-    if not rows:
+    grid = html_table_grid(html_text, max_cell_chars=max_cell_chars)
+    if not grid:
         return ""
 
+    total_rows, total_cols = len(grid), max(len(r) for r in grid)
+    rows = [r[:max_cols] for r in grid[:max_rows]]
     width = max(len(r) for r in rows)
     lines = ["| " + " | ".join(r + [""] * (width - len(r))) + " |" for r in rows]
     # Insert a header separator after the first row so the result is valid
     # Markdown; MinerU's first <tr> is the header row in practice.
     lines.insert(1, "|" + "|".join([" --- "] * width) + "|")
+    if total_rows > len(rows) or total_cols > width:
+        lines.append(
+            f"(table cut: {len(rows)} of {total_rows} rows, {width} of {total_cols} columns shown)"
+        )
     return "\n".join(lines)
+
+
+def _cap(text: str, max_chars: int) -> str:
+    """Cut at a line end where there is one, so no row ends mid-number."""
+    if len(text) <= max_chars:
+        return text
+    note = "\n(table cut: too long to show whole)"
+    head = text[: max(max_chars - len(note), 0)]
+    newline = head.rfind("\n")
+    if newline <= 0:
+        return text[:max_chars]
+    return head[:newline] + note
 
 
 def compact_table_text(text: str, *, max_chars: int = 1600, **kwargs) -> str:
     """Best-effort compaction of a MinerU table block for prompt inclusion.
 
     The HTML body becomes a pipe table when parseable; otherwise the raw text is
-    tag-stripped. Either way the result is hard-capped at ``max_chars``.
+    tag-stripped. Either way the result is hard-capped at ``max_chars``; a pipe
+    table over the cap loses whole rows and says so.
     """
     if not text:
         return ""
@@ -244,4 +308,4 @@ def compact_table_text(text: str, *, max_chars: int = 1600, **kwargs) -> str:
         return stripped[:max_chars]
 
     out = f"{caption}\n{pipe}" if caption else pipe
-    return out[:max_chars]
+    return _cap(out, max_chars)

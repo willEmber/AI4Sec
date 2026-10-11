@@ -91,6 +91,38 @@ class TestHtmlTableConversion(unittest.TestCase):
         huge = "<table>" + "<tr><td>0.123456</td></tr>" * 500 + "</table>"
         self.assertLessEqual(len(compact_table_text(huge, max_chars=300)), 300)
 
+    def test_spans_are_laid_out_on_the_grid(self) -> None:
+        html = (
+            "<table>"
+            '<tr><td rowspan="2">Model</td><td colspan="2">Fidelity</td><td>Attack</td></tr>'
+            "<tr><td>PSNR</td><td>SSIM</td><td>InsP2P</td></tr>"
+            "<tr><td>LDM-SR</td><td>32.39</td><td>0.93</td><td>0.8716</td></tr>"
+            '<tr><td>Params</td><td colspan="3">118.59</td></tr>'
+            "</table>"
+        )
+        lines = html_table_to_pipe(html).splitlines()
+        self.assertEqual(lines[0], "| Model | Fidelity | Fidelity | Attack |")
+        # The cell spanning down fills the first column, so PSNR is not under "Model".
+        self.assertEqual(lines[2], "| Model | PSNR | SSIM | InsP2P |")
+        self.assertEqual(lines[3], "| LDM-SR | 32.39 | 0.93 | 0.8716 |")
+        self.assertEqual(lines[4], "| Params | 118.59 | 118.59 | 118.59 |")
+
+    def test_a_cut_table_says_what_was_left_out(self) -> None:
+        html = "<table>" + ("<tr>" + "".join(f"<td>c{i}</td>" for i in range(14)) + "</tr>") * 3 + "</table>"
+        cut = html_table_to_pipe(html, max_rows=2, max_cols=10)
+        self.assertNotIn("c10", cut)
+        self.assertTrue(cut.endswith("(table cut: 2 of 3 rows, 10 of 14 columns shown)"))
+        whole = html_table_to_pipe(html, max_rows=80, max_cols=40)
+        self.assertIn("c13", whole)
+        self.assertNotIn("table cut", whole)
+
+    def test_the_cap_drops_whole_rows(self) -> None:
+        html = "<table>" + "<tr><td>row</td><td>0.123456</td></tr>" * 50 + "</table>"
+        out = compact_table_text(html, max_chars=300, max_rows=80)
+        self.assertLessEqual(len(out), 300)
+        self.assertTrue(out.endswith("(table cut: too long to show whole)"))
+        self.assertTrue(all(line.endswith("|") for line in out.splitlines()[:-1]))
+
     def test_cell_pipes_are_escaped(self) -> None:
         pipe = html_table_to_pipe("<table><tr><td>a|b</td><td>c</td></tr></table>")
         self.assertIn(r"a\|b", pipe)

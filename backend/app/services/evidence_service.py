@@ -35,13 +35,16 @@ logger = logging.getLogger("scholar.evidence")
 # Quotes are snapshots, not whole sections: long enough to be checkable, short
 # enough that the evidence table does not become a second copy of the corpus.
 MAX_QUOTE_CHARS = 2000
+# A table is cited for its cells, and half a table is not checkable: this holds
+# a results table whole in the form the reading tools show it.
+MAX_TABLE_QUOTE_CHARS = 6000
 
 
-def _truncate(quote: str) -> str:
+def _truncate(quote: str, limit: int = MAX_QUOTE_CHARS) -> str:
     quote = (quote or "").strip()
-    if len(quote) <= MAX_QUOTE_CHARS:
+    if len(quote) <= limit:
         return quote
-    return quote[:MAX_QUOTE_CHARS].rstrip() + " …"
+    return quote[:limit].rstrip() + " …"
 
 
 def _build(
@@ -56,6 +59,7 @@ def _build(
     locator: Locator | None = None,
     source_url: str = "",
     provider: str = "",
+    quote_limit: int = MAX_QUOTE_CHARS,
 ) -> Evidence:
     """One excerpt under an id that belongs to the recording session.
 
@@ -66,7 +70,7 @@ def _build(
     owns, and their citation would stop resolving the moment the ownership
     check ran or the first conversation was deleted.
     """
-    quote = _truncate(quote)
+    quote = _truncate(quote, quote_limit)
     locator = locator or Locator()
     return Evidence(
         evidence_id=compute_evidence_id(
@@ -138,11 +142,13 @@ async def record_fulltext_evidence_many(
     owner_id: str,
     session_id: str,
     literature_id: str = "",
+    quote_limits: list[int] | None = None,
 ) -> list[str]:
     """Record several excerpts of one parsed PDF; their evidence ids, in order.
 
     What `record_fulltext_evidence` does per passage, in two queries instead of
     three each — a section read registers every block it returns.
+    `quote_limits` gives a passage its own length limit (a table's is larger).
     """
     if not passages:
         return []
@@ -161,8 +167,11 @@ async def record_fulltext_evidence_many(
             parse_version=parse_version,
             locator=locator,
             provider="mineru",
+            quote_limit=limit,
         )
-        for quote, locator in passages
+        for (quote, locator), limit in zip(
+            passages, quote_limits or [MAX_QUOTE_CHARS] * len(passages)
+        )
     ]
     await repo.insert_evidence_many(evidences)
     return [e.evidence_id for e in evidences]
@@ -354,7 +363,11 @@ async def check_against_current_parse(evidence: Evidence) -> dict[str, Any]:
     # Compare against a distinctive head of the quote: MinerU re-runs often
     # differ in trailing whitespace or hyphenation, and a whole-quote equality
     # test would report a spurious mismatch for text that plainly survived.
-    probe = needle[:120]
+    # A table is quoted as the pipe table the reader was shown, which is not
+    # in the parse; its caption line is.
+    probe = needle.split("\n|", 1)[0][:120]
+    if not probe.strip() or probe.startswith("|"):
+        return result
     row = await db.fetch_one(
         "SELECT 1 AS hit FROM blocks WHERE paper_id = ? AND text LIKE ? LIMIT 1",
         (evidence.paper_id, f"%{probe}%"),

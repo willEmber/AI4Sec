@@ -294,6 +294,46 @@ class ReadingToolTests(AgentP2TestCase):
         self.assertIn("table", kinds)
         self.assertTrue(experiments["evidence_ids"])
 
+    async def test_a_wide_table_is_read_and_cited_whole(self) -> None:
+        from app.agents.tools import read_paper_section
+        from app.db import database as db
+        from app.services import evidence_service
+
+        header = (
+            '<tr><td rowspan="2">SR Model</td><td colspan="6">Normal Distortions</td>'
+            '<td colspan="7">Adaptive Attacks</td></tr>'
+            "<tr>" + "".join(f"<td>attack-{i}</td>" for i in range(13)) + "</tr>"
+        )
+        rows = "".join(
+            f"<tr><td>model-{r}</td>"
+            + "".join(f"<td>0.{r}{i:02d}1</td>" for i in range(13))
+            + "</tr>"
+            for r in range(16)
+        )
+        html = f"Table 3: Robustness of each SR model.\n<table>{header}{rows}</table>"
+        self.assertGreater(len(html), evidence_service.MAX_QUOTE_CHARS)
+        await db.execute(
+            """INSERT INTO paper_nodes
+                   (node_id, paper_id, parent_id, depth, node_type, block_type, sub_type,
+                    title, title_path, page_start, page_end, block_start, block_end,
+                    text, text_for_search, order_idx)
+               VALUES (?, 'paper1', 'paper1:s3', 2, 'chunk', 'table', '', '', '3 Experiments',
+                       6, 6, 32, 32, ?, ?, 32)""",
+            ("paper1:c32", html, html),
+        )
+
+        result = await self._call(read_paper_section, section_title="Experiments")
+        table = next(b for b in result["data"]["blocks"] if "Table 3" in b["text"])
+        # Fourteen columns and eighteen rows: past the report prompt's 10 × 14.
+        self.assertIn("| model-15 |", table["text"])
+        self.assertIn("0.15121 |", table["text"])
+        self.assertNotIn("table cut", table["text"])
+        self.assertIn("| SR Model | attack-0 |", table["text"])
+
+        evidence = await evidence_service.resolve(table["evidence_id"], owner_id=self.owner)
+        self.assertEqual(evidence.quote, table["text"])
+        self.assertNotIn("<td", evidence.quote)
+
     async def test_section_can_be_found_by_id_and_by_loose_title(self) -> None:
         from app.agents.tools import read_paper_section
 

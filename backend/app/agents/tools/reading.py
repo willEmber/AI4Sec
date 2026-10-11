@@ -40,8 +40,15 @@ logger = logging.getLogger("scholar.agents.tools.reading")
 # outline; 40k (~10k tokens) returns nearly any section whole, and a paper in
 # a handful of reads.
 MAX_SECTION_CHARS = 40_000
-# Table markup is verbose out of all proportion to what it says.
-MAX_TABLE_CHARS = 1_600
+# Table markup is verbose out of all proportion to what it says, so a table is
+# read as a pipe table. The limits are set to hold a results table whole: at
+# the defaults meant for a report prompt (14 rows × 10 columns, 1600
+# characters) a 14-column robustness table lost its last four columns, and the
+# model, seeing no sign of a cut, went looking for the numbers on the web.
+MAX_TABLE_CHARS = evidence_service.MAX_TABLE_QUOTE_CHARS
+MAX_TABLE_ROWS = 80
+MAX_TABLE_COLS = 40
+MAX_TABLE_CELL_CHARS = 120
 
 
 async def _authorize(
@@ -115,15 +122,26 @@ async def _authorize_many(
     return allowed, None
 
 
-def _node_payload(node: PaperNode, *, evidence_id: str = "") -> dict[str, Any]:
+def _node_text(node: PaperNode) -> str:
+    """The node as the model reads it — and, for a table, as it is cited."""
     text = node.text.strip()
     if node.block_type == "table":
-        text = compact_table_text(text, max_chars=MAX_TABLE_CHARS)
+        text = compact_table_text(
+            text,
+            max_chars=MAX_TABLE_CHARS,
+            max_rows=MAX_TABLE_ROWS,
+            max_cols=MAX_TABLE_COLS,
+            max_cell_chars=MAX_TABLE_CELL_CHARS,
+        )
+    return text
+
+
+def _node_payload(node: PaperNode, *, evidence_id: str = "") -> dict[str, Any]:
     payload: dict[str, Any] = {
         "section": node.title_path,
         "page": node.page_start + 1,   # 1-based for the model, as a reader sees it
         "type": node.block_type or node.node_type,
-        "text": text,
+        "text": _node_text(node),
     }
     if evidence_id:
         payload["evidence_id"] = evidence_id
@@ -180,12 +198,24 @@ async def get_paper_outline(
 async def _record_nodes(
     ctx: AgentContext, paper_id: str, nodes: list[PaperNode]
 ) -> list[str]:
-    """Register passages of one paper as evidence; their ids, in order."""
+    """Register passages of one paper as evidence; their ids, in order.
+
+    A table is recorded as the pipe table the model was shown, not as MinerU's
+    HTML: the HTML of a wide table passes the quote limit before its last
+    columns, so the citation's passage lacked the numbers cited from it, and
+    what the reader saw behind the badge was markup.
+    """
     return await evidence_service.record_fulltext_evidence_many(
         paper_id=paper_id,
+        quote_limits=[
+            evidence_service.MAX_TABLE_QUOTE_CHARS
+            if node.block_type == "table"
+            else evidence_service.MAX_QUOTE_CHARS
+            for node in nodes
+        ],
         passages=[
             (
-                node.text,
+                _node_text(node) if node.block_type == "table" else node.text,
                 evidence_service.locator_from_node(
                     {
                         "node_id": node.node_id,
