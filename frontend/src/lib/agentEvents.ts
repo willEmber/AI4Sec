@@ -10,6 +10,15 @@ export interface ToolStep {
   total_pages?: number;
 }
 
+/** One of the first few things a tool call returned, cut to a line or two. */
+export interface ToolPreviewItem {
+  title?: string;
+  text?: string;
+  page?: number;
+  url?: string;
+  meta?: string;
+}
+
 /** One tool call as the reader sees it: what ran, how it ended, how much it found. */
 export interface ToolActivity {
   callId: string;
@@ -19,6 +28,10 @@ export interface ToolActivity {
   note?: string;
   error?: { code: string; message: string };
   summary?: Record<string, unknown>;
+  /** The call's arguments — known while it runs, unlike `summary`. */
+  input?: Record<string, unknown>;
+  /** The first few results, so the reader sees what came back, not only how many. */
+  preview?: ToolPreviewItem[];
   /** Progress steps, latest status per step, in the order they first appeared. */
   steps?: ToolStep[];
   /** Event timestamps, for how long the call took. */
@@ -49,6 +62,7 @@ export function applyToolEvent(
         tool: String(payload.tool || ""),
         status: "running",
         evidenceCount: 0,
+        input: recordOf(payload.input),
         startedAt: event.timestamp,
       },
     ];
@@ -83,12 +97,17 @@ export function applyToolEvent(
   }
 
   const toolName = String(payload.tool || "");
-  // Match the most recent still-running call of this tool: the backend does not
-  // correlate a result back to its call id, and a tool can be called more than
-  // once in a turn.
-  const index = prev.findLastIndex(
-    (t) => t.tool === toolName && t.status === "running",
-  );
+  // By call id when the result carries one — two searches running side by side
+  // finish in either order. Events recorded before results carried it fall back
+  // to the most recent still-running call of this tool.
+  const callId = payload.call_id ? String(payload.call_id) : "";
+  const byId = callId
+    ? prev.findLastIndex((t) => t.callId === callId && t.status === "running")
+    : -1;
+  const index =
+    byId >= 0
+      ? byId
+      : prev.findLastIndex((t) => t.tool === toolName && t.status === "running");
   const entry: ToolActivity = {
     callId: index >= 0 ? prev[index].callId : `${toolName}-${event.seq}`,
     tool: toolName,
@@ -97,6 +116,8 @@ export function applyToolEvent(
     note: payload.note ? String(payload.note) : undefined,
     error: payload.error as ToolActivity["error"],
     summary: payload.summary as Record<string, unknown> | undefined,
+    input: index >= 0 ? prev[index].input : undefined,
+    preview: previewOf(payload.preview),
     // Steps are kept: once a report is done, the reader may still want to see
     // what it went through.
     steps: index >= 0 ? prev[index].steps : undefined,
@@ -107,6 +128,29 @@ export function applyToolEvent(
   const next = [...prev];
   next[index] = entry;
   return next;
+}
+
+function recordOf(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
+}
+
+function previewOf(value: unknown): ToolPreviewItem[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const items: ToolPreviewItem[] = [];
+  for (const raw of value) {
+    const row = recordOf(raw);
+    if (!row) continue;
+    const item: ToolPreviewItem = {};
+    if (typeof row.title === "string" && row.title) item.title = row.title;
+    if (typeof row.text === "string" && row.text) item.text = row.text;
+    if (typeof row.meta === "string" && row.meta) item.meta = row.meta;
+    if (typeof row.url === "string" && /^https?:\/\//.test(row.url)) item.url = row.url;
+    if (typeof row.page === "number" && row.page > 0) item.page = row.page;
+    if (item.title || item.text) items.push(item);
+  }
+  return items.length ? items : undefined;
 }
 
 /** Rebuild a finished turn's tool activity from its replayed events. */

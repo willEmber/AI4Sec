@@ -37,6 +37,7 @@ from app.agents.harness import create_paper_agent
 from app.agents.middleware import build_agent_middleware
 from app.agents.model_factory import build_chat_model
 from app.agents.prompts import PROMPT_VERSION, build_system_prompt, mode_instruction
+from app.agents.tool_events import ToolCallTracker, preview_of, summarise_input
 from app.agents.tools import ALL_AGENT_TOOLS
 from app.config import get_settings
 from app.db import agent_repository as repo
@@ -211,32 +212,6 @@ async def request_stop(run_id: str) -> bool:
     return True
 
 
-def _announced_calls(
-    message: AIMessage | AIMessageChunk, seen: set[str]
-) -> list[tuple[str, str]]:
-    """Tool calls in this message that have not been announced yet.
-
-    A streaming model delivers `tool_call_chunks`, whose name arrives in the
-    first fragment; a non-streaming one delivers a finished `tool_calls` list.
-    Both are read, and `seen` de-duplicates, so a call is announced exactly once
-    however the model chose to send it.
-    """
-    calls: list[tuple[str, str]] = []
-    chunks = getattr(message, "tool_call_chunks", None) or []
-    raw = chunks or (getattr(message, "tool_calls", None) or [])
-    for call in raw:
-        name = call.get("name") or ""
-        if not name:
-            continue
-        call_id = call.get("id") or ""
-        key = call_id or f"{name}:{len(seen)}"
-        if key in seen:
-            continue
-        seen.add(key)
-        calls.append((name, call_id))
-    return calls
-
-
 def _text_of(content: Any) -> str:
     """Pull plain text out of a message, ignoring reasoning and tool blocks."""
     if isinstance(content, str):
@@ -353,7 +328,7 @@ async def _execute_turn(
     budget = RunBudget.from_settings(run.budget)
     collected_evidence: list[str] = []
     answer_parts: list[str] = []
-    seen_calls: set[str] = set()
+    calls = ToolCallTracker()
     counted_usage: dict[str, int] = {}
     heartbeat: asyncio.Task[None] | None = None
     settings = get_settings()
@@ -459,6 +434,10 @@ async def _execute_turn(
 
             message, _meta = chunk
             if isinstance(message, ToolMessage):
+                for name, call_id, _args in calls.drain():
+                    await stream.emit(
+                        EventType.TOOL_STARTED, {"tool": name, "call_id": call_id}
+                    )
                 usage.tool_calls += 1
                 payload = _tool_completion_payload(message)
                 collected_evidence.extend(payload.pop("_evidence_ids", []))
@@ -477,10 +456,12 @@ async def _execute_turn(
                 continue
 
             if isinstance(message, (AIMessage, AIMessageChunk)):
-                for name, call_id in _announced_calls(message, seen_calls):
-                    await stream.emit(
-                        EventType.TOOL_STARTED, {"tool": name, "call_id": call_id}
-                    )
+                for name, call_id, args in calls.feed(message):
+                    announcement: dict[str, Any] = {"tool": name, "call_id": call_id}
+                    call_input = summarise_input(args)
+                    if call_input:
+                        announcement["input"] = call_input
+                    await stream.emit(EventType.TOOL_STARTED, announcement)
                 # Summed per run, so the token ceiling is enforced against what
                 # was actually billed rather than left at "unknown".
                 reported, new_call = _new_usage(message, counted_usage)
@@ -608,6 +589,8 @@ def _tool_completion_payload(message: ToolMessage) -> dict[str, Any]:
     import json
 
     payload: dict[str, Any] = {"tool": message.name or "", "status": "ok"}
+    if message.tool_call_id:
+        payload["call_id"] = message.tool_call_id
     evidence_ids: list[str] = []
     try:
         parsed = json.loads(message.content if isinstance(message.content, str) else "{}")
@@ -629,6 +612,9 @@ def _tool_completion_payload(message: ToolMessage) -> dict[str, Any]:
         data = parsed.get("data")
         if isinstance(data, dict):
             payload["summary"] = _summarise(data)
+            preview = preview_of(data)
+            if preview:
+                payload["preview"] = preview
             if data.get("paper_id") and data.get("literature_id"):
                 payload["_attached_paper"] = {
                     "literature_id": data["literature_id"],

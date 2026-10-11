@@ -1096,6 +1096,7 @@ function LiveTimeline({
   const last = groups.at(-1);
   // Between steps the model is thinking, and nothing else on screen moves.
   const thinking = streaming && running.length === 0 && last?.kind !== "text";
+  const lastTools = groups.findLastIndex((group) => group.kind === "tools");
 
   return (
     <>
@@ -1106,7 +1107,12 @@ function LiveTimeline({
             .filter((tool): tool is ToolActivity => Boolean(tool));
           return (
             <div key={group.key} className="-mx-2">
-              <ToolActivityList tools={list} />
+              {/* Results stay unfolded for the latest block of work only; a long
+                  turn's earlier steps fold so the page does not run away. */}
+              <ToolActivityList
+                tools={list}
+                previews={streaming && index === lastTools ? "open" : "closed"}
+              />
             </div>
           );
         }
@@ -1144,18 +1150,8 @@ function LiveTimeline({
         );
       })}
       {thinking && (
-        <div className="flex items-center gap-2 py-1 text-xs text-muted-foreground">
-          <span className="flex gap-1">
-            {[0, 150, 300].map((delay) => (
-              <span
-                key={delay}
-                className="h-1.5 w-1.5 animate-bounce rounded-full bg-primary/60"
-                style={{ animationDelay: `${delay}ms` }}
-              />
-            ))}
-          </span>
-          {groups.length === 0 ? t("chat.thinking") : t("chat.thinking_next")}
-        </div>
+        // Keyed by how much has happened, so the clock restarts at each step.
+        <ThinkingStatus key={`${timeline.length}-${tools.length}`} stepsDone={tools.length} />
       )}
       {streaming && running.length > 0 && (
         <p className="sr-only" aria-live="polite">
@@ -1163,6 +1159,48 @@ function LiveTimeline({
         </p>
       )}
     </>
+  );
+}
+
+/** How long the model has to stay silent before the reader is told that is normal. */
+const SLOW_THINKING_SECONDS = 20;
+
+/**
+ * The gap while the model reasons: what stage the turn is at and for how long.
+ *
+ * Reasoning is not streamed, so a hard question is silent for tens of seconds
+ * before the first tool call. A bare "working" there is indistinguishable from
+ * a hang; a running clock and the step count are not.
+ */
+function ThinkingStatus({ stepsDone }: { stepsDone: number }) {
+  const { t } = useTranslation();
+  const [seconds, setSeconds] = useState(0);
+  useEffect(() => {
+    const started = Date.now();
+    const timer = setInterval(() => setSeconds(Math.floor((Date.now() - started) / 1000)), 1000);
+    return () => clearInterval(timer);
+  }, []);
+  return (
+    <div className="py-1 text-xs text-muted-foreground" role="status">
+      <div className="flex items-center gap-2">
+        <span className="flex gap-1">
+          {[0, 150, 300].map((delay) => (
+            <span
+              key={delay}
+              className="h-1.5 w-1.5 animate-bounce rounded-full bg-primary/60"
+              style={{ animationDelay: `${delay}ms` }}
+            />
+          ))}
+        </span>
+        <span>
+          {stepsDone === 0 ? t("chat.thinking") : t("chat.thinking_next", { count: stepsDone })}
+        </span>
+        {seconds >= 3 && <span className="tabular-nums opacity-70">{seconds}s</span>}
+      </div>
+      {seconds >= SLOW_THINKING_SECONDS && (
+        <p className="animate-fade-in mt-1 pl-[1.9rem] opacity-80">{t("chat.thinking_slow")}</p>
+      )}
+    </div>
   );
 }
 

@@ -43,3 +43,36 @@ test("a queue timeout keeps the step waiting and the tool partial", () => {
   assert.equal(tools[0].steps[0].status, "waiting");
   assert.equal(tools[0].steps[0].phase, "pending");
 });
+
+test("a call shows its arguments while running and its first results once done", () => {
+  const started = applyToolEvent([], event(1, "tool.started", {
+    tool: "search_papers", call_id: "c1", input: { query: "graph transformers", year_from: 2023 },
+  }));
+  assert.equal(started[0].status, "running");
+  assert.equal(started[0].input.query, "graph transformers");
+
+  const done = applyToolEvent(started, event(2, "tool.completed", {
+    tool: "search_papers", call_id: "c1", status: "ok",
+    summary: { results_count: 2 },
+    preview: [
+      { title: "A paper", meta: "2024 · ICML", url: "https://example.org/a", text: "abstract" },
+      { url: "javascript:alert(1)" },
+      "not an item",
+    ],
+  }));
+  assert.equal(done[0].input.query, "graph transformers");
+  assert.deepEqual(done[0].preview, [
+    { title: "A paper", text: "abstract", meta: "2024 · ICML", url: "https://example.org/a" },
+  ]);
+});
+
+test("parallel calls of one tool are matched to their results by call id", () => {
+  const tools = foldToolActivity([
+    event(1, "tool.started", { tool: "web_search", call_id: "a", input: { query: "first" } }),
+    event(2, "tool.started", { tool: "web_search", call_id: "b", input: { query: "second" } }),
+    event(3, "tool.completed", { tool: "web_search", call_id: "a", status: "ok", preview: [{ title: "for first" }] }),
+  ]);
+  assert.equal(tools[0].status, "ok");
+  assert.equal(tools[0].preview[0].title, "for first");
+  assert.equal(tools[1].status, "running");
+});
