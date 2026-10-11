@@ -15,6 +15,7 @@
  * report's own text for that part, folded under the cards.
  */
 
+import { isLocalImageSrc } from "@/lib/safeUrl";
 import { useMemo } from "react";
 import { IconCheck } from "@/components/icons";
 import MarkdownRenderer from "@/components/MarkdownRenderer";
@@ -84,6 +85,10 @@ function FullProse({
 
 /** The paper's own architecture diagram, as extracted from the PDF. */
 function FigureCard({ figure, onCite }: { figure: LensFigure; onCite?: (page: number) => void }) {
+  // The URL comes out of a model-written digest; only our own images load.
+  if (!isLocalImageSrc(figure.url, typeof window === "undefined" ? undefined : window.location.origin)) {
+    return null;
+  }
   return (
     <figure className="rounded-xl border border-border bg-card p-3">
       {/* eslint-disable-next-line @next/next/no-img-element */}

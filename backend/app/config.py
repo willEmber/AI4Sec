@@ -143,8 +143,26 @@ class AppSettings(BaseSettings):
     # invalidates every issued credential.
     agent_identity_secret: str = Field(default="", alias="AGENT_IDENTITY_SECRET")
     # Per-run ceilings, enforced by the executor rather than asked of the model.
-    # Reaching one ends the turn with whatever was found, reported as such.
+    # Tool calls, model calls, tokens and wall clock are turn ceilings: reaching
+    # one stops the tools and leaves one model call to answer from what was
+    # gathered. Downloads, parses and web calls refuse that tool only (P13).
     agent_max_tool_calls: int = Field(default=40, alias="AGENT_MAX_TOOL_CALLS")
+    # Model calls per turn, the closing answer included. Tool-less loops are
+    # otherwise bounded only by tokens.
+    agent_max_llm_calls: int = Field(default=30, alias="AGENT_MAX_LLM_CALLS")
+    # How long past the wall-clock ceiling the closing answer may take before
+    # the turn is cut off.
+    agent_wrapup_seconds: int = Field(default=120, alias="AGENT_WRAPUP_SECONDS")
+    # A model to move a turn to when its own fails before writing anything.
+    # Must be one offered for conversations; empty switches fallback off.
+    agent_fallback_modelname: str = Field(default="", alias="AGENT_FALLBACK_MODELNAME")
+    agent_max_message_chars: int = Field(default=20_000, alias="AGENT_MAX_MESSAGE_CHARS")
+    # Turns one principal may have in flight across sessions (0 = unlimited),
+    # and turns one process executes at once; the rest wait their turn.
+    agent_max_active_runs_per_principal: int = Field(
+        default=2, alias="AGENT_MAX_ACTIVE_RUNS_PER_PRINCIPAL"
+    )
+    agent_run_concurrency: int = Field(default=20, alias="AGENT_RUN_CONCURRENCY")
     # Each download is a PDF fetch; each parse is a MinerU job costing minutes
     # and quota. These are the two that cost real money, so they are the two
     # most worth tuning per deployment.

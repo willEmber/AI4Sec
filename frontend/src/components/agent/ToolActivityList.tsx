@@ -50,10 +50,14 @@ const TOOL_ICON: Record<string, Icon> = {
   write_todos: IconListChecks,
 };
 
+/** Results the turn guard gave in a tool's place (`agents/guard.py`). */
+const GUARD_CODES = new Set(["budget_exceeded", "timeout", "repeated_call", "internal_error"]);
+
 /**
  * A tool's label in the reader's language. A tool the UI has no words for yet
  * shows its own name made readable, never the raw translation key.
  */
+
 export function toolLabel(tool: string, t: Translate): string {
   const key = `chat.tool.${tool}`;
   const label = t(key);
@@ -182,7 +186,11 @@ function ToolRow({ tool, previews }: { tool: ToolActivity; previews: "open" | "c
 
         {tool.error && (
           <div className="mt-0.5 line-clamp-2 text-xs text-destructive/90" title={tool.error.message}>
-            {tool.error.message || tool.error.code}
+            {/* The message is written for the model, in English. For what the
+                turn guard answers itself, say it in the reader's language. */}
+            {GUARD_CODES.has(tool.error.code)
+              ? t(`chat.tool.error.${tool.error.code}`)
+              : tool.error.message || tool.error.code}
           </div>
         )}
         {tool.note && !tool.steps?.length && !tool.error && (

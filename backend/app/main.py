@@ -87,6 +87,14 @@ async def lifespan(app: FastAPI):
         f"models={registry.selectable_models()} agent_models={registry.agent_models()}"
     )
 
+    # A fallback that is not a verified conversation model would fail in the
+    # one moment it is needed; refuse to start rather than find out then.
+    from app.agents.model_factory import fallback_model_name
+
+    fallback = fallback_model_name()
+    if fallback:
+        logger.info(f"Agent fallback model: {fallback}")
+
     # The agent checkpointer holds its own small pool for the process. Failing
     # to open it must not stop the rest of the app, which does not depend on
     # it — the agent routes report the failure instead.

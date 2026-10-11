@@ -14,6 +14,12 @@ in-memory fan-out exists only to avoid polling for live listeners.
 external service may still finish and land in a cache, but a cancelled run is
 never resumed from it (development plan §7.2).
 
+*Endings.* A turn that does not finish on its own still leaves what it wrote
+(P13): the text streamed before a failure, a cancel or a cut-off is stored as
+the turn's answer, marked with how it ended. Budgets are enforced where the
+calls are made (`agents/guard.py`); what is left here is the backstop — a wall
+clock around the whole stream, which a blocked tool cannot outwait.
+
 *Ownership.* A turn is executed by a task in this process, and says so: the run
 carries this worker's id and a heartbeat. That is what makes "nobody is running
 this" an observable fact rather than an assumption, and it is what
@@ -33,9 +39,10 @@ from typing import Any
 from langchain_core.messages import AIMessage, AIMessageChunk, ToolMessage
 
 from app.agents.context import AgentContext, BudgetUsage, RunBudget
+from app.agents.errors import EmptyModelResponse, classify_error, error_summary
 from app.agents.harness import create_paper_agent
 from app.agents.middleware import build_agent_middleware
-from app.agents.model_factory import build_chat_model
+from app.agents.model_factory import build_chat_model, fallback_model_name
 from app.agents.prompts import PROMPT_VERSION, build_system_prompt, mode_instruction
 from app.agents.tool_events import ToolCallTracker, preview_of, summarise_input
 from app.agents.tools import ALL_AGENT_TOOLS
@@ -59,6 +66,24 @@ logger = logging.getLogger("scholar.agent.runner")
 
 # How often a streaming turn re-reads its cancel flag.
 CANCEL_POLL_SECONDS = 1.0
+
+# Turns this process executes at once, per event loop: (loop, size, semaphore).
+_slots: tuple[asyncio.AbstractEventLoop, int, asyncio.Semaphore] | None = None
+
+
+def _turn_slots() -> asyncio.Semaphore:
+    """The semaphore that bounds concurrent turns in this process.
+
+    Rebuilt when the loop or the configured size changes, like the shared HTTP
+    client: a semaphore belongs to the loop it was first awaited on.
+    """
+    global _slots
+    size = max(1, int(get_settings().agent_run_concurrency))
+    loop = asyncio.get_running_loop()
+    if _slots is None or _slots[0] is not loop or _slots[1] != size:
+        _slots = (loop, size, asyncio.Semaphore(size))
+    return _slots[2]
+
 
 # Live listeners per session. Purely an optimisation over polling the event
 # table; a listener that arrives late reads the table instead and misses
@@ -308,6 +333,123 @@ def _new_usage(message: AIMessage | AIMessageChunk, counted: dict[str, int]) -> 
     return reported - already, already == 0
 
 
+def _cut_short(message: AIMessage | AIMessageChunk) -> str:
+    """Why the provider stopped this message early, '' when it did not.
+
+    chat/completions says so in `finish_reason`; the Responses API in
+    `incomplete_details`. An answer cut at the output ceiling reads like a
+    finished one until its last sentence, so it has to be marked.
+    """
+    meta = getattr(message, "response_metadata", None) or {}
+    reason = str(meta.get("finish_reason") or "")
+    details = meta.get("incomplete_details")
+    if isinstance(details, dict):
+        reason = str(details.get("reason") or reason)
+    if reason in {"length", "max_tokens", "max_output_tokens"}:
+        return "max_output_tokens"
+    if reason == "content_filter":
+        return ErrorCode.CONTENT_FILTERED.value
+    return ""
+
+
+def _fallback_model(for_model: str) -> tuple[Any, str]:
+    """The model a failing turn moves to, and its name; `(None, "")` for none."""
+    try:
+        name = fallback_model_name(for_model)
+        return (build_chat_model(name), name) if name else (None, "")
+    except Exception:  # noqa: BLE001 — a turn must not fail over its fallback
+        logger.exception("Fallback model unavailable; turns run without one")
+        return None, ""
+
+
+async def _keep_partial(
+    *,
+    session: AgentSession,
+    run: AgentRun,
+    answer_parts: list[str],
+    evidence_ids: list[str],
+    completion: str,
+    stop_reason: str,
+) -> bool:
+    """Store what a turn had written when it ended early. True when there was any.
+
+    The reader watched this text arrive. Dropping it on a failure meant a
+    reload showed a question with no answer where half a page had been.
+    """
+    text = "".join(answer_parts).strip()
+    if not text:
+        return False
+    await repo.append_message(
+        session_id=session.session_id,
+        role=MessageRole.ASSISTANT,
+        content=text,
+        run_id=run.run_id,
+        citations=_citations_in(text, evidence_ids),
+        completion=completion,
+        stop_reason=stop_reason,
+    )
+    return True
+
+
+def _interruption_note(reason: str, language: str) -> str:
+    if language == "zh":
+        return f"\n\n[这段回答没有写完就中断了（{reason}）。读者只看到了以上内容。]"
+    return (
+        f"\n\n[This answer was interrupted before it was finished ({reason}). "
+        "The reader saw only the text above.]"
+    )
+
+
+async def _record_unsaved_text(
+    agent: Any,
+    context: AgentContext,
+    text_by_message: dict[str, list[str]],
+    reason: str,
+) -> None:
+    """Put text the reader saw, but the conversation state lacks, into the state.
+
+    A model call that dies while streaming leaves nothing in the checkpoint:
+    the message is written when the call returns. The reader had half an answer
+    on screen and the next turn's model had no idea it had said anything (P13
+    §4.6, reproduced by `test_agent_guard`). Text from calls that did return is
+    already there, so only the rest is added, with a line saying it was cut.
+
+    Best effort: the turn is already ending, and failing to record this must
+    not change how.
+    """
+    if _checkpointer() is None or not text_by_message:
+        return
+    try:
+        config = context.config()
+        state = await agent.aget_state(config)
+        saved = (getattr(state, "values", None) or {}).get("messages") or []
+        saved_ids = {getattr(m, "id", None) for m in saved}
+        saved_text = "\n".join(_text_of(getattr(m, "content", "")) for m in saved)
+        missing = [
+            text
+            for message_id, parts in text_by_message.items()
+            if (text := "".join(parts).strip())
+            and message_id not in saved_ids
+            and text not in saved_text
+        ]
+        if not missing:
+            return
+        await agent.aupdate_state(
+            config,
+            {
+                "messages": [
+                    AIMessage(
+                        content="\n\n".join(missing)
+                        + _interruption_note(reason, context.language)
+                    )
+                ]
+            },
+            as_node="model",
+        )
+    except Exception:  # noqa: BLE001
+        logger.exception("Could not record interrupted text for run %s", context.run_id)
+
+
 def _model_input(question: str, mode: str, language: str) -> str:
     """The user turn as the model sees it: the question plus the chosen mode.
 
@@ -330,7 +472,13 @@ async def _execute_turn(
     answer_parts: list[str] = []
     calls = ToolCallTracker()
     counted_usage: dict[str, int] = {}
+    # Answer text by the model message it arrived on, so text from a call that
+    # never returned can be told from text the checkpoint already holds.
+    text_by_message: dict[str, list[str]] = {}
+    agent: Any = None
+    context: AgentContext | None = None
     heartbeat: asyncio.Task[None] | None = None
+    slots: asyncio.Semaphore | None = None
     settings = get_settings()
     stream = DeltaCoalescer(
         session_id=session.session_id,
@@ -346,6 +494,14 @@ async def _execute_turn(
             EventType.RUN_STARTED,
             {"question": question, "model": run.llm_model, "mode": mode},
         )
+
+        # Past the process's ceiling a turn waits here, claimed and
+        # heartbeating, so recovery does not take it for an orphan. Its clock
+        # starts when it gets a slot: waiting is not the turn being slow.
+        waiting = _turn_slots()
+        await waiting.acquire()
+        slots = waiting
+        started = time.perf_counter()
 
         papers = await repo.list_session_papers(session.session_id)
         project, project_papers = await _project_context(session)
@@ -364,6 +520,10 @@ async def _execute_turn(
                 )
                 - len(memories),
             )
+
+        async def _notify(type: str, payload: dict[str, Any]) -> None:
+            await stream.emit(EventType(type), payload)
+
         context = AgentContext(
             owner_id=session.owner_id,
             session_id=session.session_id,
@@ -375,12 +535,15 @@ async def _execute_turn(
             project_id=project.project_id if project is not None else "",
             budget=budget,
             usage=usage,
+            started=started,
+            notify=_notify,
         )
 
         async def _on_compact(payload: dict[str, Any]) -> None:
             await stream.emit(EventType.CONTEXT_COMPACTED, payload)
 
         chat_model = build_chat_model(run.llm_model)
+        fallback_model, fallback_name = _fallback_model(run.llm_model)
         # Off the loop: building the graph is synchronous work, and on a cold
         # process it also triggers the deepagents import. Neither should stop
         # the server answering anything else — a cancel for this very turn
@@ -400,155 +563,227 @@ async def _execute_turn(
             context_schema=AgentContext,
             checkpointer=_checkpointer(),
             middleware=build_agent_middleware(
-                _summary_model(chat_model), on_compact=_on_compact
+                _summary_model(chat_model),
+                on_compact=_on_compact,
+                fallback_model=fallback_model,
+                fallback_name=fallback_name,
             ),
         )
 
         cancelled = False
+        cut_short = ""
+        hard_stop = ""
         next_cancel_check = 0.0
-        async for stream_mode, chunk in agent.astream(
-            {
-                "messages": [
-                    {
-                        "role": "user",
-                        "content": _model_input(question, mode, session.language),
-                    }
-                ]
-            },
-            config=context.config(),
-            context=context,
-            stream_mode=["messages"],
+        # The backstop. Ceilings are enforced where calls are made, but only
+        # between calls; this is what ends a turn whose tool or provider never
+        # returns. `TimeoutError` lands in the failure path below, which keeps
+        # the text written so far.
+        async with asyncio.timeout(
+            max(1, budget.max_wall_seconds) + max(0, settings.agent_wrapup_seconds)
         ):
-            if stream_mode != "messages":
-                continue
-            # Throttled: this loop turns once per streamed chunk, and a query
-            # per token put thousands of round trips in the answer's path.
-            # `request_stop` interrupts a turn this process runs at once; the
-            # flag is what reaches a turn whose cancel landed on another replica.
-            now = time.monotonic()
-            if now >= next_cancel_check:
-                next_cancel_check = now + CANCEL_POLL_SECONDS
-                if await repo.is_cancel_requested(run.run_id):
-                    cancelled = True
+            async for stream_mode, chunk in agent.astream(
+                {
+                    "messages": [
+                        {
+                            "role": "user",
+                            "content": _model_input(question, mode, session.language),
+                        }
+                    ]
+                },
+                config=context.config(),
+                context=context,
+                stream_mode=["messages"],
+            ):
+                if stream_mode != "messages":
+                    continue
+                # Throttled: this loop turns once per streamed chunk, and a query
+                # per token put thousands of round trips in the answer's path.
+                # `request_stop` interrupts a turn this process runs at once; the
+                # flag is what reaches a turn whose cancel landed on another replica.
+                now = time.monotonic()
+                if now >= next_cancel_check:
+                    next_cancel_check = now + CANCEL_POLL_SECONDS
+                    if await repo.is_cancel_requested(run.run_id):
+                        cancelled = True
+                        break
+
+                message, _meta = chunk
+                if isinstance(message, ToolMessage):
+                    for name, call_id, _args in calls.drain():
+                        await stream.emit(
+                            EventType.TOOL_STARTED, {"tool": name, "call_id": call_id}
+                        )
+                    payload = _tool_completion_payload(message)
+                    collected_evidence.extend(payload.pop("_evidence_ids", []))
+                    attached = payload.pop("_attached_paper", None)
+                    await stream.emit(
+                        EventType.TOOL_FAILED
+                        if payload.get("status") in {"error"}
+                        else EventType.TOOL_COMPLETED,
+                        payload,
+                    )
+                    if attached:
+                        # The session gained a paper mid-turn. The client shows the
+                        # paper list beside the conversation, so it has to hear about
+                        # it now rather than on the next reload.
+                        await stream.emit(EventType.PAPER_ADDED, attached)
+                    continue
+
+                if isinstance(message, (AIMessage, AIMessageChunk)):
+                    # The closing call is made without tools; a call it emits
+                    # anyway is dropped by the guard, so it is not announced.
+                    if not context.wrapup_call_started:
+                        for name, call_id, args in calls.feed(message):
+                            announcement: dict[str, Any] = {"tool": name, "call_id": call_id}
+                            call_input = summarise_input(args)
+                            if call_input:
+                                announcement["input"] = call_input
+                            await stream.emit(EventType.TOOL_STARTED, announcement)
+                    # Summed per run, so the token ceiling is enforced against what
+                    # was actually billed rather than left at "unknown". Model calls
+                    # are counted by the guard, which makes them.
+                    reported, _new_call = _new_usage(message, counted_usage)
+                    if reported:
+                        usage.tokens = (usage.tokens or 0) + reported
+                    text = _text_of(message.content)
+                    if text:
+                        # Only the last model call's ending describes the answer.
+                        cut_short = ""
+                        answer_parts.append(text)
+                        text_by_message.setdefault(getattr(message, "id", None) or "", []).append(text)
+                        await stream.add(text)
+                    cut_short = _cut_short(message) or cut_short
+
+                # A closing answer may run a little past the token ceiling that
+                # started it, not without limit.
+                hard_stop = usage.hard_exceeded(budget)
+                if hard_stop:
+                    logger.warning("Run %s cut off at %s", run.run_id, hard_stop)
                     break
 
-            message, _meta = chunk
-            if isinstance(message, ToolMessage):
-                for name, call_id, _args in calls.drain():
-                    await stream.emit(
-                        EventType.TOOL_STARTED, {"tool": name, "call_id": call_id}
-                    )
-                usage.tool_calls += 1
-                payload = _tool_completion_payload(message)
-                collected_evidence.extend(payload.pop("_evidence_ids", []))
-                attached = payload.pop("_attached_paper", None)
-                await stream.emit(
-                    EventType.TOOL_FAILED
-                    if payload.get("status") in {"error"}
-                    else EventType.TOOL_COMPLETED,
-                    payload,
-                )
-                if attached:
-                    # The session gained a paper mid-turn. The client shows the
-                    # paper list beside the conversation, so it has to hear about
-                    # it now rather than on the next reload.
-                    await stream.emit(EventType.PAPER_ADDED, attached)
-                continue
-
-            if isinstance(message, (AIMessage, AIMessageChunk)):
-                for name, call_id, args in calls.feed(message):
-                    announcement: dict[str, Any] = {"tool": name, "call_id": call_id}
-                    call_input = summarise_input(args)
-                    if call_input:
-                        announcement["input"] = call_input
-                    await stream.emit(EventType.TOOL_STARTED, announcement)
-                # Summed per run, so the token ceiling is enforced against what
-                # was actually billed rather than left at "unknown".
-                reported, new_call = _new_usage(message, counted_usage)
-                if reported:
-                    usage.tokens = (usage.tokens or 0) + reported
-                if new_call:
-                    usage.llm_calls += 1
-                text = _text_of(message.content)
-                if text:
-                    answer_parts.append(text)
-                    await stream.add(text)
-
-            # Refreshed every step: the wall-clock ceiling is the only one that
-            # keeps rising while nothing else happens, so a slow parse or a
-            # stalled provider has to be able to end the turn.
-            usage.wall_seconds = time.perf_counter() - started
-            exceeded = usage.exceeded(budget)
-            if exceeded:
-                logger.warning("Run %s hit budget ceiling %s", run.run_id, exceeded)
-                answer_parts.append(
-                    f"\n\n_[stopped: {exceeded} reached; the findings above are what was gathered]_"
-                )
-                break
-
         await stream.close()
-        usage.wall_seconds = time.perf_counter() - started
+        context.elapsed()
         answer = "".join(answer_parts).strip()
-        citations = _citations_in(answer, collected_evidence)
 
         if cancelled:
+            await _record_unsaved_text(
+                agent, context, text_by_message, ErrorCode.CANCELLED.value
+            )
+            kept = await _keep_partial(
+                session=session, run=run, answer_parts=answer_parts,
+                evidence_ids=collected_evidence, completion="stopped",
+                stop_reason=ErrorCode.CANCELLED.value,
+            )
             await repo.finish_run(
                 run.run_id,
                 status=RunStatus.CANCELLED,
                 error_code=ErrorCode.CANCELLED.value,
                 usage=usage.as_dict(),
             )
-            await stream.emit(EventType.RUN_CANCELLED, {"usage": usage.as_dict()})
+            await stream.emit(
+                EventType.RUN_CANCELLED, {"usage": usage.as_dict(), "partial": kept}
+            )
             return
 
-        if answer:
-            await repo.append_message(
-                session_id=session.session_id,
-                role=MessageRole.ASSISTANT,
-                content=answer,
-                run_id=run.run_id,
-                citations=citations,
-            )
-            await repo.set_session_title(session.session_id, question[:60])
+        if not answer:
+            # Nothing to show for the turn. "Done" with no answer is the one
+            # outcome a reader cannot tell from a hang.
+            if cut_short == ErrorCode.CONTENT_FILTERED.value:
+                raise RuntimeError("content_filter: the provider withheld the answer")
+            raise EmptyModelResponse("the turn ended without an answer")
+
+        if hard_stop:
+            usage.stopped_by = hard_stop
+            await _record_unsaved_text(agent, context, text_by_message, hard_stop)
+        completion, stop_reason = "complete", usage.stopped_by
+        if hard_stop:
+            completion = "stopped"
+        elif cut_short:
+            completion, stop_reason = "truncated", cut_short
+        citations = _citations_in(answer, collected_evidence)
+        await repo.append_message(
+            session_id=session.session_id,
+            role=MessageRole.ASSISTANT,
+            content=answer,
+            run_id=run.run_id,
+            citations=citations,
+            completion=completion,
+            stop_reason=stop_reason,
+        )
+        await repo.set_session_title(session.session_id, question[:60])
 
         await repo.finish_run(run.run_id, status=RunStatus.DONE, usage=usage.as_dict())
         await repo.touch_session(session.session_id)
         await stream.emit(
-            EventType.RUN_COMPLETED, {"citations": citations, "usage": usage.as_dict()}
+            EventType.RUN_COMPLETED,
+            {
+                "citations": citations,
+                "usage": usage.as_dict(),
+                "completion": completion,
+                "stop_reason": stop_reason,
+            },
         )
 
     except asyncio.CancelledError:
-        await repo.finish_run(
-            run.run_id, status=RunStatus.CANCELLED, error_code=ErrorCode.CANCELLED.value
-        )
-        with contextlib.suppress(Exception):
-            await stream.close()
-            await stream.emit(EventType.RUN_CANCELLED, {})
-        raise
-
-    except Exception as exc:  # noqa: BLE001 — a failed turn must still close its run
-        logger.exception("Agent run %s failed", run.run_id)
         usage.wall_seconds = time.perf_counter() - started
-        usage.errors += 1
+        kept = False
+        with contextlib.suppress(Exception):
+            kept = await _keep_partial(
+                session=session, run=run, answer_parts=answer_parts,
+                evidence_ids=collected_evidence, completion="stopped",
+                stop_reason=ErrorCode.CANCELLED.value,
+            )
         await repo.finish_run(
             run.run_id,
-            status=RunStatus.FAILED,
-            error_code=ErrorCode.UPSTREAM_ERROR.value,
-            error_msg=str(exc)[:500],
+            status=RunStatus.CANCELLED,
+            error_code=ErrorCode.CANCELLED.value,
             usage=usage.as_dict(),
         )
         with contextlib.suppress(Exception):
             await stream.close()
+            await stream.emit(EventType.RUN_CANCELLED, {"partial": kept})
+        # After the run is closed: the reader's stop must not wait on this.
+        if agent is not None and context is not None:
+            with contextlib.suppress(BaseException):
+                await _record_unsaved_text(
+                    agent, context, text_by_message, ErrorCode.CANCELLED.value
+                )
+        raise
+
+    except Exception as exc:  # noqa: BLE001 — a failed turn must still close its run
+        # The log has the exception as it was raised. The reader gets a code,
+        # and the run row a redacted summary: the raw text is the gateway's,
+        # and can carry its address or the request it rejected.
+        code = classify_error(exc)
+        logger.exception("Agent run %s failed (%s)", run.run_id, code.value)
+        usage.wall_seconds = time.perf_counter() - started
+        usage.errors += 1
+        kept = False
+        with contextlib.suppress(Exception):
+            await stream.close()
+            kept = await _keep_partial(
+                session=session, run=run, answer_parts=answer_parts,
+                evidence_ids=collected_evidence, completion="failed",
+                stop_reason=code.value,
+            )
+        await repo.finish_run(
+            run.run_id,
+            status=RunStatus.FAILED,
+            error_code=code.value,
+            error_msg=error_summary(exc),
+            usage=usage.as_dict(),
+        )
+        with contextlib.suppress(Exception):
             await stream.emit(
                 EventType.RUN_FAILED,
-                {
-                    "code": ErrorCode.UPSTREAM_ERROR.value,
-                    "error": str(exc)[:500],
-                    "usage": usage.as_dict(),
-                },
+                {"code": code.value, "usage": usage.as_dict(), "partial": kept},
             )
+        if agent is not None and context is not None:
+            await _record_unsaved_text(agent, context, text_by_message, code.value)
 
     finally:
+        if slots is not None:
+            slots.release()
         if heartbeat is not None:
             heartbeat.cancel()
 
@@ -687,6 +922,8 @@ async def warm_up_agent() -> None:
         context_schema=AgentContext,
         checkpointer=_checkpointer(),
         model=model,
+        # A fallback model changes nothing about the graph compiled — the guard
+        # is there either way — so the warm-up does not build one.
         middleware=build_agent_middleware(_summary_model(model) if model else None),
     )
 

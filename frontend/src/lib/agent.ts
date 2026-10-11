@@ -67,6 +67,8 @@ export function describeApiError(err: unknown, t: (key: string) => string): stri
     if (err.code === "login_required") return t("auth.loginRequired");
     if (err.code === "memory_limit") return t("memory.error.limit");
     if (err.code === "memory_exists") return t("memory.error.exists");
+    if (err.code === "message_too_long") return t("chat.error.message_too_long");
+    if (err.code === "too_many_active_runs") return t("chat.error.too_many_active_runs");
     return err.message;
   }
   return err instanceof Error ? err.message : String(err);
@@ -83,6 +85,7 @@ export type EventType =
   | "artifact.created"
   | "context.compacted"
   | "memory.saved"
+  | "model.fallback"
   | "run.completed"
   | "run.failed"
   | "run.cancelled";
@@ -99,10 +102,14 @@ export const ALL_EVENT_TYPES: EventType[] = [
   "artifact.created",
   "context.compacted",
   "memory.saved",
+  "model.fallback",
   "run.completed",
   "run.failed",
   "run.cancelled",
 ];
+
+/** Longest message the server accepts (`AGENT_MAX_MESSAGE_CHARS`). */
+export const MAX_MESSAGE_CHARS = 20000;
 
 /** What the reader can pick in the composer. `auto` leaves it to the agent. */
 export type AgentMode = "auto" | "snap" | "lens" | "sphere";
@@ -162,6 +169,9 @@ export interface AgentMessage {
   role: "user" | "assistant" | "system";
   content: string;
   citations: string[];
+  /** Whether the text is the whole answer, and why not when it is not (P13). */
+  completion?: "complete" | "stopped" | "truncated" | "failed";
+  stop_reason?: string;
   seq: number;
   created_at: string;
 }

@@ -31,7 +31,7 @@ from __future__ import annotations
 from app.models.agent_models import AgentMemory, AgentProject, SessionPaper
 
 # Recorded on every run so an evaluation can tell which prompt produced a result.
-PROMPT_VERSION = "p9-memory-2"
+PROMPT_VERSION = "p13-guard-1"
 
 
 _ZH = """你是论文阅读助手。你通过工具读取论文原文来回答问题，而不是凭记忆作答。
@@ -129,6 +129,8 @@ _ZH = """你是论文阅读助手。你通过工具读取论文原文来回答�
 - 已经确认原文没有相关内容；
 - 继续调用同一工具只会得到重复结果；
 - 工具明确告知已达预算上限。
+
+工具返回 `budget_exceeded`、`timeout` 或 `repeated_call` 时，本轮不要再用同样的参数调用它：换一种方式，或者依据已有内容作答。
 
 ## 回答
 
@@ -323,6 +325,10 @@ Stop calling tools and answer when any of these holds:
 - you have established that the paper does not cover it;
 - another call to the same tool would only repeat what you have;
 - a tool told you a budget ceiling has been reached.
+
+When a tool returns `budget_exceeded`, `timeout` or `repeated_call`, do not call
+it again this turn with the same arguments: take another route, or answer from
+what you have.
 
 ## Answering
 

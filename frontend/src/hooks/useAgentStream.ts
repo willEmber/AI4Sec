@@ -117,7 +117,8 @@ export function useAgentStream(): UseAgentStreamReturn {
         break;
 
       case "run.failed":
-        setError(String(payload.error || "The run failed."));
+        // The server sends a code, not prose; the page words it.
+        setError(String(payload.code || "failed"));
         setErrorCode(String(payload.code || ""));
         setIsStreaming(false);
         setFinishedRunId(event.run_id);

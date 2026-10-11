@@ -8,6 +8,7 @@ import rehypeRaw from "rehype-raw";
 import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
 import type { ReactNode } from "react";
 import { CITATION_PATTERN } from "@/lib/agent";
+import { isLocalImageSrc } from "@/lib/safeUrl";
 import { useTranslation } from "@/lib/i18n";
 
 // Extend the default GitHub sanitize schema:
@@ -208,6 +209,19 @@ export default function MarkdownRenderer({
             const src = typeof props.src === "string" ? props.src : "";
             const alt = typeof props.alt === "string" ? props.alt : "";
             if (!src) return null;
+            // Rendering an image is a request to wherever it points, and this
+            // Markdown was written by a model that had just read text nobody
+            // vetted. Only our own images load; anything else stays a link the
+            // reader can choose to open.
+            if (!isLocalImageSrc(src, typeof window === "undefined" ? undefined : window.location.origin)) {
+              return /^https?:\/\//i.test(src) ? (
+                <a href={src} target="_blank" rel="noopener noreferrer nofollow" title={t("chat.image.blocked")}>
+                  {alt || src}
+                </a>
+              ) : (
+                <span>{alt}</span>
+              );
+            }
             // Rendered inside a <p>, so use inline-level wrappers (no <figure>/<div>).
             return (
               <span className="my-4 flex flex-col items-center">

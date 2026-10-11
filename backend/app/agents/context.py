@@ -15,8 +15,14 @@ conversation.
 
 from __future__ import annotations
 
+import time
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Any
+
+# How far past its token ceiling a turn may go while it writes its closing
+# answer. The ceiling starts the wrap-up; this is what stops the wrap-up.
+HARD_TOKEN_FACTOR = 1.1
 
 
 @dataclass
@@ -25,23 +31,30 @@ class RunBudget:
 
     The dataclass defaults are a floor; the operative values come from settings
     (`AGENT_MAX_*`), because what a run may spend is a deployment decision, not
-    a code constant. Reaching a ceiling ends the run with whatever was found,
-    which is reported rather than hidden (acceptance case A18).
+    a code constant.
+
+    Two kinds (P13). A *turn* ceiling — tool calls, model calls, tokens, wall
+    clock — starts the wrap-up: tools are refused and one last model call, made
+    without tools, writes the answer from what was gathered (acceptance case
+    A18). A *tool* ceiling — downloads, parses, web searches, web reads —
+    refuses that one tool and the turn goes on.
     """
 
     max_tool_calls: int = 40
-    max_downloads: int = 5
-    max_parses: int = 3
-    # Soft ceilings: reaching one refuses further web calls but does not end
-    # the run, unlike the ceilings `BudgetUsage.exceeded` checks.
-    max_web_searches: int = 10
-    max_web_fetches: int = 8
+    # Model calls per turn, the closing one included.
+    max_llm_calls: int = 30
     max_tokens: int = 2_500_000
     max_wall_seconds: int = 1800
+    # Tool ceilings: checked by the tool itself, never by `BudgetUsage.exceeded`.
+    max_downloads: int = 5
+    max_parses: int = 3
+    max_web_searches: int = 10
+    max_web_fetches: int = 8
 
     def as_dict(self) -> dict[str, Any]:
         return {
             "max_tool_calls": self.max_tool_calls,
+            "max_llm_calls": self.max_llm_calls,
             "max_downloads": self.max_downloads,
             "max_parses": self.max_parses,
             "max_web_searches": self.max_web_searches,
@@ -69,6 +82,7 @@ class RunBudget:
         settings = get_settings()
         values: dict[str, Any] = {
             "max_tool_calls": settings.agent_max_tool_calls,
+            "max_llm_calls": settings.agent_max_llm_calls,
             "max_downloads": settings.agent_max_downloads,
             "max_parses": settings.agent_max_parses,
             "max_web_searches": settings.agent_max_web_searches,
@@ -100,6 +114,13 @@ class BudgetUsage:
     wall_seconds: float = 0.0
     llm_calls: int = 0
     errors: int = 0
+    # Calls the guard answered instead of the tool: over a ceiling, or a repeat.
+    refused_tool_calls: int = 0
+    tool_timeouts: int = 0
+    # Why the turn stopped gathering, '' when it finished on its own.
+    stopped_by: str = ""
+    # The model that answered when it was not the one the run was created with.
+    model_used: str = ""
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -113,20 +134,32 @@ class BudgetUsage:
             "wall_seconds": round(self.wall_seconds, 2),
             "llm_calls": self.llm_calls,
             "errors": self.errors,
+            "refused_tool_calls": self.refused_tool_calls,
+            "tool_timeouts": self.tool_timeouts,
+            "stopped_by": self.stopped_by,
+            "model_used": self.model_used,
         }
 
     def exceeded(self, budget: RunBudget) -> str:
-        """Name the first ceiling that has been reached, or `""`."""
+        """Name the first turn ceiling that has been reached, or `""`.
+
+        Asked before a model call, so the model-call ceiling counts the call
+        about to be made: the last one allowed is the closing answer.
+        """
         if self.tool_calls >= budget.max_tool_calls:
             return "max_tool_calls"
-        if self.downloads >= budget.max_downloads:
-            return "max_downloads"
-        if self.parses >= budget.max_parses:
-            return "max_parses"
+        if self.llm_calls >= budget.max_llm_calls - 1:
+            return "max_llm_calls"
         if self.tokens is not None and self.tokens >= budget.max_tokens:
             return "max_tokens"
         if self.wall_seconds >= budget.max_wall_seconds:
             return "max_wall_seconds"
+        return ""
+
+    def hard_exceeded(self, budget: RunBudget) -> str:
+        """The ceiling a closing answer itself may not pass, or `""`."""
+        if self.tokens is not None and self.tokens >= budget.max_tokens * HARD_TOKEN_FACTOR:
+            return "max_tokens"
         return ""
 
 
@@ -159,6 +192,33 @@ class AgentContext:
     # A queue timeout must not let the model spend this entire turn waiting on
     # the same paper again through another tool. A new turn can collect it.
     deferred_parses: set[str] = field(default_factory=set)
+    # ── Turn guard state (P13, `agents/guard.py`) ──
+    # `time.perf_counter()` when the turn began, so the wall clock can be read
+    # where it is enforced rather than only when the stream yields.
+    started: float = field(default_factory=time.perf_counter)
+    # The ceiling that ended the gathering; '' while the turn may still call
+    # tools. Set once, by whichever check notices first.
+    wrapup: str = ""
+    # The closing model call has begun: tool calls streamed from here on are
+    # never run, so the executor does not announce them.
+    wrapup_call_started: bool = False
+    # (tool, arguments) → times asked this turn, for repeat detection.
+    call_counts: dict[str, int] = field(default_factory=dict)
+    consecutive_failures: int = 0
+    # Set once the turn has moved to the fallback model; later calls stay there.
+    on_fallback: bool = False
+    # Lets the guard put an event on the turn's stream. `None` outside a turn.
+    notify: Callable[[str, dict[str, Any]], Awaitable[None]] | None = None
+
+    def elapsed(self) -> float:
+        """Seconds this turn has been running, also recorded on `usage`."""
+        self.usage.wall_seconds = time.perf_counter() - self.started
+        return self.usage.wall_seconds
+
+    def begin_wrapup(self, reason: str) -> None:
+        if not self.wrapup:
+            self.wrapup = reason
+            self.usage.stopped_by = reason
 
     def config(self) -> dict[str, Any]:
         """LangGraph config for this run: the thread is the session's thread."""

@@ -38,6 +38,7 @@ import { usePersistentState } from "@/hooks/usePersistentState";
 import { sealActivity } from "@/lib/agentEvents";
 import type { TimelineItem, ToolActivity } from "@/lib/agentEvents";
 import { useTranslation } from "@/lib/i18n";
+import { answerOutcome, errorTextKey } from "@/lib/outcome";
 import { groupTurns } from "@/lib/turns";
 import ArtifactCard, { ArtifactView } from "@/components/agent/ArtifactCard";
 import ChatMessage from "@/components/agent/ChatMessage";
@@ -610,7 +611,9 @@ function ChatSession() {
         <Notice tone="error">
           {/* The server's prose is English. When it sent a code we recognise,
               say it in the reader's language instead. */}
-          {stream.errorCode === "interrupted" ? t("chat.run.interrupted") : stream.error}
+          {stream.errorCode === "interrupted"
+            ? t("chat.run.interrupted")
+            : t("chat.run.failed", { error: t(errorTextKey(stream.errorCode)) })}
         </Notice>
       )}
     </AssistantShell>
@@ -844,6 +847,13 @@ function ChatSession() {
                         ))}
                         <ChatMessage role="assistant" content={message.content} onJumpToPage={jumpToPage} />
                         <SourceStrip content={message.content} onJumpToPage={jumpToPage} />
+                        <AnswerOutcome
+                          message={message}
+                          run={runsById.get(message.run_id)}
+                          busy={stream.isStreaming || sending}
+                          onRetry={turn.question ? () => retry(turn.question as AgentMessage) : undefined}
+                          onContinue={() => void submit(t("chat.continue.prompt"), "auto")}
+                        />
                       </AssistantShell>
                     ) : (
                       <ChatMessage key={message.message_id} role={message.role} content={message.content} />
@@ -1137,6 +1147,13 @@ function LiveTimeline({
             />
           );
         }
+        if (group.kind === "fallback") {
+          return (
+            <p key={group.key} className="text-xs text-muted-foreground">
+              {t("chat.answer.fallback", { model: group.model })}
+            </p>
+          );
+        }
         return (
           <p
             key={group.key}
@@ -1326,7 +1343,61 @@ function RunOutcome({ run, onRetry }: { run: AgentRun | null; onRetry?: () => vo
         )
       }
     >
-      {t(key, { error: run.error_msg || "" })}
+      {/* The run's own message is a redacted log line, not something to read. */}
+      {t(key, { error: t(errorTextKey(run.error_code)) })}
     </Notice>
+  );
+}
+
+/**
+ * The line under an answer that is not simply a finished one: the turn failed
+ * or was stopped after writing this much, the model cut it short, or it was
+ * written early because a budget ran out.
+ */
+function AnswerOutcome({
+  message,
+  run,
+  busy,
+  onRetry,
+  onContinue,
+}: {
+  message: AgentMessage;
+  run?: AgentRun;
+  busy: boolean;
+  onRetry?: () => void;
+  onContinue: () => void;
+}) {
+  const { t } = useTranslation();
+  const outcome = answerOutcome(message);
+  const fallback = String(run?.usage?.model_used || "");
+  if (!outcome && !fallback) return null;
+
+  const act = outcome?.action === "continue" ? onContinue : outcome?.action === "retry" ? onRetry : undefined;
+  return (
+    <>
+      {outcome && (
+        <Notice
+          tone={outcome.tone}
+          action={
+            act &&
+            !busy && (
+              <button
+                type="button"
+                onClick={act}
+                className="inline-flex shrink-0 items-center gap-1 rounded-md border border-current/25 px-2 py-0.5 font-medium transition-colors hover:bg-background/60"
+              >
+                {outcome.action === "retry" && <IconRefresh className="text-[12px]" />}
+                {t(outcome.action === "continue" ? "chat.continue" : "chat.retry")}
+              </button>
+            )
+          }
+        >
+          {t(outcome.key, { reason: outcome.reasonKey ? t(outcome.reasonKey) : "" })}
+        </Notice>
+      )}
+      {fallback && (
+        <p className="text-xs text-muted-foreground">{t("chat.answer.fallback", { model: fallback })}</p>
+      )}
+    </>
   );
 }

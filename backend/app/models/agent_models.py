@@ -17,6 +17,10 @@ from pydantic import BaseModel, Field
 # Bumped when an event or tool-result payload changes shape incompatibly.
 SCHEMA_VERSION = 1
 
+# Papers one request may name. A turn reads a handful; a list of hundreds is
+# not a question.
+MAX_PAPER_IDS = 20
+
 
 # ── Tool results ────────────────────────────────────────────────────────────
 
@@ -59,6 +63,15 @@ class ErrorCode(str, Enum):
     # more, and asking again is cheap because the expensive work it had
     # already done is keyed and reused.
     INTERRUPTED = "interrupted"
+    # A fault in this process rather than in a provider (P13): a tool raised
+    # something it did not map, or the executor itself failed.
+    INTERNAL_ERROR = "internal_error"
+    CONTEXT_TOO_LONG = "context_too_long"
+    CONTENT_FILTERED = "content_filtered"
+    # The model answered with neither text nor a tool call, twice.
+    EMPTY_RESPONSE = "empty_response"
+    # The same tool was asked the same thing again with nothing new to read.
+    REPEATED_CALL = "repeated_call"
 
 
 # Codes where trying again may plausibly help. Anything else should make the
@@ -220,6 +233,12 @@ class AgentMessage(BaseModel):
     role: MessageRole
     content: str = ""
     citations: list[str] = Field(default_factory=list)
+    # Whether the text is all of the answer: `complete`, or `stopped` (the
+    # reader cancelled), `truncated` (the output ceiling cut it) or `failed`
+    # (the turn broke after this much). `stop_reason` says why — it is also set
+    # on a complete answer that was written because a budget ran out.
+    completion: str = "complete"
+    stop_reason: str = ""
     seq: int = 0
     created_at: str = ""
 
@@ -266,6 +285,8 @@ class EventType(str, Enum):
     # may no longer quote something verbatim without re-reading it.
     CONTEXT_COMPACTED = "context.compacted"
     MEMORY_SAVED = "memory.saved"
+    # The turn moved to its fallback model because its own failed.
+    MODEL_FALLBACK = "model.fallback"
     RUN_COMPLETED = "run.completed"
     RUN_FAILED = "run.failed"
     RUN_CANCELLED = "run.cancelled"
@@ -381,7 +402,7 @@ class PostMessageRequest(BaseModel):
     # Idempotency key. Resubmitting the same key returns the original run
     # instead of starting a second one (acceptance case A12).
     client_request_id: str = ""
-    paper_ids: list[str] = Field(default_factory=list)
+    paper_ids: list[str] = Field(default_factory=list, max_length=MAX_PAPER_IDS)
     # Which mode the reader picked in the composer. Anything but `auto` makes
     # the turn call the matching mode tool; the agent still does it through a
     # tool call so the event stream has one shape.
@@ -390,7 +411,7 @@ class PostMessageRequest(BaseModel):
 
 
 class AttachPapersRequest(BaseModel):
-    paper_ids: list[str] = Field(default_factory=list)
+    paper_ids: list[str] = Field(default_factory=list, max_length=MAX_PAPER_IDS)
 
 
 class CreateMemoryRequest(BaseModel):

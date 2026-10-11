@@ -399,6 +399,8 @@ def build_agent_middleware(
     model: BaseChatModel | None,
     *,
     on_compact: CompactHook | None = None,
+    fallback_model: BaseChatModel | None = None,
+    fallback_name: str = "",
 ) -> list[AgentMiddleware]:
     """The middleware a turn (and the warm-up) hands to `create_paper_agent`.
 
@@ -406,8 +408,15 @@ def build_agent_middleware(
     runs before the token count; without one (a warm-up on a process with no
     gateway configured) eviction stands alone and summarisation is left to the
     deepagents default.
+
+    The turn guard comes last. deepagents places caller middleware inside its
+    own stack, so the guard sits next to the model: its closing note is added
+    after compaction has run, and a call it repeats is not compacted twice.
     """
+    from app.agents.guard import TurnGuardMiddleware
     from app.config import get_settings
+
+    guard = TurnGuardMiddleware(fallback_model=fallback_model, fallback_name=fallback_name)
 
     settings = get_settings()
     eviction = ToolResultEvictionMiddleware(
@@ -416,7 +425,7 @@ def build_agent_middleware(
         trigger_tokens=settings.agent_tool_result_evict_tokens,
     )
     if model is None:
-        return [eviction]
+        return [eviction, guard]
     return [
         ScholarSummarizationMiddleware(
             model,
@@ -424,5 +433,6 @@ def build_agent_middleware(
             keep_messages=settings.agent_context_keep_messages,
             on_compact=on_compact,
             evictor=eviction._apply,
-        )
+        ),
+        guard,
     ]

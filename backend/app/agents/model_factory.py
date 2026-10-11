@@ -22,9 +22,11 @@ see `scripts/verify_agent_protocol.py`):
 from __future__ import annotations
 
 import logging
+from contextvars import ContextVar
+from dataclasses import dataclass
 from typing import Any
 
-from collections.abc import Callable, Sequence
+from collections.abc import AsyncIterator, Callable, Sequence
 
 from langchain_core.tools import BaseTool
 from langchain_core.utils.function_calling import convert_to_openai_tool
@@ -40,6 +42,36 @@ logger = logging.getLogger("scholar.agents.model")
 # and registering the paper agent's profile under the shared "openai" key would
 # silently reconfigure every other OpenAI-compatible model in the process.
 SCHOLAR_PROVIDER = "scholar_maas"
+
+
+@dataclass
+class StreamProbe:
+    """Whether the model call in progress has put answer text on the stream.
+
+    The turn guard sets one before a call and reads it when the call fails: a
+    call that had written nothing can be handed to another model, one that had
+    cannot, because the reader has already seen its first half (P13 §4.5). A
+    context variable because the guard and the model run in the same task and
+    nothing else connects them.
+    """
+
+    text: bool = False
+
+
+STREAM_PROBE: ContextVar[StreamProbe | None] = ContextVar("scholar_stream_probe", default=None)
+
+
+def _has_text(content: Any) -> bool:
+    if isinstance(content, str):
+        return bool(content)
+    if isinstance(content, list):
+        return any(
+            isinstance(block, dict)
+            and block.get("type") in {"text", "output_text"}
+            and block.get("text")
+            for block in content
+        )
+    return False
 
 
 def _clean(value: str | None) -> str:
@@ -96,6 +128,32 @@ class ScholarChatModel(ChatOpenAI):
         except TypeError:  # pragma: no cover — defensive, params is a TypedDict
             pass
         return params
+
+    async def _astream(self, *args: Any, **kwargs: Any) -> AsyncIterator[Any]:
+        probe = STREAM_PROBE.get()
+        async for chunk in super()._astream(*args, **kwargs):
+            if probe is not None and not probe.text and _has_text(chunk.message.content):
+                probe.text = True
+            yield chunk
+
+
+def fallback_model_name(for_model: str = "") -> str:
+    """`AGENT_FALLBACK_MODELNAME`, or '' when a turn on `for_model` has none.
+
+    Raises when it names a model that is not offered for conversations: a
+    fallback nobody verified against the agent's tools would fail in the one
+    moment it is needed, and silently ignoring the setting hides that.
+    """
+    name = _clean(get_settings().agent_fallback_modelname)
+    if not name:
+        return ""
+    allowed = get_registry().agent_models()
+    if name not in allowed:
+        raise RuntimeError(
+            f"AGENT_FALLBACK_MODELNAME={name!r} is not a model offered for conversations "
+            f"({', '.join(allowed) or 'none are'})."
+        )
+    return "" if name == (_clean(for_model) or get_registry().agent_default_model) else name
 
 
 def resolve_model_name(model: str = "") -> str:

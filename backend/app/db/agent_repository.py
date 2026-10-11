@@ -63,6 +63,10 @@ class SessionNotFound(AgentRepositoryError):
     """
 
 
+class TooManyActiveRuns(AgentRepositoryError):
+    """The owner already has as many turns in flight as one principal may."""
+
+
 class ActiveRunConflict(AgentRepositoryError):
     """The session already has a pending or running run (HTTP 409)."""
 
@@ -402,12 +406,19 @@ async def create_run(
     budget: dict[str, Any] | None = None,
     llm_model: str = "",
     prompt_version: str = "",
+    max_active_for_owner: int = 0,
 ) -> tuple[AgentRun, bool]:
     """Create a run for a session. Returns `(run, deduplicated)`.
 
     A repeat of a `client_request_id` returns the original run rather than
     starting another (acceptance case A12). A different request while one is
     still in flight raises `ActiveRunConflict`, which the API turns into a 409.
+
+    With `max_active_for_owner`, an owner who already has that many turns in
+    flight — across all their sessions — gets `TooManyActiveRuns` (P13). The
+    count and the insert share a transaction holding an advisory lock on the
+    owner: counted first and inserted second without it, two requests arriving
+    together would both see room for one.
     """
     if client_request_id:
         existing = await db.fetch_one(
@@ -419,21 +430,34 @@ async def create_run(
 
     run_id = f"ar_{uuid.uuid4().hex[:24]}"
     try:
-        await db.execute(
-            """INSERT INTO agent_runs
-                   (run_id, session_id, owner_id, client_request_id, status,
-                    budget_json, llm_model, prompt_version)
-               VALUES (?, ?, ?, ?, 'pending', ?, ?, ?)""",
-            (
-                run_id,
-                session_id,
-                owner_id,
-                client_request_id,
-                json.dumps(budget or {}, ensure_ascii=False),
-                llm_model,
-                prompt_version,
-            ),
-        )
+        async with db.transaction() as tx:
+            if max_active_for_owner > 0:
+                await tx.execute(
+                    "SELECT pg_advisory_xact_lock(hashtextextended(?, 0))",
+                    (f"agent-runs:{owner_id}",),
+                )
+                active = await tx.fetch_one(
+                    """SELECT COUNT(*) AS n FROM agent_runs
+                        WHERE owner_id = ? AND status IN ('pending', 'running')""",
+                    (owner_id,),
+                )
+                if int((active or {}).get("n") or 0) >= max_active_for_owner:
+                    raise TooManyActiveRuns(owner_id)
+            await tx.execute(
+                """INSERT INTO agent_runs
+                       (run_id, session_id, owner_id, client_request_id, status,
+                        budget_json, llm_model, prompt_version)
+                   VALUES (?, ?, ?, ?, 'pending', ?, ?, ?)""",
+                (
+                    run_id,
+                    session_id,
+                    owner_id,
+                    client_request_id,
+                    json.dumps(budget or {}, ensure_ascii=False),
+                    llm_model,
+                    prompt_version,
+                ),
+            )
     except db.IntegrityError as exc:
         # Either the active-run index or the idempotency index fired. Re-read to
         # tell which: a concurrent identical submit should still be a dedupe.
@@ -585,14 +609,17 @@ async def append_message(
     content: str,
     run_id: str = "",
     citations: list[str] | None = None,
+    completion: str = "complete",
+    stop_reason: str = "",
 ) -> AgentMessage:
     message_id = f"am_{uuid.uuid4().hex[:24]}"
     async with db.transaction() as tx:
         await _lock_session_seq(tx, session_id)
         row = await tx.fetch_one(
             """INSERT INTO agent_messages
-                   (message_id, session_id, run_id, role, content, citations_json, seq)
-               VALUES (?, ?, ?, ?, ?, ?,
+                   (message_id, session_id, run_id, role, content, citations_json,
+                    completion, stop_reason, seq)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?,
                        (SELECT COALESCE(MAX(seq), 0) + 1 FROM agent_messages WHERE session_id = ?))
                RETURNING seq, created_at""",
             (
@@ -602,6 +629,8 @@ async def append_message(
                 role.value,
                 content,
                 json.dumps(citations or [], ensure_ascii=False),
+                completion,
+                stop_reason,
                 session_id,
             ),
         )
@@ -613,6 +642,8 @@ async def append_message(
         role=role,
         content=content,
         citations=citations or [],
+        completion=completion,
+        stop_reason=stop_reason,
         seq=row["seq"],
         created_at=row["created_at"],
     )
@@ -620,7 +651,7 @@ async def append_message(
 
 # Named rather than `*`, so the search vector (P8) is not shipped with every read.
 _MESSAGE_COLUMNS = ("message_id", "session_id", "run_id", "role", "content",
-                    "citations_json", "seq", "created_at")
+                    "citations_json", "completion", "stop_reason", "seq", "created_at")
 
 
 def _row_to_message(r: dict[str, Any]) -> AgentMessage:
@@ -631,6 +662,8 @@ def _row_to_message(r: dict[str, Any]) -> AgentMessage:
         role=MessageRole(r["role"]),
         content=r["content"],
         citations=_json_loads(r["citations_json"], []),
+        completion=r.get("completion") or "complete",
+        stop_reason=r.get("stop_reason") or "",
         seq=r["seq"],
         created_at=r["created_at"],
     )

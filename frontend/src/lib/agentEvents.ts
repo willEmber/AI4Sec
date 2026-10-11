@@ -219,7 +219,9 @@ export type TimelineItem =
   | { kind: "text"; key: string; text: string }
   | { kind: "tool"; key: string; callId: string }
   | { kind: "artifact"; key: string; artifact: SessionArtifact }
-  | { kind: "compaction"; key: string; notice: CompactionNotice };
+  | { kind: "compaction"; key: string; notice: CompactionNotice }
+  /** The turn moved to its fallback model because its own failed. */
+  | { kind: "fallback"; key: string; model: string };
 
 /** Everything one turn has shown so far. */
 export interface TurnState {
@@ -293,6 +295,15 @@ export function applyTurnEvent(state: TurnState, event: AgentEvent): TurnState {
         ...state,
         compactions: [...state.compactions, notice],
         timeline: [...state.timeline, { kind: "compaction", key: `compaction-${event.seq}`, notice }],
+      };
+    }
+
+    case "model.fallback": {
+      const model = String(payload.to || "");
+      if (!model) return state;
+      return {
+        ...state,
+        timeline: [...state.timeline, { kind: "fallback", key: `fallback-${event.seq}`, model }],
       };
     }
 

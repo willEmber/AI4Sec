@@ -2,6 +2,7 @@
 
 import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import type { RefObject } from "react";
+import { MAX_MESSAGE_CHARS } from "@/lib/agent";
 import type { AgentMode, SessionPaper } from "@/lib/agent";
 import { useTranslation } from "@/lib/i18n";
 import ModePicker from "@/components/agent/ModePicker";
@@ -65,6 +66,9 @@ export default function Composer({
   const fileRef = useRef<HTMLInputElement>(null);
   const [attaching, setAttaching] = useState(false);
   const [attachError, setAttachError] = useState("");
+  // The server refuses a longer message; say so here instead of after sending.
+  const length = value.trim().length;
+  const tooLong = length > MAX_MESSAGE_CHARS;
 
   // Grows with its text, up to a limit, then scrolls.
   useLayoutEffect(() => {
@@ -131,7 +135,7 @@ export default function Composer({
             // Not while an input method is composing: that Enter picks a candidate.
             if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
               e.preventDefault();
-              onSend();
+              if (!tooLong) onSend();
             }
           }}
           rows={1}
@@ -205,7 +209,7 @@ export default function Composer({
             <button
               type="button"
               onClick={onSend}
-              disabled={!value.trim() || sending}
+              disabled={!value.trim() || sending || tooLong}
               title={t("chat.send")}
               className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground transition-colors hover:bg-primary-hover disabled:cursor-not-allowed disabled:opacity-35"
             >
@@ -218,8 +222,17 @@ export default function Composer({
           )}
         </div>
       </div>
-      <p className={`mt-1.5 truncate text-center text-xs ${attachError ? "text-destructive" : "text-muted-foreground"}`}>
-        {attachError || (mode === "auto" ? t("chat.composer_hint") : t(`chat.mode.${mode}.desc`))}
+      <p
+        className={`mt-1.5 truncate text-center text-xs ${
+          attachError || tooLong ? "text-destructive" : "text-muted-foreground"
+        }`}
+      >
+        {attachError ||
+          (tooLong
+            ? t("chat.composer.too_long", { count: length, limit: MAX_MESSAGE_CHARS })
+            : mode === "auto"
+              ? t("chat.composer_hint")
+              : t(`chat.mode.${mode}.desc`))}
       </p>
     </div>
   );

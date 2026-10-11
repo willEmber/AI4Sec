@@ -27,6 +27,7 @@ from app.api.deps import (
     require_principal,
     resolve_caller,
 )
+from app.config import get_settings
 from app.db import agent_repository as repo
 from app.db import database as db
 from app.models.agent_models import (
@@ -150,21 +151,35 @@ async def create_session(
     )
 
 
-async def _check_quota(caller: Caller, session_id: str, client_request_id: str) -> None:
-    """429 once today's turns or tokens are used up.
+async def _check_quota(
+    caller: Caller, session_id: str, client_request_id: str
+) -> accounts.QuotaUsage:
+    """429 once today's turns or tokens are used up; otherwise today's usage.
 
     A resubmission of a turn that already exists is let through: it starts
     nothing, and refusing it would make a network retry look like a new turn.
     """
     usage = await accounts.daily_usage(caller)
     if not usage.exceeded:
-        return
+        return usage
     if client_request_id and await db.fetch_one(
         "SELECT 1 AS hit FROM agent_runs WHERE session_id = ? AND client_request_id = ?",
         (session_id, client_request_id),
     ):
-        return
+        return usage
     raise quota_exceeded(caller, usage)
+
+
+async def _active_run_limit(caller: Caller) -> int:
+    """Turns this caller may have in flight at once; 0 for no limit.
+
+    The single local user and the admin are the operator, who is not being
+    protected from themselves.
+    """
+    settings = get_settings()
+    if settings.auth_mode == "single_user" or await accounts.is_admin(caller):
+        return 0
+    return max(0, settings.agent_max_active_runs_per_principal)
 
 
 def _allowed_model(requested: str) -> str:
@@ -325,8 +340,22 @@ async def post_message(
     question = (body.content or "").strip()
     if not question:
         raise HTTPException(status_code=422, detail="content must not be empty.")
+    settings = get_settings()
+    limit = settings.agent_max_message_chars
+    if limit > 0 and len(question) > limit:
+        # One message could otherwise fill the context and the turn's token
+        # budget on its own. Long material belongs in an attached paper.
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "message_too_long",
+                "message": f"A message may be at most {limit} characters.",
+                "limit": limit,
+                "length": len(question),
+            },
+        )
 
-    await _check_quota(caller, session_id, body.client_request_id)
+    quota = await _check_quota(caller, session_id, body.client_request_id)
 
     if body.paper_ids:
         await _attach_papers(session_id, body.paper_ids)
@@ -345,8 +374,20 @@ async def post_message(
             prompt_version=_prompt_version(),
             # Stored on the run, so an answer can later be audited against the
             # limits it actually ran under rather than today's settings.
-            budget=_run_budget(),
+            budget=_run_budget(quota),
+            max_active_for_owner=await _active_run_limit(caller),
         )
+    except repo.TooManyActiveRuns:
+        raise HTTPException(
+            status_code=429,
+            detail={
+                "code": "too_many_active_runs",
+                "message": "Too many conversations are answering at once. "
+                "Wait for one to finish or stop it.",
+                "limit": settings.agent_max_active_runs_per_principal,
+            },
+            headers={"Retry-After": "15"},
+        ) from None
     except repo.ActiveRunConflict:
         raise HTTPException(
             status_code=409,
@@ -799,10 +840,20 @@ async def get_evidence(
     return await evidence_service.evidence_to_api(evidence)
 
 
-def _run_budget() -> dict[str, object]:
+def _run_budget(quota: accounts.QuotaUsage | None = None) -> dict[str, object]:
+    """The ceilings a new turn runs under, never above what is left of today.
+
+    The daily quota is checked when a turn is submitted; without this a reader
+    with a few thousand tokens left could still start a turn allowed millions.
+    A turn with little left closes early and says so, which is the wrap-up
+    doing its job.
+    """
     from app.agents.context import RunBudget
 
-    return RunBudget.from_settings().as_dict()
+    budget = RunBudget.from_settings()
+    if quota is not None and quota.tokens_limit > 0:
+        budget.max_tokens = min(budget.max_tokens, max(1, quota.tokens_limit - quota.tokens))
+    return budget.as_dict()
 
 
 def _prompt_version() -> str:
