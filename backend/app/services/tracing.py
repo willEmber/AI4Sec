@@ -25,6 +25,12 @@ logger = logging.getLogger("scholar.tracing")
 _provider: Any = None
 _instrumentor: Any = None
 
+# OpenInference flattens every prompt message and every offered tool into its
+# own span attribute. At the SDK's default of 128 a model call some fifteen
+# messages into a turn starts dropping the oldest ones, the system prompt
+# first, so the trace no longer shows the prompt that was sent.
+MAX_SPAN_ATTRIBUTES = 8192
+
 
 def start_tracing() -> None:
     """Instrument LangChain once, if an endpoint is configured."""
@@ -38,10 +44,11 @@ def start_tracing() -> None:
     from openinference.semconv.resource import ResourceAttributes
     from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
     from opentelemetry.sdk.resources import Resource
-    from opentelemetry.sdk.trace import TracerProvider
+    from opentelemetry.sdk.trace import SpanLimits, TracerProvider
     from opentelemetry.sdk.trace.export import BatchSpanProcessor
 
     provider = TracerProvider(
+        span_limits=SpanLimits(max_span_attributes=MAX_SPAN_ATTRIBUTES),
         resource=Resource.create(
             {
                 "service.name": "scholar-backend",
