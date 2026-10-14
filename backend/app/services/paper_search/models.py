@@ -219,3 +219,6 @@ class SearchOutcome:
     # that value and is counted under `<filter>_unknown`.
     excluded: dict[str, int] = field(default_factory=dict)
     candidates: int = 0
+    # True when a date or citation order was applied to the most relevant
+    # matches rather than to every match, because the query had a boolean OR.
+    relevance_pool: bool = False

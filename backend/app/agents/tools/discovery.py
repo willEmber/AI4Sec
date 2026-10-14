@@ -313,6 +313,24 @@ def _coverage_note(statuses: list[dict[str, Any]]) -> str:
     )
 
 
+def _local_venue_note(statuses: list[dict[str, Any]], excluded: dict[str, int]) -> str:
+    """Say so when the venue filter was applied here and removed candidates."""
+    dropped = excluded.get("venues", 0) + excluded.get("venues_unknown", 0)
+    local = [
+        s["platform"]
+        for s in statuses
+        if s["status"] in {"ok", "empty"} and "venues" in (s.get("filtered_locally") or [])
+    ]
+    if not dropped or not local:
+        return ""
+    return (
+        f"{', '.join(local)} cannot filter by venue, so the venue filter was applied "
+        f"to the candidates they returned for this query and removed {dropped}. A short "
+        "list does not mean those venues have few papers on the topic; do not say so. "
+        "A broader topic query, or page=2, reaches further."
+    )
+
+
 @tool(parse_docstring=False)
 async def search_papers(
     query: str,
@@ -332,7 +350,11 @@ async def search_papers(
     """Search academic databases for papers on a topic.
 
     Returns candidates with titles, abstracts, identifiers and citation counts —
-    not full text. Filters are applied by each platform that supports them:
+    not full text. Write query as plain keywords, one topic per call: no OR /
+    AND / NOT / `|` (platforms read them differently, and an OR can bring in
+    papers from other fields). To cover alternatives, issue one call per
+    alternative in the same turn; they run in parallel. A quoted phrase is fine.
+    Filters are applied by each platform that supports them:
     - year_from / year_to: publication year range. Papers whose year is unknown
       are reported separately, since a date filter cannot be checked on them.
     - min_citations: at least this many citations (any index's count).
@@ -498,6 +520,16 @@ async def search_papers(
             "the date filter could not be checked against them. They are listed under "
             "`unknown_year`; say so if you use one."
         )
+    if outcome.relevance_pool:
+        notes.append(
+            f"The query contains OR, so these are the most relevant matches sorted by "
+            f"{'date' if sort == 'recent' else 'citations'}, not the "
+            f"{'newest' if sort == 'recent' else 'most cited'} of every match. For that, "
+            "search each alternative as its own query without OR."
+        )
+    venue_note = _local_venue_note(statuses, excluded)
+    if venue_note:
+        notes.append(venue_note)
     if any(k.endswith("_unknown") for k in excluded):
         notes.append(
             "Some candidates were excluded because the value a filter needs (citation "

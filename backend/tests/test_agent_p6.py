@@ -539,8 +539,19 @@ def _spec(name: str, result: Any, filters=frozenset(), sorts=frozenset({"relevan
     return PlatformSpec(name, search, frozenset(filters), frozenset(sorts))
 
 
+def _recording_spec(name: str, rows: list[dict], seen: dict, filters=frozenset(), sorts=frozenset({"relevance", "recent", "citations"})):
+    """A platform that records the sort and page size it was asked for."""
+    from app.services.paper_search.platforms import PlatformSpec
+
+    async def search(client, *, limit, filters=None, **_kw):
+        seen[name] = {"limit": limit, "sort": filters.sort if filters else "relevance"}
+        return [_paper(**r) for r in rows]
+
+    return PlatformSpec(name, search, frozenset(filters), frozenset(sorts))
+
+
 class OrchestratorTests(_Reset):
-    async def _run(self, specs, **kw):
+    async def _run(self, specs, query="moe", **kw):
         from app.services.paper_search import Settings, search
         from app.services.paper_search.platforms import PLATFORMS
 
@@ -548,8 +559,58 @@ class OrchestratorTests(_Reset):
         with mock.patch.object(search, "resolve_spec", side_effect=lambda n: registry.get(n) or PLATFORMS.get(n)), \
              mock.patch.object(search, "_enrich_missing_dois", new=mock.AsyncMock()):
             return await search.search_papers_detailed(
-                "moe", [s.name for s in specs], settings=Settings(), rerank_mode="off", **kw
+                query, [s.name for s in specs], settings=Settings(), rerank_mode="off", **kw
             )
+
+    def test_boolean_or_is_the_uppercase_operator_or_a_pipe(self) -> None:
+        from app.services.paper_search.search import has_boolean_or
+
+        self.assertTrue(has_boolean_or('"image-into-image" steganography OR "deep image hiding"'))
+        self.assertTrue(has_boolean_or("steganography | watermarking"))
+        self.assertFalse(has_boolean_or("steganography or watermarking"))
+        self.assertFalse(has_boolean_or("OR-Tools scheduling"))
+        self.assertFalse(has_boolean_or("ORCID linking"))
+
+    async def test_an_or_query_in_date_order_is_sorted_from_the_relevant_matches(self) -> None:
+        from app.services.paper_search import SearchFilters, search
+
+        seen: dict = {}
+        outcome = await self._run(
+            [_recording_spec("OpenAlex", [dict(title="Old", publication_date="2025-01-02"), dict(title="New", publication_date="2026-03-04")], seen)],
+            query='"deep image hiding" OR steganography',
+            filters=SearchFilters(sort="recent"),
+        )
+        self.assertEqual(seen["OpenAlex"]["sort"], "relevance", "the platform's date order is not used")
+        self.assertGreaterEqual(seen["OpenAlex"]["limit"], search.RELEVANCE_POOL_PER_PLATFORM)
+        self.assertEqual([p.title for p in outcome.papers], ["New", "Old"], "sorted here instead")
+        self.assertTrue(outcome.relevance_pool)
+        self.assertIn("sort", outcome.platforms[0].local_filters)
+
+    async def test_a_plain_query_keeps_the_platforms_own_order(self) -> None:
+        from app.services.paper_search import SearchFilters
+
+        seen: dict = {}
+        outcome = await self._run(
+            [_recording_spec("OpenAlex", [dict(title="A")], seen)],
+            query='"deep image hiding" steganography',
+            filters=SearchFilters(sort="citations"),
+        )
+        self.assertEqual(seen["OpenAlex"]["sort"], "citations")
+        self.assertFalse(outcome.relevance_pool)
+
+    async def test_a_venue_filter_applied_here_asks_for_a_larger_page(self) -> None:
+        from app.services.paper_search import SearchFilters, search
+
+        seen: dict = {}
+        await self._run(
+            [
+                _recording_spec("OpenAlex", [], seen),
+                _recording_spec("SemanticScholar", [], seen, filters={"venues"}),
+            ],
+            filters=SearchFilters(venues=("TIFS",)),
+        )
+        self.assertEqual(seen["OpenAlex"]["limit"], search.LOCAL_VENUE_POOL_PER_PLATFORM)
+        self.assertLess(seen["SemanticScholar"]["limit"], search.LOCAL_VENUE_POOL_PER_PLATFORM, "S2 filters at the source")
 
     async def test_duplicates_merge_field_by_field_across_platforms(self) -> None:
         outcome = await self._run(
@@ -763,6 +824,38 @@ class SearchToolP6Tests(AgentP2TestCase):
         self.assertEqual(kwargs["filters"].venues, ("ICLR",))
         self.assertEqual(kwargs["filters"].min_citations, 5)
         self.assertEqual(kwargs["filters"].sort, "citations")
+
+    async def test_an_or_query_sorted_from_the_relevant_matches_says_so(self) -> None:
+        from app.agents.tools import search_papers
+
+        outcome = _outcome([_paper(title="P", abstract="a", year=2025)])
+        outcome.relevance_pool = True
+        with mock.patch("app.agents.tools.discovery.run_search", new=mock.AsyncMock(return_value=outcome)):
+            result = await self._call(search_papers, query="a OR b", sort="recent")
+        self.assertIn("contains OR", result["note"])
+        self.assertIn("not the newest of every match", result["note"])
+
+    async def test_a_local_venue_filter_that_dropped_candidates_says_so(self) -> None:
+        from app.agents.tools import search_papers
+        from app.services.paper_search import PlatformStatus
+
+        outcome = _outcome(
+            [_paper(title="P", abstract="a", year=2025, venue="TIFS")],
+            [
+                PlatformStatus(platform="OpenAlex", status="ok", count=12, local_filters=["venues"]),
+                PlatformStatus(platform="DBLP", status="empty"),
+            ],
+        )
+        outcome.excluded = {"venues": 11}
+        with mock.patch("app.agents.tools.discovery.run_search", new=mock.AsyncMock(return_value=outcome)):
+            result = await self._call(search_papers, query="steganography", venues=["TIFS"])
+        self.assertIn("OpenAlex cannot filter by venue", result["note"])
+        self.assertIn("removed 11", result["note"])
+
+        outcome.excluded = {}
+        with mock.patch("app.agents.tools.discovery.run_search", new=mock.AsyncMock(return_value=outcome)):
+            quiet = await self._call(search_papers, query="steganography", venues=["TIFS"])
+        self.assertNotIn("cannot filter by venue", quiet.get("note") or "")
 
     async def test_bad_sort_and_types_are_argument_errors(self) -> None:
         from app.agents.tools import search_papers

@@ -46,6 +46,26 @@ RERANK_AUTO_THRESHOLD = 40
 
 _PREPRINT_VENUE_RE = re.compile(r"^(arxiv|corr)\b|preprint", re.IGNORECASE)
 
+# A boolean OR (or S2's `|`) widens what a platform matches: OpenAlex parses
+# `"a b" c OR "d e"` into thousands of works. Sorted by date or citations on
+# the platform, that puts whatever is newest or most cited first, on topic or
+# not — one such search returned MRI and drilling-mud papers for a
+# steganography query, all reported as ok. Uppercase only: that is the
+# operator, and a lowercase "or" is a stopword everywhere.
+_BOOLEAN_OR_RE = re.compile(r"(?<!\S)OR(?!\S)|\|")
+
+# Candidates asked of each platform when the order or a filter is applied here
+# rather than at the source: either one only has the page it is given.
+RELEVANCE_POOL_PER_PLATFORM = 30
+# A venue filter applied here keeps only what the platform happened to return
+# for the query, which for a few journals out of thousands can be one paper in
+# ten. A larger page is one request either way.
+LOCAL_VENUE_POOL_PER_PLATFORM = 50
+
+
+def has_boolean_or(query: str) -> bool:
+    return bool(_BOOLEAN_OR_RE.search(query or ""))
+
 
 def _norm_platform_name(name: str) -> str:
     return "".join(ch for ch in (name or "").casefold() if ch.isalnum())
@@ -752,6 +772,20 @@ async def search_papers_detailed(
         elif s2 is not None:
             shares[s2.name] = shares.get(s2.name, limit) + oa_share
 
+    # Date or citation order over an OR query is taken from the most relevant
+    # matches instead of from the platform's sorted list (see _BOOLEAN_OR_RE).
+    # A plain query keeps the platform's own order: it matches every term, and
+    # only that order finds the most cited or newest of *all* matches.
+    fetch_filters = filters
+    relevance_pool = filters is not None and sort != "relevance" and has_boolean_or(q_norm)
+    if relevance_pool:
+        fetch_filters = replace(filters, sort="relevance")
+        shares = {name: max(n, RELEVANCE_POOL_PER_PLATFORM) for name, n in shares.items()}
+    if filters is not None and filters.venues:
+        for spec in specs:
+            if FILTER_VENUES not in spec.filters:
+                shares[spec.name] = max(shares[spec.name], LOCAL_VENUE_POOL_PER_PLATFORM)
+
     headers = {"User-Agent": DEFAULT_USER_AGENT}
     client = HTTPClient(timeout=30.0, headers=headers)
     rerank_client = HTTPClient(timeout=settings.rerank_timeout_s, headers=headers)
@@ -768,8 +802,12 @@ async def search_papers_detailed(
         )
 
     raw, run_statuses = await _run_searchers(
-        client, query=query, specs=specs, settings=settings, filters=filters, page=page, per_platform=shares
+        client, query=query, specs=specs, settings=settings, filters=fetch_filters, page=page, per_platform=shares
     )
+    if relevance_pool:
+        for status in run_statuses:
+            if "sort" not in status.local_filters:
+                status.local_filters.append("sort")
     statuses = run_statuses + statuses
 
     merged = _dedupe_keep_first(raw)
@@ -809,6 +847,7 @@ async def search_papers_detailed(
         rerank_used=rerank_used,
         excluded=excluded,
         candidates=candidates,
+        relevance_pool=relevance_pool,
     )
 
 
