@@ -42,6 +42,10 @@ services:
       # no client address of its own, so the reverse proxy in front must.
       - FORWARDED_ALLOW_IPS=${FORWARDED_ALLOW_IPS:-127.0.0.1,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16}
       - DATABASE_URL=postgresql://${POSTGRES_USER:-scholar}:${POSTGRES_PASSWORD:-scholar}@postgres:5432/${POSTGRES_DB:-scholar}
+      # Tracing: .env names Phoenix as a host-side process sees it; inside the
+      # network it is the phoenix container. Set in .env = on, unset = off.
+      - TRACING_OTLP_ENDPOINT=${TRACING_OTLP_ENDPOINT:+http://phoenix:6006/v1/traces}
+      - TRACING_UI_URL=${TRACING_UI_URL:+http://phoenix:6006}
     volumes:
       - ./docker-data:/scholar/backend/data
     ports:
@@ -81,5 +85,30 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  # The tracing UI (debugging aid), started only with `--profile tracing`.
+  # No authentication of its own: admins reach it at <frontend>/api/admin/phoenix
+  # through the backend's admin check, so it is published on loopback only.
+  phoenix:
+    image: ${PHOENIX_IMAGE:-arizephoenix/phoenix:version-20.16.0}
+    container_name: scholar-phoenix
+    profiles: ["tracing"]
+    environment:
+      - PHOENIX_HOST_ROOT_PATH=/api/admin/phoenix
+      - PHOENIX_WORKING_DIR=/mnt/data
+      # Nothing leaves the machine: no analytics pixels, no Google Fonts.
+      - PHOENIX_TELEMETRY_ENABLED=false
+      - PHOENIX_ALLOW_EXTERNAL_RESOURCES=false
+      # Its built-in assistant (with a server-side bash tool) and MCP server
+      # would hand the stored traces to whoever reaches the UI.
+      - PHOENIX_DISABLE_AGENT_ASSISTANT=true
+      - PHOENIX_AGENTS_DISABLE_BASH=true
+      - PHOENIX_ENABLE_MCP_SERVER=false
+    volumes:
+      - scholar-phoenix:/mnt/data
+    ports:
+      - "127.0.0.1:6006:6006"
+    restart: unless-stopped
+
 volumes:
   scholar-pgdata:
+  scholar-phoenix:

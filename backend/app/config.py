@@ -319,6 +319,19 @@ class AppSettings(BaseSettings):
     retention_anon_days: int = Field(default=90, alias="RETENTION_ANON_DAYS")
     retention_orphan_paper_days: int = Field(default=30, alias="RETENTION_ORPHAN_PAPER_DAYS")
 
+    # --- Tracing (debugging aid) ---
+    # Where LangChain / LangGraph spans are sent over OTLP/HTTP, e.g. Phoenix's
+    # `http://localhost:6006/v1/traces`. Empty = off, and nothing is
+    # instrumented. A span holds the whole prompt — paper text and the reader's
+    # messages included — so point it only at a collector you run yourself.
+    tracing_otlp_endpoint: str = Field(default="", alias="TRACING_OTLP_ENDPOINT")
+    # The project the spans are filed under in Phoenix.
+    tracing_project: str = Field(default="scholar", alias="TRACING_PROJECT")
+    # Phoenix's own address as the backend reaches it (no path). Set, the UI is
+    # served to admins at /api/admin/phoenix through `api/phoenix.py`; Phoenix
+    # must run with PHOENIX_HOST_ROOT_PATH=/api/admin/phoenix. Empty = 404.
+    tracing_ui_url: str = Field(default="", alias="TRACING_UI_URL")
+
     # --- server ---
     host: str = "0.0.0.0"
     port: int = 8000

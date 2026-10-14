@@ -79,6 +79,15 @@ async def lifespan(app: FastAPI):
         )
         if not providers and not settings.auth_allow_anonymous:
             logger.warning("No login provider is configured and anonymous use is off: nobody can sign in")
+    # Before any turn or report can run: the instrumentation hooks the callback
+    # manager each call creates, so a call already in flight is not traced.
+    try:
+        from app.services.tracing import start_tracing
+
+        start_tracing()
+    except Exception:
+        logger.exception("Tracing did not start; continuing without it")
+
     registry = get_registry()
     logger.info(
         f"LLM base_url={settings.llm_base_url} "
@@ -164,6 +173,13 @@ async def lifespan(app: FastAPI):
     except Exception:
         logger.exception("Failed to close the agent checkpointer")
 
+    try:
+        from app.services.tracing import stop_tracing
+
+        stop_tracing()
+    except Exception:
+        logger.exception("Failed to flush traces")
+
     await database.close_pool()
     logger.info("Scholar Platform shutting down.")
 
@@ -212,12 +228,14 @@ def create_app() -> FastAPI:
     from app.api.auth import router as auth_router
     from app.api.library import router as library_router
     from app.api.papers import router as papers_router
+    from app.api.phoenix import router as phoenix_router
     from app.api.runs import router as runs_router
     from app.api.system import router as system_router
 
     app.include_router(papers_router, prefix="/api")
     app.include_router(runs_router, prefix="/api")
     app.include_router(admin_router, prefix="/api")
+    app.include_router(phoenix_router, prefix="/api")
     app.include_router(system_router, prefix="/api")
     app.include_router(library_router, prefix="/api")
     app.include_router(agent_router, prefix="/api")
