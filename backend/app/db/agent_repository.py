@@ -1386,6 +1386,33 @@ async def literature_titles(literature_ids: list[str]) -> dict[str, str]:
     return {r["literature_id"]: r["title"] for r in rows}
 
 
+async def citable_in_session(session_id: str, evidence_ids: list[str]) -> set[str]:
+    """Which of these ids an answer in this session may cite.
+
+    Those recorded under the session — every tool records under the asking
+    session — and those an earlier answer here already cited, which covers
+    evidence recall brought back from another conversation.
+    """
+    ids = [i for i in dict.fromkeys(evidence_ids) if i]
+    if not ids or not session_id:
+        return set()
+    placeholders = ",".join("?" for _ in ids)
+    rows = await db.fetch_all(
+        f"SELECT evidence_id FROM evidence WHERE session_id = ? AND evidence_id IN ({placeholders})",
+        (session_id, *ids),
+    )
+    found = {r["evidence_id"] for r in rows}
+    if len(found) == len(ids):
+        return found
+    wanted = set(ids) - found
+    for row in await db.fetch_all(
+        "SELECT citations_json FROM agent_messages WHERE session_id = ? AND role = 'assistant'",
+        (session_id,),
+    ):
+        found |= wanted & set(_json_loads(row["citations_json"], []))
+    return found
+
+
 async def list_session_evidence(session_id: str, *, limit: int = 200) -> list[Evidence]:
     rows = await db.fetch_all(
         "SELECT * FROM evidence WHERE session_id = ? ORDER BY retrieved_at DESC LIMIT ?",

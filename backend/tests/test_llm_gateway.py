@@ -378,7 +378,8 @@ class BuildChatModelTests(unittest.TestCase):
             base = build_chat_model("qwen-max")
             ext = build_chat_model("gemini-flash")
         self.assertTrue(base.use_responses_api)
-        self.assertFalse(base.flatten_nullable_tool_params)
+        # Both protocols flatten: qwen answers `anyOf [array, null]` with text.
+        self.assertTrue(base.flatten_nullable_tool_params)
         self.assertFalse(ext.use_responses_api)
         self.assertTrue(ext.flatten_nullable_tool_params)
         self.assertEqual(str(ext.openai_api_base), "https://newapi.test/v1")

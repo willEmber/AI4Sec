@@ -29,6 +29,10 @@ DEV_DOC/P10_模型网关与多模型接入.md):
   "not implemented" for Gemini channels and serves `/chat/completions`.
 * Gemini rejects a tool parameter declared as `anyOf [X, null]`, which is what
   every `list[str] | None` argument becomes, so those are flattened to `X`.
+  Bailian accepts the schema, but qwen3.8-flash answers it with the list's JSON
+  text instead of an array (every such call in the 2026-10-15 multi-turn
+  verification; 8 of 8 in an A/B, against 8 of 8 arrays once flattened), so
+  flattening is the default on both protocols.
 * `enable_thinking` is a Bailian parameter. It is sent there and nowhere else.
 """
 
@@ -161,7 +165,7 @@ def _profile(name: str, provider: Provider, spec: dict[str, Any], *, agent: bool
         provider=provider,
         upstream_id=_clean(str(spec.get("upstream_id") or "")),
         sends_enable_thinking=bool(spec.get("enable_thinking_param", not chat_completions)),
-        flatten_nullable_tool_params=bool(spec.get("flatten_nullable_tool_params", chat_completions)),
+        flatten_nullable_tool_params=bool(spec.get("flatten_nullable_tool_params", True)),
         agent=bool(spec.get("agent", agent)),
     )
 

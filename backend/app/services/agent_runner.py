@@ -33,6 +33,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import re
 import time
 from typing import Any
 
@@ -261,6 +262,30 @@ def _citations_in(text: str, known: list[str]) -> list[str]:
     return [eid for eid in dict.fromkeys(known) if eid in text]
 
 
+EVIDENCE_ID_RE = re.compile(r"ev_[0-9a-f]{20}(?![0-9a-f])")
+
+
+async def _citations_of(text: str, collected: list[str], session_id: str) -> list[str]:
+    """The answer's citations: this turn's evidence, then what earlier turns returned.
+
+    A follow-up answered from what the previous turn read cites that turn's
+    evidence, and limiting citations to this turn's tool results stored such
+    an answer with none — so recall and the evidence list lost it. An earlier
+    id still has to have come from a tool in this conversation: recorded under
+    this session (every tool records under the asking session), or already
+    cited by an answer here (recall hands back other sessions' evidence). An
+    invented id is neither.
+    """
+    current = _citations_in(text, collected)
+    earlier = [
+        eid for eid in dict.fromkeys(EVIDENCE_ID_RE.findall(text)) if eid not in current
+    ]
+    if not earlier:
+        return current
+    citable = await repo.citable_in_session(session_id, earlier)
+    return current + [eid for eid in earlier if eid in citable]
+
+
 async def _heartbeat(run_id: str) -> None:
     """Say this worker is still on the run, until the turn stops it.
 
@@ -384,7 +409,7 @@ async def _keep_partial(
         role=MessageRole.ASSISTANT,
         content=text,
         run_id=run.run_id,
-        citations=_citations_in(text, evidence_ids),
+        citations=await _citations_of(text, evidence_ids, session.session_id),
         completion=completion,
         stop_reason=stop_reason,
     )
@@ -700,7 +725,7 @@ async def _execute_turn(
             completion = "stopped"
         elif cut_short:
             completion, stop_reason = "truncated", cut_short
-        citations = _citations_in(answer, collected_evidence)
+        citations = await _citations_of(answer, collected_evidence, session.session_id)
         await repo.append_message(
             session_id=session.session_id,
             role=MessageRole.ASSISTANT,
@@ -831,6 +856,10 @@ def _tool_completion_payload(message: ToolMessage) -> dict[str, Any]:
         parsed = json.loads(message.content if isinstance(message.content, str) else "{}")
     except (TypeError, ValueError):
         parsed = {}
+    if not isinstance(parsed, dict) and message.status == "error":
+        # Not an envelope; the guard rewraps the tool node's argument errors,
+        # so this is only reached outside it. Still not a success.
+        payload["status"] = "error"
     if isinstance(parsed, dict):
         payload["status"] = parsed.get("status", "ok")
         evidence_ids = list(parsed.get("evidence_ids") or [])

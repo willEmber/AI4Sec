@@ -122,6 +122,23 @@ async def _authorize_many(
     return allowed, None
 
 
+async def _readable_paper_ids(ctx: AgentContext) -> list[str]:
+    return [p.paper_id for p in await repo.list_session_papers(ctx.session_id) if p.paper_id]
+
+
+async def _paper_of_section(ctx: AgentContext, section_id: str) -> str:
+    """The session paper a section id belongs to, or "" when it names none.
+
+    A section id is `<paper_id>:section:...`, so it already says which paper
+    it is from. Asking for paper_id beside it failed every read in a
+    two-paper session where the model passed only the id the outline gave it.
+    """
+    head, sep, _rest = (section_id or "").partition(":")
+    if not sep or not head:
+        return ""
+    return head if head in await _readable_paper_ids(ctx) else ""
+
+
 def _node_text(node: PaperNode) -> str:
     """The node as the model reads it — and, for a table, as it is cited."""
     text = node.text.strip()
@@ -267,10 +284,10 @@ async def search_paper_content(
     read_paper_section. Matching is by wording, not meaning: write `question`
     in the language the paper is written in, with the terms the paper itself
     would use — a Chinese question finds nothing in an English paper.
-    Omit paper_id when the session holds a single paper.
-    To compare papers, pass paper_ids — the same question is run against each
-    and the results come back grouped by paper, so differences in setup and
-    results line up.
+    Pass paper_id to search one paper; omit it to search every paper in the
+    session. To compare papers, pass paper_ids — the same question is run
+    against each and the results come back grouped by paper, so differences
+    in setup and results line up.
     """
     ctx = runtime.context
 
@@ -284,6 +301,12 @@ async def search_paper_content(
 
     if paper_ids:
         return await _search_across(ctx, paper_ids, question, limit)
+    if not paper_id:
+        # No paper named in a session with several: search them all, grouped,
+        # rather than refuse — the refusal cost a step and read as a failure.
+        readable = await _readable_paper_ids(ctx)
+        if len(readable) > 1:
+            return await _search_across(ctx, readable, question, limit)
 
     paper_id, denial = await _authorize(ctx, paper_id)
     if denial is not None:
@@ -399,10 +422,13 @@ async def read_paper_section(
 
     Use this when a search excerpt is not enough — for exact numbers, an
     equation, an experimental setup, or an argument that spans paragraphs.
-    Identify the section by the section_id from get_paper_outline, or by
-    section_title when you only know its name.
+    Identify the section by the section_id from get_paper_outline (it names
+    its paper, so paper_id may be omitted), or by section_title and paper_id
+    when you only know its name.
     """
     ctx = runtime.context
+    if not paper_id:
+        paper_id = await _paper_of_section(ctx, section_id)
     paper_id, denial = await _authorize(ctx, paper_id)
     if denial is not None:
         return denial.to_json()

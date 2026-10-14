@@ -3,7 +3,8 @@
 One middleware around every tool call and every model call. Like the tools, it
 acts on the trusted `AgentContext`, never on anything the model wrote.
 
-*Tool calls* pass four checks, outermost first:
+*Tool calls* pass four checks, outermost first, after their arguments are
+mended where the intent is unambiguous (a list sent as its JSON text):
 
 1. **Exceptions.** A tool that raises becomes an `error` result the model can
    read. LangGraph's tool node re-raises anything but an argument error, so
@@ -14,6 +15,10 @@ acts on the trusted `AgentContext`, never on anything the model wrote.
    together cannot all run on two remaining slots.
 4. **Repeats.** The third identical call is answered without running: nothing
    has changed since the second.
+
+An argument the tool rejects comes back from the tool node as plain text; it
+is rewrapped as an `invalid_argument` result, so the stream and the failure
+count see it as the failure it is rather than as an unlabelled success.
 
 *Model calls*: once a turn ceiling is reached the next call is the closing
 one — made without tools, told to answer from what was gathered. Before this,
@@ -67,7 +72,10 @@ TOOL_SECONDS: dict[str, float | None] = {
 
 # The identical call that is no longer run.
 REPEAT_LIMIT = 3
-# Failed tool results in a row after which the turn stops gathering.
+# Steps in a row whose tool calls all failed, after which the turn stops
+# gathering. Counted per step, not per call: six reads issued together with the
+# same wrong argument are one mistake, and counting them as six ended a
+# comparison before the model could see the error and correct it.
 FAILURE_LIMIT = 5
 
 # Tools whose answer depends on something outside the conversation, so asking
@@ -130,14 +138,92 @@ def _call_key(name: str, args: Any) -> str:
 
 
 def _status_of(message: Any) -> str:
-    """The `ToolResult` status inside a tool message, '' when it is not one."""
-    if not isinstance(message, ToolMessage) or not isinstance(message.content, str):
+    """The `ToolResult` status inside a tool message, '' when it is not one.
+
+    A message the tool node marked as an error is an error whatever its text.
+    """
+    if not isinstance(message, ToolMessage):
         return ""
+    fallback = "error" if message.status == "error" else ""
+    if not isinstance(message.content, str):
+        return fallback
     try:
         parsed = json.loads(message.content)
     except (TypeError, ValueError):
-        return ""
-    return str(parsed.get("status") or "") if isinstance(parsed, dict) else ""
+        return fallback
+    status = str(parsed.get("status") or "") if isinstance(parsed, dict) else ""
+    return status or fallback
+
+
+def _array_params(tool: Any) -> set[str]:
+    """Names of the parameters the model is asked to send as arrays."""
+    try:
+        properties = tool.tool_call_schema.model_json_schema().get("properties") or {}
+    except Exception:  # noqa: BLE001 — a tool without a schema has nothing to mend
+        return set()
+    names = set()
+    for name, spec in properties.items():
+        options = [spec, *(spec.get("anyOf") or [])]
+        if any(isinstance(o, dict) and o.get("type") == "array" for o in options):
+            names.add(name)
+    return names
+
+
+def mend_arguments(tool: Any, args: Any) -> Any:
+    """Arguments with a list sent as a string turned back into the list.
+
+    Models asked for `list[str] | None` (`anyOf [array, null]` in the schema)
+    often send the list's JSON text instead — qwen3.8-flash did on every such
+    call in the multi-turn verification — and the tool node rejects it. The
+    intent is not in doubt, so it is mended rather than bounced: JSON text that
+    parses to a list becomes that list, any other non-empty string a list of one.
+    """
+    if not isinstance(args, dict):
+        return args
+    arrays = _array_params(tool) if tool is not None else set()
+    mended = dict(args)
+    for name in arrays & mended.keys():
+        value = mended[name]
+        if not isinstance(value, str):
+            continue
+        text = value.strip()
+        if not text:
+            mended[name] = None
+            continue
+        try:
+            parsed = json.loads(text)
+        except ValueError:
+            parsed = None
+        mended[name] = parsed if isinstance(parsed, list) else [text]
+    return mended
+
+
+# The tool node's text for a rejected argument names the tool and repeats every
+# argument; the model needs the validation lines, not all of that.
+MAX_ARGUMENT_ERROR_CHARS = 1_200
+
+
+def _as_argument_error(message: Any) -> Any:
+    """A tool node's plain-text argument error, rewrapped as a `ToolResult`."""
+    if not isinstance(message, ToolMessage) or message.status != "error":
+        return message
+    content = message.content if isinstance(message.content, str) else str(message.content)
+    try:
+        if isinstance(json.loads(content), dict):
+            return message
+    except (TypeError, ValueError):
+        pass
+    result = ToolResult.failed(
+        ErrorCode.INVALID_ARGUMENT,
+        content.strip()[:MAX_ARGUMENT_ERROR_CHARS],
+        retryable=True,
+    )
+    return ToolMessage(
+        content=result.to_json(),
+        name=message.name,
+        tool_call_id=message.tool_call_id,
+        status="error",
+    )
 
 
 def _text_of(content: Any) -> str:
@@ -277,6 +363,13 @@ class TurnGuardMiddleware(AgentMiddleware):
         return None
 
     def _note_failure(self, ctx: AgentContext) -> None:
+        # The tool calls of one step all run between two model calls, so the
+        # model-call count names the step. A step counts once, and not at all
+        # when any of its calls succeeded.
+        step = ctx.usage.llm_calls
+        if step in (ctx.failed_step, ctx.succeeded_step):
+            return
+        ctx.failed_step = step
         ctx.consecutive_failures += 1
         if ctx.consecutive_failures >= FAILURE_LIMIT:
             ctx.begin_wrapup("tool_failures")
@@ -287,6 +380,7 @@ class TurnGuardMiddleware(AgentMiddleware):
             self._note_failure(ctx)
             return
         ctx.consecutive_failures = 0
+        ctx.succeeded_step = ctx.usage.llm_calls
         if name in STATE_CHANGING and status in {"ok", "partial"}:
             ctx.call_counts.clear()
 
@@ -298,17 +392,21 @@ class TurnGuardMiddleware(AgentMiddleware):
         ctx = _context_of(request.runtime)
         if ctx is None:
             return await handler(request)
+        call = request.tool_call
+        args = mend_arguments(getattr(request, "tool", None), call.get("args"))
+        if args != call.get("args"):
+            request = request.override(tool_call={**call, "args": args})
+            call = request.tool_call
         refusal = self._admit(ctx, request)
         if refusal is not None:
             return refusal
 
-        call = request.tool_call
         name = call.get("name") or ""
         seconds = TOOL_SECONDS.get(name, REMOTE_TOOL_SECONDS)
         failure: ToolResult
         try:
             async with asyncio.timeout(seconds) as deadline:
-                result = await handler(request)
+                result = _as_argument_error(await handler(request))
             self._observe(ctx, name, result)
             return result
         except asyncio.CancelledError:

@@ -205,6 +205,10 @@ class AgentContext:
     # (tool, arguments) → times asked this turn, for repeat detection.
     call_counts: dict[str, int] = field(default_factory=dict)
     consecutive_failures: int = 0
+    # The step (model-call count) last counted as failed, and the last one in
+    # which a tool call succeeded: a step adds to the count at most once.
+    failed_step: int = -1
+    succeeded_step: int = -1
     # Set once the turn has moved to the fallback model; later calls stay there.
     on_fallback: bool = False
     # Lets the guard put an event on the turn's stream. `None` outside a turn.

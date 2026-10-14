@@ -161,7 +161,18 @@ async def boom_tool(n: int) -> str:
     raise RuntimeError(f"relation agent_things does not exist at http://db.internal:5432/x ({n})")
 
 
-TEST_TOOLS = [note_tool, slow_tool, boom_tool]
+# What `ids_tool` was called with, so a test can see what reached the tool.
+RECEIVED_IDS: list[Any] = []
+
+
+@tool
+async def ids_tool(ids: list[str] | None = None) -> str:
+    """Takes a nullable list, the shape models send as JSON text."""
+    RECEIVED_IDS.append(ids)
+    return _envelope(count=len(ids or []))
+
+
+TEST_TOOLS = [note_tool, slow_tool, boom_tool, ids_tool]
 
 
 class GuardTestCase(AgentP2TestCase):
@@ -179,7 +190,10 @@ class GuardTestCase(AgentP2TestCase):
         )
         agent_runner.ALL_AGENT_TOOLS = [*agent_runner.ALL_AGENT_TOOLS, *TEST_TOOLS]
         agent_runner._fallback_model = lambda _name: (None, "")
-        guard.TOOL_SECONDS.update({"note_tool": 5.0, "boom_tool": 5.0, "slow_tool": None})
+        guard.TOOL_SECONDS.update(
+            {"note_tool": 5.0, "boom_tool": 5.0, "slow_tool": None, "ids_tool": 5.0}
+        )
+        RECEIVED_IDS.clear()
 
     async def asyncTearDown(self) -> None:
         from app.agents import guard
@@ -414,6 +428,58 @@ class ToolFaultTests(GuardTestCase):
         self.assertEqual(finished.usage["stopped_by"], "tool_failures")
         self.assertEqual(finished.usage["tool_calls"], 5)
         self.assertFalse(model.state["calls"][-1]["tools_bound"])
+
+
+class ArgumentTests(GuardTestCase):
+    """What the model sends that the tool would reject (multi-turn verification)."""
+
+    def test_a_list_sent_as_text_is_mended_and_nothing_else_is(self) -> None:
+        from app.agents.guard import mend_arguments
+
+        self.assertEqual(mend_arguments(ids_tool, {"ids": '["a", "b"]'}), {"ids": ["a", "b"]})
+        self.assertEqual(mend_arguments(ids_tool, {"ids": "a"}), {"ids": ["a"]})
+        self.assertEqual(mend_arguments(ids_tool, {"ids": " "}), {"ids": None})
+        self.assertEqual(mend_arguments(ids_tool, {"ids": ["a"]}), {"ids": ["a"]})
+        # Only array parameters: a string parameter keeps its JSON-looking text.
+        self.assertEqual(mend_arguments(note_tool, {"n": "[1]"}), {"n": "[1]"})
+        self.assertEqual(mend_arguments(None, {"ids": "[]"}), {"ids": "[]"})
+
+    async def test_a_list_sent_as_text_reaches_the_tool_as_a_list(self) -> None:
+        run, _ = await self._turn([("tools", [("ids_tool", {"ids": '["p1", "p2"]'})])])
+        self.assertEqual(RECEIVED_IDS, [["p1", "p2"]])
+        self.assertEqual(await self._tool_codes(run), ["ok"])
+
+    async def test_a_rejected_argument_is_a_failure_the_stream_and_count_see(self) -> None:
+        steps = [("tools", [("note_tool", {"wrong": i})]) for i in range(8)]
+        run, model = await self._turn(steps)
+        failed = await self._events(run, "tool.failed")
+        self.assertEqual(len(failed), 5)
+        self.assertEqual(failed[0].payload["error"]["code"], "invalid_argument")
+        self.assertIn("n", failed[0].payload["error"]["message"])
+        self.assertEqual((await self._finished(run)).usage["stopped_by"], "tool_failures")
+        self.assertFalse(model.state["calls"][-1]["tools_bound"])
+
+    async def test_failures_issued_together_count_as_one_step(self) -> None:
+        # Six reads with the same mistake in one step, then a corrected one:
+        # the model must get to see the error and try again.
+        steps = [
+            ("tools", [("boom_tool", {"n": i}) for i in range(6)]),
+            ("tools", [("note_tool", {"n": 1})]),
+            ("text", "Answer from the corrected read."),
+        ]
+        run, model = await self._turn(steps)
+        finished = await self._finished(run)
+        self.assertEqual(finished.usage["stopped_by"], "")
+        self.assertEqual(finished.usage["tool_calls"], 7)
+        self.assertEqual((await self._answer(run)).content, "Answer from the corrected read.")
+
+    async def test_a_step_with_any_success_does_not_count_as_failed(self) -> None:
+        mixed = ("tools", [("boom_tool", {"n": 0}), ("note_tool", {"n": 0})])
+        failing = ("tools", [("boom_tool", {"n": 1})])
+        # Four failing steps around mixed ones never reach five in a row.
+        steps = [mixed, failing, failing, failing, failing, mixed, ("text", "ok")]
+        run, _ = await self._turn(steps)
+        self.assertEqual((await self._finished(run)).usage["stopped_by"], "")
 
 
 class ModelFaultTests(GuardTestCase):

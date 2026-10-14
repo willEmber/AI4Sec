@@ -26,5 +26,5 @@ agent = false
 
 # Optional per-model settings, with their defaults:
 #   upstream_id = "..."                  # the gateway's name for the model, when it differs
-#   flatten_nullable_tool_params = true  # chat_completions default; Gemini rejects `anyOf [X, null]`
+#   flatten_nullable_tool_params = true  # `anyOf [X, null]` → `X`: Gemini rejects it, qwen sends lists as text
 #   enable_thinking_param = false        # send Bailian's `enable_thinking`; responses default is true

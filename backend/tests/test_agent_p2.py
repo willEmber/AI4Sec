@@ -370,6 +370,38 @@ class ReadingToolTests(AgentP2TestCase):
         self.assertEqual(result["status"], "error")
         self.assertEqual(result["error"]["code"], "invalid_argument")
 
+    async def test_a_section_id_names_its_paper_in_a_multi_paper_session(self) -> None:
+        from app.agents.tools import read_paper_section
+
+        await self._seed_paper("paper3", title="A Second, Unrelated Paper")
+        await self._attach("paper3", self.session.session_id)
+        # The id the outline hands out is all the model passes.
+        result = await self._call(read_paper_section, section_id="paper3:s3")
+        self.assertEqual(result["status"], "ok")
+        self.assertEqual(result["data"]["paper_id"], "paper3")
+        # A title alone still cannot say which of two papers it means.
+        result = await self._call(read_paper_section, section_title="2 Method")
+        self.assertEqual(result["error"]["code"], "invalid_argument")
+
+    async def test_a_section_id_of_a_foreign_paper_does_not_open_it(self) -> None:
+        from app.agents.tools import read_paper_section
+
+        await self._seed_paper("paper4", title="Someone Else's Upload")
+        result = await self._call(read_paper_section, section_id="paper4:s2")
+        self.assertNotEqual(result["status"], "ok")
+        self.assertNotIn("Someone Else", json.dumps(result))
+
+    async def test_search_without_a_paper_covers_every_paper_in_the_session(self) -> None:
+        from app.agents.tools import search_paper_content
+
+        await self._seed_paper("paper3", title="A Second, Unrelated Paper")
+        await self._attach("paper3", self.session.session_id)
+        result = await self._call(search_paper_content, question="BLEU")
+        self.assertEqual(result["status"], "ok")
+        self.assertEqual(
+            sorted(group["paper_id"] for group in result["data"]["papers"]), ["paper1", "paper3"]
+        )
+
 
 class TurnExecutionTests(AgentP2TestCase):
     async def _run_turn(self, script, final: str):
@@ -440,6 +472,33 @@ class TurnExecutionTests(AgentP2TestCase):
         self.assertEqual(
             (await repo.get_run(run.run_id, owner_id=self.owner)).status.value, "done"
         )
+
+    async def test_a_follow_up_keeps_citations_to_what_an_earlier_turn_read(self) -> None:
+        from app.db import agent_repository as repo
+
+        await self._run_turn([("search_paper_content", {"question": "BLEU"})], final="Read it.")
+        earlier = (await repo.list_session_evidence(self.session.session_id))[0].evidence_id
+
+        # Answered from context: no tool this turn, the earlier passage cited.
+        await self._run_turn([], final=f"As read before, 29.7 BLEU [{earlier}].")
+        answer = [m for m in await repo.list_messages(self.session.session_id)
+                  if m.role.value == "assistant"][-1]
+        self.assertEqual(answer.citations, [earlier])
+
+    async def test_evidence_of_another_conversation_is_not_cited(self) -> None:
+        from app.agents.tools import search_paper_content
+        from app.db import agent_repository as repo
+
+        other = await repo.create_session(owner_id=self.owner, language="en")
+        await self._attach("paper1", other.session_id)
+        self.ctx.session_id = other.session_id
+        foreign = (await self._call(search_paper_content, question="BLEU"))["evidence_ids"][0]
+        self.ctx.session_id = self.session.session_id
+
+        await self._run_turn([], final=f"29.7 BLEU [{foreign}].")
+        answer = [m for m in await repo.list_messages(self.session.session_id)
+                  if m.role.value == "assistant"][-1]
+        self.assertEqual(answer.citations, [])
 
     async def test_tool_events_carry_the_status_not_the_payload(self) -> None:
         from app.db import agent_repository as repo
