@@ -491,7 +491,7 @@ class ProjectMemoryAndPromptTests(P8TestCase):
         prompt = build_system_prompt(
             language="en", papers=[], memories=memories, project=project, project_papers=others
         )
-        self.assertEqual(PROMPT_VERSION, "p14-tools-1")
+        self.assertEqual(PROMPT_VERSION, "p15-aliases-1")
         self.assertIn('## Research project', prompt)
         self.assertIn('"MoE routing"', prompt)
         self.assertIn("Compare routers on WMT14.", prompt)

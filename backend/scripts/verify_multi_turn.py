@@ -205,12 +205,18 @@ def check_turn(turn: Turn, record: dict[str, Any], paper_ids: dict[str, str]) ->
         cited = {e["paper_id"] for e in record["evidence"].values()}
         missing = [k for k in turn.cites_papers if paper_ids.get(k) not in cited]
         add("cites_papers", not missing, False, f"no citation from {missing}" if missing else "")
-    if record["grouped_citation_markers"]:
+    # The model cites by alias (`[E12]`); what is stored has been rewritten to
+    # stored ids, so an alias left in it, or a grouped marker, is a rewrite miss.
+    residue = record.get("alias_residue", 0)
+    if record["grouped_citation_markers"] or residue:
         add("citation_format", False, False,
-            f"{record['grouped_citation_markers']} grouped markers like [ev_a, ev_b]")
-    if record["invented_citations"]:
+            f"{record['grouped_citation_markers']} grouped markers, "
+            f"{residue} alias markers left in the stored answer")
+    dropped = record.get("citations_dropped", 0)
+    if record["invented_citations"] or dropped:
         add("no_invented_citations", False, False,
-            f"{len(record['invented_citations'])} ids written that no tool returned")
+            f"{len(record['invented_citations'])} stored ids no tool returned, "
+            f"{dropped} aliases no tool handed out")
     return results
 
 
@@ -218,6 +224,7 @@ def check_turn(turn: Turn, record: dict[str, Any], paper_ids: dict[str, str]) ->
 
 CITATION_RE = re.compile(r"ev_[A-Za-z0-9_-]{6,}")
 GROUPED_RE = re.compile(r"\[ev_[^\]]*,\s*ev_[^\]]*\]")
+ALIAS_RESIDUE_RE = re.compile(r"[\[【]\s*[Ee]\d{1,5}\s*[,，;；、\]】]")
 
 
 async def _pick_papers() -> dict[str, str]:
@@ -289,6 +296,9 @@ async def _run_turn(session, turn: Turn, model: str) -> dict[str, Any]:
         "citations": answer.citations if answer else [],
         "grouped_citation_markers": len(GROUPED_RE.findall(text)),
         "invented_citations": [i for i in written if i not in evidence],
+        "alias_residue": len(ALIAS_RESIDUE_RE.findall(text)),
+        "citations_dropped": int((finished.usage or {}).get("citations_dropped") or 0),
+        "citation_groups_expanded": int((finished.usage or {}).get("citation_groups_expanded") or 0),
         "evidence": evidence,
     }
 

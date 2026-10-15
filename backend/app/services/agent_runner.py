@@ -39,6 +39,7 @@ from typing import Any
 
 from langchain_core.messages import AIMessage, AIMessageChunk, ToolMessage
 
+from app.agents.aliases import AliasBook, CitationRewriter, strip_alias_markers
 from app.agents.context import AgentContext, BudgetUsage, RunBudget
 from app.agents.errors import EmptyModelResponse, classify_error, error_summary
 from app.agents.harness import create_paper_agent
@@ -159,10 +160,36 @@ class DeltaCoalescer:
         self._size = 0
         self._lock = asyncio.Lock()
         self._timer: asyncio.Task[None] | None = None
+        # Rewrites alias citations to stored ids before anything is emitted
+        # (P15); `None` until the turn has loaded the session's aliases.
+        self.rewriter: CitationRewriter | None = None
+        # Everything released to the reader, rewritten: what the turn stores.
+        self._shown: list[str] = []
+
+    def shown_text(self) -> str:
+        return "".join(self._shown)
+
+    def release(self) -> None:
+        """Let go of an unclosed bracket the rewriter holds back, as plain text.
+
+        Called before any other event and at the end: the text that preceded
+        an event must reach the reader before it. A bracket left open at that
+        point ended a model call, so it was never going to close.
+        """
+        if self.rewriter is None:
+            return
+        rest = self.rewriter.finish()
+        if rest:
+            self._parts.append(rest)
+            self._size += len(rest)
+            self._shown.append(rest)
 
     async def add(self, text: str) -> None:
+        if self.rewriter is not None:
+            text = self.rewriter.feed(text)
         if not text:
             return
+        self._shown.append(text)
         async with self._lock:
             self._parts.append(text)
             self._size += len(text)
@@ -197,6 +224,7 @@ class DeltaCoalescer:
     async def emit(self, type: EventType, payload: dict[str, Any] | None = None) -> AgentEvent:
         """Emit a non-delta event of this turn, after any text that preceded it."""
         async with self._lock:
+            self.release()
             await self._flush_locked()
             return await emit(
                 session_id=self._session_id, run_id=self._run_id, type=type, payload=payload
@@ -213,6 +241,8 @@ class DeltaCoalescer:
         if timer is not None and not timer.done():
             with contextlib.suppress(Exception):
                 await timer
+        async with self._lock:
+            self.release()
         await self.flush()
 
 
@@ -391,7 +421,7 @@ async def _keep_partial(
     *,
     session: AgentSession,
     run: AgentRun,
-    answer_parts: list[str],
+    stream: DeltaCoalescer,
     evidence_ids: list[str],
     completion: str,
     stop_reason: str,
@@ -399,9 +429,11 @@ async def _keep_partial(
     """Store what a turn had written when it ended early. True when there was any.
 
     The reader watched this text arrive. Dropping it on a failure meant a
-    reload showed a question with no answer where half a page had been.
+    reload showed a question with no answer where half a page had been. What
+    is stored is what was released to the reader, citations rewritten.
     """
-    text = "".join(answer_parts).strip()
+    stream.release()
+    text = stream.shown_text().strip()
     if not text:
         return False
     await repo.append_message(
@@ -563,6 +595,8 @@ async def _execute_turn(
             started=started,
             notify=_notify,
         )
+        context.aliases = await AliasBook.load(session.session_id)
+        stream.rewriter = CitationRewriter(context.aliases, usage=usage)
 
         async def _on_compact(payload: dict[str, Any]) -> None:
             await stream.emit(EventType.CONTEXT_COMPACTED, payload)
@@ -639,7 +673,10 @@ async def _execute_turn(
                             EventType.TOOL_STARTED, {"tool": name, "call_id": call_id}
                         )
                     payload = _tool_completion_payload(message)
-                    collected_evidence.extend(payload.pop("_evidence_ids", []))
+                    # The result the model saw names its evidence by alias.
+                    collected_evidence.extend(
+                        context.aliases.resolve_all(payload.pop("_evidence_ids", []))
+                    )
                     attached = payload.pop("_attached_paper", None)
                     await stream.emit(
                         EventType.TOOL_FAILED
@@ -688,14 +725,17 @@ async def _execute_turn(
 
         await stream.close()
         context.elapsed()
-        answer = "".join(answer_parts).strip()
+        # What the reader was shown, citations rewritten to stored ids; the
+        # model's own text (aliases and all) stays in `answer_parts` and the
+        # checkpoint.
+        answer = stream.shown_text().strip()
 
         if cancelled:
             await _record_unsaved_text(
                 agent, context, text_by_message, ErrorCode.CANCELLED.value
             )
             kept = await _keep_partial(
-                session=session, run=run, answer_parts=answer_parts,
+                session=session, run=run, stream=stream,
                 evidence_ids=collected_evidence, completion="stopped",
                 stop_reason=ErrorCode.CANCELLED.value,
             )
@@ -754,7 +794,7 @@ async def _execute_turn(
         kept = False
         with contextlib.suppress(Exception):
             kept = await _keep_partial(
-                session=session, run=run, answer_parts=answer_parts,
+                session=session, run=run, stream=stream,
                 evidence_ids=collected_evidence, completion="stopped",
                 stop_reason=ErrorCode.CANCELLED.value,
             )
@@ -787,7 +827,7 @@ async def _execute_turn(
         with contextlib.suppress(Exception):
             await stream.close()
             kept = await _keep_partial(
-                session=session, run=run, answer_parts=answer_parts,
+                session=session, run=run, stream=stream,
                 evidence_ids=collected_evidence, completion="failed",
                 stop_reason=code.value,
             )
@@ -877,6 +917,10 @@ def _tool_completion_payload(message: ToolMessage) -> dict[str, Any]:
         if isinstance(data, dict):
             payload["summary"] = _summarise(data)
             preview = preview_of(data)
+            for entry in preview:
+                # A recalled answer's citations: aliases mean nothing to the reader.
+                if isinstance(entry.get("text"), str):
+                    entry["text"] = strip_alias_markers(entry["text"])
             if preview:
                 payload["preview"] = preview
             if data.get("paper_id") and data.get("literature_id"):

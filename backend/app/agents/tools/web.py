@@ -165,7 +165,7 @@ async def web_search(
     - depth: fast (one provider) or deep (two providers merged; costs double —
       use it only when a fast search came back thin).
 
-    Each result has a snippet and an evidence_id; cite it as [ev_xxx]. To read
+    Each result has a snippet and an evidence_id; cite it as [E12]. To read
     more of a page, pass its url to read_web_page. The query leaves this
     system: never paste unpublished text from the reader's papers into it.
     """
@@ -380,7 +380,7 @@ async def read_web_page(
 
     Paper links (arXiv, DOI, OpenReview, ACL Anthology) are not read here: use
     resolve_paper and download_paper, which give page-numbered full text. Each
-    chunk has an evidence_id; cite it as [ev_xxx].
+    chunk has an evidence_id; cite it as [E12].
     """
     ctx = runtime.context
     url = (url or "").strip()

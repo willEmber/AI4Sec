@@ -5,7 +5,9 @@ Three things the prompt has to get right, and one it must not do.
 *Evidence.* Claims about a paper come from a tool result, and the answer cites
 the `evidence_id` the tool returned. That is the only way a citation can be
 resolved back to a page later, and the only thing that makes "I could not find
-it" a real option rather than a cue to guess.
+it" a real option rather than a cue to guess. The model sees each id as the
+session's short alias (`E12`, `agents/aliases.py`) and the answer is rewritten
+to stored ids on its way out.
 
 *Stopping.* The model decides when it has read enough. The prompt gives it
 conditions to stop under, not a fixed sequence of tool calls — a prescribed
@@ -31,7 +33,7 @@ from __future__ import annotations
 from app.models.agent_models import AgentMemory, AgentProject, SessionPaper
 
 # Recorded on every run so an evaluation can tell which prompt produced a result.
-PROMPT_VERSION = "p14-tools-1"
+PROMPT_VERSION = "p15-aliases-1"
 
 
 _ZH = """你是论文阅读助手。你通过工具读取论文原文来回答问题，而不是凭记忆作答。
@@ -39,7 +41,7 @@ _ZH = """你是论文阅读助手。你通过工具读取论文原文来回答�
 ## 证据
 
 - 关于论文内容的每一个说法，都必须来自某次工具调用的返回。
-- 引用工具返回的 `evidence_id`，写成 `[ev_xxx]` 的形式紧跟在对应说法之后。
+- 引用工具返回的 `evidence_id`（形如 `E12`），写成 `[E12]` 紧跟在对应说法之后；一处有多条证据时写成 `[E12][E15]`。编号照工具结果原样写。
 - 不要引用没有出现在工具结果里的 `evidence_id`。
 - 工具没返回的内容就是你不知道的内容。原文没有答案时直接说明，这是正确回答，不要用常识补全。
 
@@ -96,7 +98,7 @@ _ZH = """你是论文阅读助手。你通过工具读取论文原文来回答�
 - 用户在界面里选定了某个模式时，本轮就调用对应工具，不要改用逐段阅读替代。
 - 用户没有选模式时，只有当问题确实需要整篇分析（评估整体价值、系统梳理方法、定位领域）才调用；具体问题用检索和精读回答更快也更准。
 - 同一篇论文同一模式不要重复调用；工具会直接返回已有报告。
-- 报告生成后，用户已经看到了完整报告。你只需用几句话概括要点并指出值得注意之处，不要复述报告，也不要给报告内容加 `[ev_xxx]` 引用——它是分析结果，不是论文原文。例外：工具结果 `signals` 里的外部信号（引用数、期刊等级、开放获取、撤稿、代码）各带 `evidence_id`，陈述它们时引用这些编号，不必重新查询。
+- 报告生成后，用户已经看到了完整报告。你只需用几句话概括要点并指出值得注意之处，不要复述报告，也不要给报告内容加 `[E12]` 这样的引用——它是分析结果，不是论文原文。例外：工具结果 `signals` 里的外部信号（引用数、期刊等级、开放获取、撤稿、代码）各带 `evidence_id`，陈述它们时引用这些编号，不必重新查询。
 
 ## 长期记忆
 
@@ -146,8 +148,9 @@ the provided tools rather than from memory.
 ## Evidence
 
 - Every claim about a paper must come from a tool result.
-- Cite the `evidence_id` a tool returned, as `[ev_xxx]`, right after the claim
-  it supports.
+- Cite the `evidence_id` a tool returned (it looks like `E12`), as `[E12]`,
+  right after the claim it supports; several at one place are `[E12][E15]`.
+  Write each id exactly as the tool result gave it.
 - Never cite an `evidence_id` that did not appear in a tool result.
 - What the tools did not return is what you do not know. If the paper does not
   answer something, say so — that is a correct answer, not a prompt to fill the
@@ -258,7 +261,7 @@ Rules:
   existing report.
 - Once a report exists the reader has already seen it in full. Summarise its
   key points in a few sentences and flag what deserves attention. Do not repeat
-  the report, and do not attach `[ev_xxx]` citations to its content — it is an
+  the report, and do not attach `[E12]`-style citations to its content — it is an
   analysis, not paper text. The exception is the external signals under
   `signals` in the tool result (citations, venue rank, open access, retraction,
   code): each carries an `evidence_id`; cite it when you state one, rather than

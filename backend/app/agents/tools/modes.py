@@ -502,7 +502,7 @@ async def _run_mode(
         "The full report is already displayed to the reader as a card in this "
         "conversation. Summarise its main findings in a few sentences and point out "
         "anything that deserves attention; do not reproduce the report. Cite nothing "
-        "from it with [ev_...] — it is a report, not paper text."
+        "from it with [E12]-style citations — it is a report, not paper text."
     )
     if signals:
         note += (

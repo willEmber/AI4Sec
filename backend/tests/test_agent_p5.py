@@ -696,18 +696,19 @@ class MiddlewareAssemblyTests(unittest.TestCase):
 
         stack = build_agent_middleware(ScriptedModel())
         self.assertEqual(
-            [m.name for m in stack], ["SummarizationMiddleware", "TurnGuardMiddleware"]
+            [m.name for m in stack],
+            ["SummarizationMiddleware", "EvidenceAliasMiddleware", "TurnGuardMiddleware"],
         )
         self.assertIsInstance(stack[0], ScholarSummarizationMiddleware)
         self.assertEqual(stack[0]._trigger_tokens, 260_000)
         self.assertEqual(stack[0]._keep_messages, 12)
 
-    def test_without_a_model_only_eviction_is_installed(self) -> None:
+    def test_without_a_model_eviction_stands_in_for_summarisation(self) -> None:
         from app.agents.middleware import build_agent_middleware
 
         self.assertEqual(
             [m.name for m in build_agent_middleware(None)],
-            ["ToolResultEvictionMiddleware", "TurnGuardMiddleware"],
+            ["ToolResultEvictionMiddleware", "EvidenceAliasMiddleware", "TurnGuardMiddleware"],
         )
 
     def test_the_agent_offers_the_mode_and_memory_tools(self) -> None:

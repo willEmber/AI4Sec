@@ -75,7 +75,10 @@ async def delete_session(session_id: str, *, owner_id: str) -> None:
         await mode_runs.delete(row["run_id"])
 
     async with db.transaction() as tx:
-        for table in ("agent_events", "agent_messages", "session_papers", "evidence", "agent_runs"):
+        for table in (
+            "agent_events", "agent_messages", "session_papers", "evidence",
+            "agent_evidence_aliases", "agent_runs",
+        ):
             await tx.execute(f"DELETE FROM {table} WHERE session_id = ?", (session_id,))
         await tx.execute(
             "UPDATE agent_jobs SET session_id = '', run_id = '' WHERE session_id = ?", (session_id,)

@@ -136,9 +136,9 @@ has already been read from it (sections, tables).
 
 ## Established findings
 Concrete facts established from the papers so far — numbers, setups, claims,
-comparisons — each followed by the `[ev_...]` evidence ids that support it,
-copied exactly. Do not invent ids; an unsupported finding is listed without one
-and marked as such. Distinguish what a paper states from what was inferred.
+comparisons — each followed by the evidence ids that support it, written as
+the conversation writes them (`[E12]`), copied exactly. Do not invent ids; an
+unsupported finding is listed without one and marked as such. Distinguish what a paper states from what was inferred.
 
 ## Reports produced
 Any Insight Snap / Logic Lens / Research Sphere report already generated, with
@@ -412,7 +412,10 @@ def build_agent_middleware(
     The turn guard comes last. deepagents places caller middleware inside its
     own stack, so the guard sits next to the model: its closing note is added
     after compaction has run, and a call it repeats is not compacted twice.
+    The evidence aliases wrap the guard's tool calls, so every result the
+    conversation keeps — the guard's own refusals included — is rewritten.
     """
+    from app.agents.aliases import EvidenceAliasMiddleware
     from app.agents.guard import TurnGuardMiddleware
     from app.config import get_settings
 
@@ -424,8 +427,9 @@ def build_agent_middleware(
         max_chars=settings.agent_tool_result_max_chars,
         trigger_tokens=settings.agent_tool_result_evict_tokens,
     )
+    aliases = EvidenceAliasMiddleware()
     if model is None:
-        return [eviction, guard]
+        return [eviction, aliases, guard]
     return [
         ScholarSummarizationMiddleware(
             model,
@@ -434,5 +438,6 @@ def build_agent_middleware(
             on_compact=on_compact,
             evictor=eviction._apply,
         ),
+        aliases,
         guard,
     ]

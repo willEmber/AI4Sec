@@ -60,6 +60,11 @@ class CheckTurnTests(unittest.TestCase):
         self.assertFalse(checks["citation_format"]["ok"])
         self.assertFalse(checks["no_invented_citations"]["ok"])
 
+    def test_aliases_left_or_dropped_are_flagged(self) -> None:
+        checks = _by_name(check_turn(Turn("q"), _record(alias_residue=1, citations_dropped=2), {}))
+        self.assertFalse(checks["citation_format"]["ok"])
+        self.assertIn("2 aliases", checks["no_invented_citations"]["detail"])
+
     def test_english_ignores_citations_formulas_and_numbers(self) -> None:
         self.assertTrue(_english("The AUC is 0.95 [ev_81401df3d9530d84e1b5] with $x_t = \\alpha$."))
         self.assertFalse(_english("主要局限在于 robustness 不足 [ev_81401df3d9530d84e1b5]"))

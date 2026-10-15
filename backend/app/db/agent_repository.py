@@ -1414,16 +1414,20 @@ async def citable_in_session(session_id: str, evidence_ids: list[str]) -> set[st
     """Which of these ids an answer in this session may cite.
 
     Those recorded under the session — every tool records under the asking
-    session — and those an earlier answer here already cited, which covers
-    evidence recall brought back from another conversation.
+    session — those a tool handed the model here (they have an alias, which
+    covers evidence recall brought back from another conversation), and those
+    an earlier answer here already cited, for sessions older than aliases.
     """
     ids = [i for i in dict.fromkeys(evidence_ids) if i]
     if not ids or not session_id:
         return set()
     placeholders = ",".join("?" for _ in ids)
     rows = await db.fetch_all(
-        f"SELECT evidence_id FROM evidence WHERE session_id = ? AND evidence_id IN ({placeholders})",
-        (session_id, *ids),
+        f"""SELECT evidence_id FROM evidence WHERE session_id = ? AND evidence_id IN ({placeholders})
+            UNION
+            SELECT evidence_id FROM agent_evidence_aliases
+             WHERE session_id = ? AND evidence_id IN ({placeholders})""",
+        (session_id, *ids, session_id, *ids),
     )
     found = {r["evidence_id"] for r in rows}
     if len(found) == len(ids):
@@ -1435,6 +1439,55 @@ async def citable_in_session(session_id: str, evidence_ids: list[str]) -> set[st
     ):
         found |= wanted & set(_json_loads(row["citations_json"], []))
     return found
+
+
+async def load_evidence_aliases(session_id: str) -> dict[str, int]:
+    """`evidence_id -> alias number` for every alias the session has (P15)."""
+    if not session_id:
+        return {}
+    rows = await db.fetch_all(
+        "SELECT evidence_id, alias_no FROM agent_evidence_aliases WHERE session_id = ?",
+        (session_id,),
+    )
+    return {r["evidence_id"]: int(r["alias_no"]) for r in rows}
+
+
+async def allocate_evidence_aliases(session_id: str, evidence_ids: list[str]) -> dict[str, int]:
+    """Give each id an alias number in the session; the numbers of all of them.
+
+    An id that already has one keeps it. New ones are numbered on from the
+    session's highest, in the order given, so one search's hits get
+    consecutive numbers. The advisory lock is the session's alias counter, as
+    `_lock_session_seq` is its message counter.
+    """
+    ids = [i for i in dict.fromkeys(evidence_ids) if i]
+    if not ids or not session_id:
+        return {}
+    placeholders = ",".join("?" for _ in ids)
+    async with db.transaction() as tx:
+        await tx.execute(
+            "SELECT pg_advisory_xact_lock(hashtextextended(?, 0))", (f"alias:{session_id}",)
+        )
+        rows = await tx.fetch_all(
+            f"""SELECT evidence_id, alias_no FROM agent_evidence_aliases
+                 WHERE session_id = ? AND evidence_id IN ({placeholders})""",
+            (session_id, *ids),
+        )
+        numbers = {r["evidence_id"]: int(r["alias_no"]) for r in rows}
+        fresh = [i for i in ids if i not in numbers]
+        if fresh:
+            top = await tx.fetch_one(
+                "SELECT COALESCE(MAX(alias_no), 0) AS top FROM agent_evidence_aliases WHERE session_id = ?",
+                (session_id,),
+            )
+            start = int(top["top"]) if top else 0
+            for offset, evidence_id in enumerate(fresh, 1):
+                numbers[evidence_id] = start + offset
+            await tx.execute_many(
+                "INSERT INTO agent_evidence_aliases (session_id, alias_no, evidence_id) VALUES (?, ?, ?)",
+                [(session_id, numbers[i], i) for i in fresh],
+            )
+    return numbers
 
 
 async def list_session_evidence(session_id: str, *, limit: int = 200) -> list[Evidence]:

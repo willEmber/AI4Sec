@@ -121,6 +121,10 @@ class BudgetUsage:
     stopped_by: str = ""
     # The model that answered when it was not the one the run was created with.
     model_used: str = ""
+    # Citations the answer wrote with an alias no tool had handed out, which
+    # were dropped; and brackets holding several citations, which were split.
+    citations_dropped: int = 0
+    citation_groups_expanded: int = 0
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -138,6 +142,8 @@ class BudgetUsage:
             "tool_timeouts": self.tool_timeouts,
             "stopped_by": self.stopped_by,
             "model_used": self.model_used,
+            "citations_dropped": self.citations_dropped,
+            "citation_groups_expanded": self.citation_groups_expanded,
         }
 
     def exceeded(self, budget: RunBudget) -> str:
@@ -213,6 +219,11 @@ class AgentContext:
     on_fallback: bool = False
     # Lets the guard put an event on the turn's stream. `None` outside a turn.
     notify: Callable[[str, dict[str, Any]], Awaitable[None]] | None = None
+    # The session's evidence aliases (P15), an `aliases.AliasBook`: tool
+    # results are rewritten into them and the answer back out of them. `None`
+    # leaves ids as stored. Typed `Any` because the tools' runtime schema is
+    # built from these annotations and the book imports this module.
+    aliases: Any = None
 
     def elapsed(self) -> float:
         """Seconds this turn has been running, also recorded on `usage`."""
