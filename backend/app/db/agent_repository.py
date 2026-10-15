@@ -1365,10 +1365,18 @@ async def insert_evidence_many(evidences: list[Evidence]) -> None:
 
     Nothing is read back: the ids are derived from the content, so the caller
     already holds them.
+
+    Rows go in sorted by id, once each. The batch is one transaction, and each
+    inserted key stays locked until it commits; two searches in one step can
+    return the same passages, and batches taking shared keys in different
+    orders deadlocked. In one order they only queue.
     """
     if not evidences:
         return
-    await db.execute_many(_INSERT_EVIDENCE_SQL, [_evidence_params(e) for e in evidences])
+    unique = {e.evidence_id: e for e in evidences}
+    await db.execute_many(
+        _INSERT_EVIDENCE_SQL, [_evidence_params(unique[i]) for i in sorted(unique)]
+    )
 
 
 async def get_evidence(evidence_id: str, *, owner_id: str = "") -> Evidence:
