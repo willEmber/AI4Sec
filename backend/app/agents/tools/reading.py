@@ -23,6 +23,12 @@ from app.agents.context import AgentContext
 from app.db import agent_repository as repo
 from app.db import database as db
 from app.models.agent_models import ErrorCode, ToolResult
+from app.agents.tools.sections import (
+    SectionView,
+    find_section,
+    paper_of_short_id,
+    section_views,
+)
 from app.services import evidence_service
 from app.services.ir_extract import compact_table_text
 from app.services.qa_retrieval import (
@@ -129,14 +135,17 @@ async def _readable_paper_ids(ctx: AgentContext) -> list[str]:
 async def _paper_of_section(ctx: AgentContext, section_id: str) -> str:
     """The session paper a section id belongs to, or "" when it names none.
 
-    A section id is `<paper_id>:section:...`, so it already says which paper
-    it is from. Asking for paper_id beside it failed every read in a
-    two-paper session where the model passed only the id the outline gave it.
+    A section id starts with its paper (`2ff3b770:s12`, or the stored
+    `<paper_id>:section:...`), so it already says which paper it is from.
+    Asking for paper_id beside it failed every read in a two-paper session
+    where the model passed only the id the outline gave it.
     """
-    head, sep, _rest = (section_id or "").partition(":")
-    if not sep or not head:
-        return ""
-    return head if head in await _readable_paper_ids(ctx) else ""
+    return paper_of_short_id(section_id, await _readable_paper_ids(ctx))
+
+
+async def _section_ids(paper_id: str) -> dict[str, str]:
+    """Stored section node id → the short id the tools hand out."""
+    return {v.node.node_id: v.short_id for v in section_views(await load_paper_nodes(paper_id))}
 
 
 def _node_text(node: PaperNode) -> str:
@@ -153,16 +162,36 @@ def _node_text(node: PaperNode) -> str:
     return text
 
 
-def _node_payload(node: PaperNode, *, evidence_id: str = "") -> dict[str, Any]:
+def _node_payload(
+    node: PaperNode, *, evidence_id: str = "", section_id: str = ""
+) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "section": node.title_path,
         "page": node.page_start + 1,   # 1-based for the model, as a reader sees it
         "type": node.block_type or node.node_type,
         "text": _node_text(node),
     }
+    if section_id:
+        # A hit says where to read on, so a thin excerpt needs no outline call.
+        payload["section_id"] = section_id
     if evidence_id:
         payload["evidence_id"] = evidence_id
     return payload
+
+
+def _outline_entry(view: SectionView) -> dict[str, Any]:
+    node = view.node
+    entry: dict[str, Any] = {
+        "section_id": view.short_id,
+        "title": view.title,
+        "depth": view.level,
+        "page": node.page_start + 1,
+    }
+    if node.page_end > node.page_start:
+        entry["page_end"] = node.page_end + 1
+    if view.folded_count:
+        entry["folded_subsections"] = view.folded_count
+    return entry
 
 
 @tool(parse_docstring=False)
@@ -174,8 +203,9 @@ async def get_paper_outline(
     """Return a parsed paper's section outline with page numbers.
 
     Use this to find out what a paper contains before deciding what to read.
-    It returns section ids you can pass to read_paper_section. Omit paper_id
-    when the session holds a single paper.
+    It returns section ids you can pass to read_paper_section; reading a
+    section includes its subsections. Omit paper_id when the session holds a
+    single paper.
     """
     ctx = runtime.context
     paper_id, denial = await _authorize(ctx, paper_id)
@@ -183,25 +213,18 @@ async def get_paper_outline(
         return denial.to_json()
 
     nodes = await load_section_nodes(paper_id)
-    sections = [n for n in nodes if n.node_type == "section" and n.depth <= max_depth]
-    if not sections:
+    views = [
+        v for v in section_views(nodes)
+        if not v.folded and v.level <= max(1, int(max_depth or 3))
+    ]
+    if not views:
         return ToolResult.unavailable(
             ErrorCode.NOT_PARSED,
             f"Paper {paper_id} has no parsed sections yet.",
         ).to_json()
 
     root = next((n for n in nodes if n.node_type == "paper"), None)
-    outline = [
-        {
-            "section_id": n.node_id,
-            "title": n.title or n.title_path,
-            "path": n.title_path,
-            "depth": n.depth,
-            "page": n.page_start + 1,
-            "page_end": n.page_end + 1,
-        }
-        for n in sorted(sections, key=lambda n: (n.page_start, n.order_idx))
-    ]
+    outline = [_outline_entry(v) for v in views]
     return ToolResult.ok(
         {
             "paper_id": paper_id,
@@ -261,8 +284,11 @@ async def _search_one(
 
     nodes = [node for _score, node in ranked]
     evidence_ids = await _record_nodes(ctx, paper_id, nodes)
+    section_ids = await _section_ids(paper_id)
     hits = [
-        _node_payload(node, evidence_id=evidence_id)
+        _node_payload(
+            node, evidence_id=evidence_id, section_id=section_ids.get(node.parent_id, "")
+        )
         for node, evidence_id in zip(nodes, evidence_ids)
     ]
     return hits, evidence_ids
@@ -422,9 +448,10 @@ async def read_paper_section(
 
     Use this when a search excerpt is not enough — for exact numbers, an
     equation, an experimental setup, or an argument that spans paragraphs.
-    Identify the section by the section_id from get_paper_outline (it names
-    its paper, so paper_id may be omitted), or by section_title and paper_id
-    when you only know its name.
+    Identify the section by the section_id from get_paper_outline or a
+    search hit (it names its paper, so paper_id may be omitted), or by
+    section_title and paper_id when you only know its name. A section is read
+    with its subsections.
     """
     ctx = runtime.context
     if not paper_id:
@@ -439,25 +466,25 @@ async def read_paper_section(
             ErrorCode.NOT_PARSED, f"Paper {paper_id} is not parsed."
         ).to_json()
 
-    section = _find_section(nodes, section_id=section_id, section_title=section_title)
-    if section is None:
-        available = [
-            n.title_path for n in nodes if n.node_type == "section"
-        ][:20]
+    views = section_views(nodes)
+    view = find_section(views, section_id=section_id, section_title=section_title)
+    if view is None:
+        available = [f"{v.short_id} {v.title}" for v in views if not v.folded]
         return ToolResult.failed(
             ErrorCode.SECTION_NOT_FOUND,
-            f"No section matched. Available sections: {'; '.join(available)}",
+            "No section matched. Available sections (id, title): " + "; ".join(available),
             retryable=False,
         ).to_json()
+    section = view.node
 
-    # A section node covers its descendants' blocks, so range containment is
-    # what selects the body — matching on section_path alone would drop the
-    # blocks that sit under a subsection.
+    # Range containment selects the body — matching on section_path alone
+    # would drop the blocks under a subsection — and the range runs through
+    # the deeper sections that follow, which a flat parse leaves as siblings.
     children = [
         n
         for n in nodes
         if n.node_type == "chunk"
-        and section.block_start <= n.block_start <= section.block_end
+        and section.block_start <= n.block_start <= view.block_end
         and n.text.strip()
     ]
     children.sort(key=lambda n: n.order_idx)
@@ -486,43 +513,28 @@ async def read_paper_section(
     data = {
         "paper_id": paper_id,
         "section": section.title_path,
-        "section_id": section.node_id,
+        "section_id": view.short_id,
         "page": section.page_start + 1,
-        "page_end": section.page_end + 1,
+        "page_end": max(n.page_end for n in kept or children) + 1,
         "blocks": blocks,
     }
     if truncated:
+        last = kept[-1].block_start if kept else section.block_start
+        rest = [
+            f"{v.short_id} {v.title}"
+            for v in views
+            if last < v.node.block_start <= view.block_end
+        ]
         return ToolResult.partial(
             data,
             note=(
-                f"Section truncated at {MAX_SECTION_CHARS} characters. Read a "
-                "subsection from the outline if you need the rest."
+                f"Section truncated at {MAX_SECTION_CHARS} characters."
+                + (f" Not included: {'; '.join(rest)}." if rest else "")
+                + " Read those by id if you need them."
             ),
             evidence_ids=evidence_ids,
         ).to_json()
     return ToolResult.ok(data, evidence_ids=evidence_ids).to_json()
-
-
-def _find_section(
-    nodes: list[PaperNode], *, section_id: str, section_title: str
-) -> PaperNode | None:
-    """Locate a section by id, then by title, then by a loose title match."""
-    sections = [n for n in nodes if n.node_type == "section"]
-    if section_id:
-        for node in sections:
-            if node.node_id == section_id:
-                return node
-    needle = (section_title or section_id or "").strip().lower()
-    if not needle:
-        return None
-    for node in sections:
-        if node.title.strip().lower() == needle or node.title_path.strip().lower() == needle:
-            return node
-    # Loose match last: the model often writes "Method" for "3 Method".
-    for node in sections:
-        if needle in node.title_path.lower():
-            return node
-    return None
 
 
 READING_TOOLS = [get_paper_outline, search_paper_content, read_paper_section]

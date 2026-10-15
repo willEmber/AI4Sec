@@ -44,7 +44,7 @@ from app.config import get_settings
 from app.db import agent_repository as repo
 from app.db import database as db
 from app.models.agent_models import Availability, ErrorCode, EventType, ToolResult
-from app.services import agent_jobs, mode_runs, paper_catalog, parse_service
+from app.services import agent_jobs, evidence_service, mode_runs, paper_catalog, parse_service
 from app.services.paper_ir_loader import PaperNotParsed, ensure_pub_rank, load_paper_ir
 from app.workflows import progress
 
@@ -272,6 +272,107 @@ async def _report_body(
     }
 
 
+def snap_signal_facts(signals: dict[str, Any], title: str) -> list[tuple[str, str]]:
+    """The external signals of a Snap report as `(fact, source)` sentences.
+
+    One fact per signal, each with the index that counted it, so a follow-up
+    can cite exactly the one it states — "cited 196,706 times" as Semantic
+    Scholar's count, the CCF tier as EasyScholar's — and none is merged with
+    another system's. Signals the report could not obtain are left out.
+    """
+    provenance = signals.get("provenance") or {}
+    missing = set(signals.get("unavailable") or [])
+    name = title or "This paper"
+    facts: list[tuple[str, str]] = []
+
+    venue = str(signals.get("venue") or "").strip()
+    short = str(signals.get("venue_normalized") or "").strip()
+    if venue and "venue" not in missing:
+        where = venue + (f" ({short})" if short and short.lower() != venue.lower() else "")
+        year = signals.get("year")
+        facts.append((
+            f"{name} — published at {where}" + (f", {year}" if year else ""),
+            str(provenance.get("venue") or ""),
+        ))
+    label = short or venue or "Its venue"
+    if signals.get("ccf_rank") and "ccf_rank" not in missing:
+        facts.append((f"{label} — CCF {signals['ccf_rank']}", str(provenance.get("ccf_rank") or "")))
+    if signals.get("sci_rank") and "sci_rank" not in missing:
+        facts.append((f"{label} — JCR {signals['sci_rank']}", str(provenance.get("sci_rank") or "")))
+    if signals.get("cited_by_count") is not None and "citations" not in missing:
+        parts = [f"cited by {int(signals['cited_by_count']):,}"]
+        if signals.get("citations_per_year"):
+            parts.append(f"{float(signals['citations_per_year']):,.1f} per year")
+        if signals.get("influential_citation_count") is not None:
+            parts.append(f"{int(signals['influential_citation_count']):,} influential")
+        facts.append((f"{name} — " + ", ".join(parts), str(provenance.get("citations") or "")))
+    intents = signals.get("intents") or {}
+    if intents.get("sampled") and "intents" not in missing:
+        facts.append((
+            f"{name} — citation intents in a sample of {intents['sampled']} citing papers: "
+            f"background {intents.get('background', 0)}, methodology "
+            f"{intents.get('methodology', 0)}, result {intents.get('result', 0)}",
+            str(provenance.get("intents") or ""),
+        ))
+    if signals.get("is_open_access") is not None and "open_access" not in missing:
+        if signals["is_open_access"]:
+            url = signals.get("oa_url") or ""
+            fact = f"{name} — open access" + (f" at {url}" if url else "")
+        else:
+            fact = f"{name} — no open-access copy found"
+        facts.append((fact, str(provenance.get("open_access") or "")))
+    if signals.get("is_retracted") is not None and "retraction" not in missing:
+        fact = f"{name} — " + ("marked as retracted" if signals["is_retracted"] else "not marked as retracted")
+        facts.append((fact, str(provenance.get("retraction") or "OpenAlex")))
+    if "repos" in signals and "repos" not in missing:
+        repos = [str(r.get("url") if isinstance(r, dict) else r) for r in signals.get("repos") or []]
+        fact = (
+            f"{name} — code repositories linked in the paper: {', '.join(repos[:5])}"
+            if repos else f"{name} — no code repository link found in the paper"
+        )
+        facts.append((fact, str(provenance.get("repos") or "PDF")))
+    return facts
+
+
+async def _snap_signals(
+    ctx: AgentContext, *, run_id: str, paper_id: str, title: str
+) -> list[dict[str, Any]]:
+    """Register a Snap report's external signals as metadata evidence.
+
+    The report itself is analysis and is not cited; its external signals are
+    bibliographic facts from named indexes. Without evidence for them a
+    follow-up such as "how many citations?" could only be answered by looking
+    them all up again — nine tool calls in the multi-turn verification.
+    """
+    row = await db.fetch_one(
+        """SELECT o.json_data, r.finished_at FROM runs r JOIN run_outputs o ON o.run_id = r.run_id
+            WHERE r.run_id = ?""",
+        (run_id,),
+    )
+    try:
+        signals = json.loads((row or {}).get("json_data") or "{}").get("signals") or {}
+    except (TypeError, ValueError, AttributeError):
+        signals = {}
+    facts = snap_signal_facts(signals, title) if isinstance(signals, dict) else []
+    if not facts:
+        return []
+    as_of = str((row or {}).get("finished_at") or "")[:10]
+    literature_id = await paper_catalog.ensure_literature_for_local_paper(paper_id)
+    out = []
+    for fact, source in facts:
+        quote = fact + (f" (source: {source}" if source else " (") + (f"; as of {as_of})" if as_of else ")")
+        quote = quote.replace(" (; ", " (").replace(" ()", "")
+        evidence = await evidence_service.record_metadata_evidence(
+            literature_id=literature_id,
+            quote=quote,
+            owner_id=ctx.owner_id,
+            session_id=ctx.session_id,
+            provider=source or "insight_snap",
+        )
+        out.append({"fact": quote, "evidence_id": evidence.evidence_id})
+    return out
+
+
 async def _stored_report(run_id: str) -> dict[str, Any] | None:
     row = await db.fetch_one(
         """SELECT r.run_id, r.paper_id, r.mode, r.language, r.status, o.markdown
@@ -391,12 +492,24 @@ async def _run_mode(
         "report": shown,
         "report_truncated": truncated,
     }
+    signals = (
+        await _snap_signals(ctx, run_id=run_id, paper_id=paper_id, title=title)
+        if mode == "snap" else []
+    )
+    if signals:
+        data["signals"] = signals
     note = (
         "The full report is already displayed to the reader as a card in this "
         "conversation. Summarise its main findings in a few sentences and point out "
         "anything that deserves attention; do not reproduce the report. Cite nothing "
         "from it with [ev_...] — it is a report, not paper text."
     )
+    if signals:
+        note += (
+            " The external signals listed under `signals` are the exception: each is a "
+            "bibliographic fact from a named index, recorded as evidence — cite its "
+            "evidence_id when you state it, rather than looking it up again."
+        )
     if truncated:
         note += (
             f" Only the first {len(shown)} of {len(markdown)} characters are shown "
@@ -404,7 +517,9 @@ async def _run_mode(
         )
     if handle.reused:
         note = "An identical report already existed and was shown again. " + note
-    return ToolResult.ok(data, note=note).to_json()
+    return ToolResult.ok(
+        data, note=note, evidence_ids=[s["evidence_id"] for s in signals]
+    ).to_json()
 
 
 @tool(parse_docstring=False)

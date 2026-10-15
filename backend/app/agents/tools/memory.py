@@ -121,6 +121,19 @@ def _terms(text: str) -> set[str]:
     return terms
 
 
+def script_of(text: str) -> str:
+    """"han" or "latin": the writing a text is mostly in, "" for neither.
+
+    Han characters are weighed against Latin *words*, so a Chinese sentence
+    with an English term in brackets still reads as Chinese.
+    """
+    han = sum(len(run) for run in _HAN_RE.findall(text or ""))
+    latin = len(re.findall(r"[A-Za-z]{2,}", text or ""))
+    if not han and not latin:
+        return ""
+    return "han" if han >= latin else "latin"
+
+
 def grounded_in(text: str, said: Iterable[str]) -> bool:
     """Whether enough of `text` repeats what the reader `said`."""
     terms = _terms(text)
@@ -196,9 +209,10 @@ async def save_memory(
     transient; do not store credentials. Write the memory as a short,
     self-contained sentence in the reader's own language and close to their
     own words: a memory that cannot be traced to something the reader said in
-    this conversation is not used until they confirm it. When this corrects or
-    supersedes a memory you already hold, pass that memory's id as `replaces`
-    and it is forgotten in the same call.
+    this conversation is not used until they confirm it, and one in another
+    language than theirs is refused. When this corrects or supersedes a memory
+    you already hold — or a pending one saved earlier in this conversation —
+    pass that memory's id as `replaces` and it is forgotten in the same call.
     """
     ctx = runtime.context
     text = (content or "").strip()
@@ -218,6 +232,22 @@ async def save_memory(
 
     project_id, scope_note = _memory_project(ctx, memory_kind, scope)
     wanted = (replaces or "").strip()
+    said = await _reader_said(ctx)
+    grounded = grounded_in(text, said)
+    reader_script = script_of(" ".join(said))
+    if not grounded and reader_script and script_of(text) not in ("", reader_script):
+        # A translation cannot be traced to the reader's words, and saving it
+        # pending left a memory the reader had to confirm for no reason — and
+        # could not be replaced when they changed their mind. Ask for their
+        # wording instead; nothing is stored.
+        language = "Chinese" if reader_script == "han" else "the language they wrote in"
+        return ToolResult.failed(
+            ErrorCode.INVALID_ARGUMENT,
+            f"Not saved: the reader wrote in {language} and this memory is not. Call "
+            "save_memory again with the memory written in the reader's own language, "
+            "close to their own words.",
+            retryable=True,
+        ).to_json()
     try:
         memory, was_replaced = await repo.save_memory(
             owner_id=ctx.owner_id,
@@ -226,9 +256,10 @@ async def save_memory(
             source_session_id=ctx.session_id,
             source_run_id=ctx.run_id,
             project_id=project_id,
-            pending=not grounded_in(text, await _reader_said(ctx)),
+            pending=not grounded,
             replaces=wanted,
             reach_project_id=ctx.project_id,
+            reach_session_id=ctx.session_id,
         )
     except repo.MemoryLimitReached:
         return ToolResult.failed(
@@ -321,8 +352,9 @@ async def list_memories(runtime: ToolRuntime[AgentContext]) -> str:
 async def forget_memory(memory_id: str, runtime: ToolRuntime[AgentContext]) -> str:
     """Forget one memory, by id, when the reader asks you to or corrects it.
 
-    The id is beside each memory in your instructions. To correct a memory,
-    call save_memory with `replaces` instead.
+    The id is beside each memory in your instructions; a pending memory saved
+    earlier in this conversation can be forgotten by the id save_memory
+    returned. To correct a memory, call save_memory with `replaces` instead.
     """
     ctx = runtime.context
     memory_id = (memory_id or "").strip()
@@ -331,7 +363,10 @@ async def forget_memory(memory_id: str, runtime: ToolRuntime[AgentContext]) -> s
             ErrorCode.INVALID_ARGUMENT, "memory_id must not be empty.", retryable=False
         ).to_json()
     removed = await repo.delete_memory(
-        memory_id, owner_id=ctx.owner_id, reach_project_id=ctx.project_id
+        memory_id,
+        owner_id=ctx.owner_id,
+        reach_project_id=ctx.project_id,
+        reach_session_id=ctx.session_id,
     )
     if not removed:
         return ToolResult.unavailable(

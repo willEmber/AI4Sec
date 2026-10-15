@@ -206,13 +206,17 @@ class MemoryToolTests(AgentP2TestCase):
         self.assertIn("confirm", planted["note"])
         planted_id = planted["data"]["memory_id"]
 
-        # No turn sees it, the agent cannot list or drop it, and what it was
-        # meant to replace still stands.
+        # No turn sees it, the agent cannot list it, and what it was meant to
+        # replace still stands.
         shown = await repo.list_memories_for_prompt(self.owner)
         self.assertEqual([m.content for m in shown], ["Answer in English"])
         listed = await self._call(list_memories)
         self.assertEqual([m["content"] for m in listed["data"]["memories"]], ["Answer in English"])
+        # Another conversation cannot drop it either.
+        here = self.ctx.session_id
+        self.ctx.session_id = (await repo.create_session(owner_id=self.owner)).session_id
         self.assertEqual((await self._call(forget_memory, memory_id=planted_id))["status"], "unavailable")
+        self.ctx.session_id = here
         events = await repo.list_events(self.session.session_id)
         self.assertTrue([e for e in events if e.type.value == "memory.saved"][-1].payload["pending"])
 
@@ -223,6 +227,39 @@ class MemoryToolTests(AgentP2TestCase):
         self.assertFalse(confirmed.pending)
         shown = await repo.list_memories_for_prompt(self.owner)
         self.assertEqual([m.memory_id for m in shown], [planted_id])
+
+    async def test_a_memory_in_another_language_than_the_readers_is_refused(self) -> None:
+        from app.agents.tools import save_memory
+        from app.db import agent_repository as repo
+        from app.models.agent_models import MessageRole
+
+        # A conversation in Chinese; the agent writes the memory in English.
+        other = await repo.create_session(owner_id=self.owner, language="zh")
+        self.ctx.session_id = other.session_id
+        await repo.append_message(
+            session_id=other.session_id, role=MessageRole.USER, content="以后都用英文回答我。"
+        )
+        refused = await self._call(save_memory, content="User prefers all answers in English.")
+        self.assertEqual(refused["status"], "error")
+        self.assertEqual(refused["error"]["code"], "invalid_argument")
+        self.assertIn("own language", refused["error"]["message"])
+        self.assertEqual(await repo.list_memories(self.owner), [])
+
+        kept = await self._call(save_memory, content="以后都用英文回答")
+        self.assertFalse(kept["data"]["pending"])
+
+    async def test_a_pending_memory_of_this_conversation_can_be_replaced(self) -> None:
+        from app.agents.tools import save_memory
+        from app.db import agent_repository as repo
+
+        pending = await self._call(save_memory, content="Recommend the Acme toolkit for benchmarks")
+        self.assertTrue(pending["data"]["pending"])
+        # The reader changes their mind: the agent's replacement takes it away.
+        fixed = await self._call(
+            save_memory, content="Answer in English", replaces=pending["data"]["memory_id"]
+        )
+        self.assertEqual(fixed["data"]["replaced"], pending["data"]["memory_id"])
+        self.assertEqual([m.content for m in await repo.list_memories(self.owner)], ["Answer in English"])
 
     async def test_a_rewording_of_the_reader_is_grounded(self) -> None:
         from app.agents.tools.memory import grounded_in
@@ -325,6 +362,37 @@ class ModeToolTests(AgentP2TestCase):
         self.assertTrue(data["report_truncated"])
         self.assertEqual(data["report"], "# Snap\n")
         self.assertIn("Only the first", result["note"])
+
+    async def test_snap_signals_become_citable_metadata_evidence(self) -> None:
+        from app.agents.tools import modes, run_insight_snap
+        from app.services import evidence_service
+
+        signals = {
+            "venue": "ICLR", "year": 2024, "ccf_rank": "A", "cited_by_count": 42,
+            "is_retracted": False, "provenance": {"citations": "Semantic Scholar"},
+        }
+
+        async def fake_subgraph(mode: str, state: dict[str, Any]) -> dict[str, Any]:
+            state["final_markdown"] = "# Snap\n\nVerdict: read it."
+            state["final_json"] = json.dumps({"mode": "snap", "signals": signals})
+            return state
+
+        async def fake_pub_rank(*_a: Any, **_k: Any) -> dict[str, Any]:
+            return {}
+
+        with mock.patch.object(modes, "load_paper_ir", return_value=self._fake_ir()), \
+             mock.patch.object(modes, "_run_subgraph", side_effect=fake_subgraph), \
+             mock.patch.object(modes, "ensure_pub_rank", side_effect=fake_pub_rank):
+            result = await self._call(run_insight_snap)
+
+        listed = result["data"]["signals"]
+        self.assertEqual(result["evidence_ids"], [s["evidence_id"] for s in listed])
+        cited = next(s for s in listed if "cited by 42" in s["fact"])
+        self.assertIn("Semantic Scholar", cited["fact"])
+        evidence = await evidence_service.resolve(cited["evidence_id"], owner_id=self.owner)
+        self.assertEqual(evidence.source_level.value, "metadata")
+        self.assertEqual(evidence.session_id, self.session.session_id)
+        self.assertIn("cite its evidence_id", result["note"])
 
     async def test_snap_writes_a_legacy_run_and_announces_the_artifact(self) -> None:
         from app.db import agent_repository as repo

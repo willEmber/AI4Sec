@@ -946,13 +946,26 @@ def _row_to_memory(row: dict[str, Any]) -> AgentMemory:
 
 
 async def _delete_memory(
-    tx: db.Transaction, memory_id: str, owner_id: str, reach_project_id: str | None
+    tx: db.Transaction,
+    memory_id: str,
+    owner_id: str,
+    reach_project_id: str | None,
+    reach_session_id: str = "",
 ) -> bool:
-    """Delete one memory; with a reach, only a confirmed one a turn there can see."""
+    """Delete one memory; with a reach, only one a turn there may touch.
+
+    That is a confirmed memory the turn can see, or a pending one saved in the
+    turn's own conversation: when the reader changes their mind a turn later,
+    the pending memory the agent just made is what has to go — left alone, it
+    waits in the panel to be confirmed into the opposite of what they asked.
+    """
     reach, params = "", [memory_id, owner_id]
     if reach_project_id is not None:
-        reach = " AND pending = 0 AND (project_id = '' OR project_id = ?)"
-        params.append(reach_project_id)
+        reach = (
+            " AND (pending = 0 OR (source_session_id <> '' AND source_session_id = ?))"
+            " AND (project_id = '' OR project_id = ?)"
+        )
+        params += [reach_session_id, reach_project_id]
     deleted = await tx.execute_returning(
         "DELETE FROM agent_memories WHERE memory_id = ? AND owner_id = ? AND active = 1"
         f"{reach} RETURNING memory_id",
@@ -972,6 +985,7 @@ async def save_memory(
     pending: bool = False,
     replaces: str = "",
     reach_project_id: str | None = None,
+    reach_session_id: str = "",
 ) -> tuple[AgentMemory, bool]:
     """Store a memory and, in the same transaction, drop the one it replaces.
 
@@ -983,7 +997,8 @@ async def save_memory(
     A `pending` save replaces nothing yet: it records `replaces` and the old
     memory goes when the reader confirms (`update_memory(confirm=True)`).
     `reach_project_id` limits what may be replaced to what a turn in that
-    project can see. The caller checks that `project_id` is the owner's.
+    project can see, plus what is pending from `reach_session_id`. The caller
+    checks that `project_id` is the owner's.
     Raises `MemoryLimitReached` past `MAX_MEMORIES_PER_OWNER`.
     """
     content = content.strip()
@@ -1017,7 +1032,9 @@ async def save_memory(
         )
         replaced = False
         if replaces and not pending and replaces != row["memory_id"]:
-            replaced = await _delete_memory(tx, replaces, owner_id, reach_project_id)
+            replaced = await _delete_memory(
+                tx, replaces, owner_id, reach_project_id, reach_session_id
+            )
     return _row_to_memory(row), replaced
 
 
@@ -1173,15 +1190,22 @@ async def update_memory(
 
 
 async def delete_memory(
-    memory_id: str, *, owner_id: str, reach_project_id: str | None = None
+    memory_id: str,
+    *,
+    owner_id: str,
+    reach_project_id: str | None = None,
+    reach_session_id: str = "",
 ) -> bool:
     """Forget a memory: the row is deleted, not flagged.
 
     `reach_project_id` is for a turn, which may only forget what it can see —
-    confirmed memories that are global or its own project's.
+    confirmed memories that are global or its own project's — and what is
+    pending from its own conversation (`reach_session_id`).
     """
     async with db.transaction() as tx:
-        return await _delete_memory(tx, memory_id, owner_id, reach_project_id)
+        return await _delete_memory(
+            tx, memory_id, owner_id, reach_project_id, reach_session_id
+        )
 
 
 # ── Session papers ──────────────────────────────────────────────────────────

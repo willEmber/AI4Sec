@@ -213,6 +213,14 @@ class ReadingToolTests(AgentP2TestCase):
         self.assertEqual(resolved.paper_id, "paper1")
         self.assertTrue(resolved.quote)
 
+    async def test_a_search_hit_says_which_section_to_read_on(self) -> None:
+        from app.agents.tools import get_paper_outline, search_paper_content
+
+        result = await self._call(search_paper_content, question="BLEU")
+        self.assertEqual(result["data"]["hits"][0]["section_id"], "paper1:s3")
+        outline = await self._call(get_paper_outline)
+        self.assertNotIn("path", outline["data"]["sections"][0])
+
     async def test_search_with_no_match_is_ok_not_an_error(self) -> None:
         from app.agents.tools import search_paper_content
 
