@@ -392,10 +392,11 @@ async def merge_anonymous(anonymous_id: str, account_id: str) -> bool:
 # ── quotas ──────────────────────────────────────────────────────────────────
 
 
-async def record_charge(caller: Caller, kind: str) -> None:
+async def record_charge(caller: Caller, kind: str, *, tokens: int = 0) -> None:
     """Count one costly action that has no row of its own against today."""
     await db.execute(
-        "INSERT INTO quota_charges (owner_id, kind) VALUES (?, ?)", (caller.principal_id, kind)
+        "INSERT INTO quota_charges (owner_id, kind, tokens) VALUES (?, ?, ?)",
+        (caller.principal_id, kind, max(0, int(tokens))),
     )
 
 
@@ -455,17 +456,24 @@ async def daily_usage(caller: Caller) -> QuotaUsage:
             WHERE owner_id = ? AND started_at >= date_trunc('day', now())""",
         (caller.principal_id,),
     )
+    # A report made inside a turn is in that turn's tokens already, so only
+    # the runs started outside one add theirs.
     other = await db.fetch_one(
-        """SELECT (SELECT COUNT(*) FROM runs
-                    WHERE owner_id = ? AND COALESCE(agent_run_id, '') = ''
-                      AND started_at >= date_trunc('day', now()))
-                + (SELECT COUNT(*) FROM quota_charges
-                    WHERE owner_id = ? AND created_at >= date_trunc('day', now())) AS runs""",
+        """WITH mode AS (
+                SELECT COUNT(*) AS runs, COALESCE(SUM(tokens), 0) AS tokens FROM runs
+                 WHERE owner_id = ? AND COALESCE(agent_run_id, '') = ''
+                   AND started_at >= date_trunc('day', now())
+           ), charged AS (
+                SELECT COUNT(*) AS runs, COALESCE(SUM(tokens), 0) AS tokens FROM quota_charges
+                 WHERE owner_id = ? AND created_at >= date_trunc('day', now())
+           )
+           SELECT mode.runs + charged.runs AS runs, mode.tokens + charged.tokens AS tokens
+             FROM mode, charged""",
         (caller.principal_id, caller.principal_id),
     )
     return QuotaUsage(
         runs=int(row["runs"] or 0) + int(other["runs"] or 0),
-        tokens=int(row["tokens"] or 0),
+        tokens=int(row["tokens"] or 0) + int(other["tokens"] or 0),
         runs_limit=max(0, runs_limit),
         tokens_limit=max(0, tokens_limit),
     )

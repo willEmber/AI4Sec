@@ -28,6 +28,7 @@ from app.services.ir_extract import (
 from app.services.lens_digest import generate_lens_digest
 from app.services.llm_gateway import get_registry
 from app.services.llm_service import chat_complete, get_llm_service
+from app.services.qa_retrieval import focus_passages
 from app.workflows.state import MainGraphState
 
 logger = logging.getLogger("scholar.graph")
@@ -38,6 +39,36 @@ logger = logging.getLogger("scholar.graph")
 # and the short one was saved as a finished run, with the digest asked twice to
 # index one paragraph. Hence `chat_complete`.
 _REPORT_MAX_TOKENS = 40960
+
+# A reader's concern (`user_question`, the conversation tool's `focus`): how
+# much of it is kept, and how much of the paper it may add beside the fixed
+# excerpts.
+FOCUS_MAX_CHARS = 500
+FOCUS_CONTEXT_CHARS = 6000
+
+
+def focus_instruction(focus: str, language: str, *, passages: bool) -> str:
+    """The line that tells the report what the reader asked it to weigh.
+
+    The four-part structure stays: a focus deepens the parts it touches and is
+    answered directly, it does not replace the report.
+    """
+    if language == "zh":
+        text = (
+            f"\n\n读者特别关注:「{focus}」。保持四个部分的结构,在相关部分对这一关注点展开得更深入,"
+            "并在第 1 部分末尾用一两句话直接回应它;论文没有涉及的就如实说明,不要补全。"
+        )
+        if passages:
+            text += "`## Passages on the Reader's Focus` 一节是按这一关注点从全文中找出的段落。"
+        return text
+    text = (
+        f"\n\nThe reader is particularly interested in: \"{focus}\". Keep the four parts, go "
+        "deeper on this wherever it bears on them, and answer it directly in a sentence or two "
+        "at the end of part 1; where the paper does not cover it, say so rather than fill it in."
+    )
+    if passages:
+        text += " `## Passages on the Reader's Focus` holds the passages of the paper it matches."
+    return text
 
 # Slot names exposed to the evidence extractor. Aligned with the four parts of
 # the reader-oriented Lens prompt (overview/motivation → method → experiments →
@@ -307,6 +338,13 @@ async def run_logic_lens(state: MainGraphState) -> dict[str, Any]:
             et = et[:experiment_cap] + "\n[...truncated...]"
         context_parts.append(f"## Experiment Section\n{et}")
 
+    # The reader's concern may sit in a part the fixed excerpts above cut, so
+    # the passages it matches are added whole beside them.
+    focus = (state.get("user_question", "") or "").strip()[:FOCUS_MAX_CHARS]
+    focus_text = focus_passages(paper_ir, focus, FOCUS_CONTEXT_CHARS) if focus else ""
+    if focus_text:
+        context_parts.append(f"## Passages on the Reader's Focus\n{focus_text}")
+
     if key_figs:
         key_lines: list[str] = []
         for f in key_figs:
@@ -360,7 +398,8 @@ async def run_logic_lens(state: MainGraphState) -> dict[str, Any]:
     logger.info(
         f"[{paper_id}] lens: Built LLM context — {len(context)} chars total "
         f"(framing={len(framing_text)} method={len(method_text)} experiment={len(experiment_text)} "
-        f"figures={len(figures)}, full_text_cap={full_text_cap})"
+        f"figures={len(figures)}, full_text_cap={full_text_cap}, "
+        f"focus={len(focus)} chars matching {len(focus_text)} chars)"
     )
 
     language = state.get("language", "en")
@@ -370,6 +409,8 @@ async def run_logic_lens(state: MainGraphState) -> dict[str, Any]:
         if language == "zh"
         else "Perform a deep Logic Lens analysis:"
     )
+    if focus:
+        user_prefix += focus_instruction(focus, language, passages=bool(focus_text))
 
     llm = get_llm_service()
     messages = [

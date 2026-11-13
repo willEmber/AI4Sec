@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import hashlib
 import json
 import logging
 import time
@@ -62,8 +63,18 @@ MODE_LABELS = {
 }
 
 
-def mode_job_key(*, paper_id: str, mode: str, language: str, model: str) -> str:
-    return f"mode:{paper_id}:{mode}:{language}:{model or 'default'}"
+def mode_job_key(
+    *, paper_id: str, mode: str, language: str, model: str, focus: str = ""
+) -> str:
+    """The report a request asks for. A focus is part of it: a report written
+    for one concern is not the answer to another, and returning it as "already
+    made" was how a focus came to be ignored. Without a focus the key is what
+    it always was, so reports made before this still count."""
+    key = f"mode:{paper_id}:{mode}:{language}:{model or 'default'}"
+    focus = " ".join(focus.split()).casefold()
+    if focus:
+        key += ":focus-" + hashlib.sha1(focus.encode("utf-8")).hexdigest()[:12]
+    return key
 
 
 async def _emit(ctx: AgentContext, type: EventType, payload: dict[str, Any]) -> None:
@@ -194,7 +205,9 @@ async def _produce_report(
     forwarder = asyncio.create_task(_forward_progress(ctx, tool_name, queue))
 
     try:
-        async with mode_runs.heartbeating(run_id):
+        # The turn's own meter counts these tokens against the turn's ceiling
+        # and the reader's day; this one records what the report cost.
+        async with mode_runs.heartbeating(run_id), mode_runs.recording_tokens(run_id):
             return await _report_body(
                 ctx=ctx, mode=mode, paper_id=paper_id, focus=focus, run_id=run_id, t0=t0
             )
@@ -397,7 +410,9 @@ async def _run_mode(
         return denial.to_json()
 
     focus = (focus or "").strip()
-    key = mode_job_key(paper_id=paper_id, mode=mode, language=ctx.language, model=ctx.llm_model)
+    key = mode_job_key(
+        paper_id=paper_id, mode=mode, language=ctx.language, model=ctx.llm_model, focus=focus
+    )
 
     # A stored report whose output has since gone missing must not be "reused".
     existing = await agent_jobs.get_job(key)
@@ -555,7 +570,9 @@ async def run_logic_lens(
     equation typeset and explained, algorithms step by step, datasets and result
     tables, and reproducibility. Use it when the reader wants to understand how
     the method works in detail or picks the Lens mode. Takes several minutes.
-    Omit paper_id when the session holds a single paper.
+    Pass `focus` when the reader names what they most want explained; write it
+    in the paper's language, because it also picks the passages the analysis
+    reads closely. Omit paper_id when the session holds a single paper.
     """
     return await _run_mode(
         runtime.context, mode="lens", paper_id=paper_id, focus=focus, tool_name="run_logic_lens"

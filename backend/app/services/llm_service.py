@@ -9,6 +9,7 @@ from typing import Any
 
 import httpx
 
+from app.services import llm_usage
 from app.services.llm_gateway import RESPONSES, ModelProfile, Provider, get_registry
 from app.services.llm_gateway.adapters import ResponsesAdapter, adapter_for, usage_tokens
 
@@ -283,8 +284,12 @@ class LLMService:
                 truncated = adapter.truncation_reason(data, max_tokens=max_tokens)
                 total_elapsed = time.perf_counter() - t0
 
+                # Before any of the checks below can raise: an empty or cut-off
+                # answer was billed all the same.
+                reported = usage_tokens(data)
+                llm_usage.record(*reported)
                 prompt_tokens, completion_tokens = (
-                    "?" if count is None else count for count in usage_tokens(data)
+                    "?" if count is None else count for count in reported
                 )
                 logger.info(
                     f"LLM chat: DONE in {total_elapsed:.1f}s (http={req_elapsed:.1f}s) — "

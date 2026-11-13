@@ -21,7 +21,8 @@ from dataclasses import dataclass, field
 from typing import Any
 
 # How far past its token ceiling a turn may go while it writes its closing
-# answer. The ceiling starts the wrap-up; this is what stops the wrap-up.
+# answer, as a fraction of the ceiling. The ceiling starts the wrap-up; this is
+# what stops the wrap-up.
 HARD_TOKEN_FACTOR = 1.1
 
 
@@ -125,6 +126,8 @@ class BudgetUsage:
     # were dropped; and brackets holding several citations, which were split.
     citations_dropped: int = 0
     citation_groups_expanded: int = 0
+    # Tokens spent when the wrap-up began; `None` while the turn still gathers.
+    tokens_at_wrapup: int | None = None
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -163,8 +166,19 @@ class BudgetUsage:
         return ""
 
     def hard_exceeded(self, budget: RunBudget) -> str:
-        """The ceiling a closing answer itself may not pass, or `""`."""
-        if self.tokens is not None and self.tokens >= budget.max_tokens * HARD_TOKEN_FACTOR:
+        """The ceiling a closing answer itself may not pass, or `""`.
+
+        Measured from where the gathering stopped, not from the ceiling alone.
+        A tool can spend in one call what a model call never does — a mode
+        report counts its own model calls into this turn — so the turn may
+        already be past the ceiling when the wrap-up starts; the closing answer
+        still gets its allowance on top. Before the wrap-up there is no hard
+        stop: the next model call starts the wrap-up instead.
+        """
+        if self.tokens is None or self.tokens_at_wrapup is None:
+            return ""
+        allowance = budget.max_tokens * (HARD_TOKEN_FACTOR - 1)
+        if self.tokens >= max(budget.max_tokens, self.tokens_at_wrapup) + allowance:
             return "max_tokens"
         return ""
 
@@ -234,6 +248,7 @@ class AgentContext:
         if not self.wrapup:
             self.wrapup = reason
             self.usage.stopped_by = reason
+            self.usage.tokens_at_wrapup = self.usage.tokens or 0
 
     def config(self) -> dict[str, Any]:
         """LangGraph config for this run: the thread is the session's thread."""

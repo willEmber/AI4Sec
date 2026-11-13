@@ -173,6 +173,37 @@ class AccountServiceTests(unittest.IsolatedAsyncioTestCase):
         usage = await accounts.daily_usage(accounts.Caller(anon, "anonymous", "cookie"))
         self.assertEqual((usage.runs, usage.tokens), (1, 1234))
 
+    async def test_daily_tokens_include_reports_and_library_questions(self) -> None:
+        # A report from the upload page and a library answer are paid for too;
+        # a report made inside a turn is already in that turn's tokens.
+        from app.db import agent_repository as repo
+        from app.db import database as db
+        from app.services import accounts, identity
+
+        anon, _ = await identity.create_principal()
+        caller = accounts.Caller(anon, "anonymous", "cookie")
+        session = await repo.create_session(owner_id=anon)
+        turn, _ = await repo.create_run(session_id=session.session_id, owner_id=anon)
+        await db.execute(
+            "UPDATE agent_runs SET status = 'done', usage_json = ? WHERE run_id = ?",
+            ('{"tokens": 50000}', turn.run_id),
+        )
+        await db.execute("INSERT INTO papers (paper_id, file_path, title) VALUES ('p1', 'papers/p1/original.pdf', 'P')")
+        await db.execute(
+            "INSERT INTO runs (run_id, paper_id, mode, status, owner_id, tokens) "
+            "VALUES ('upload', 'p1', 'lens', 'done', ?, 7000)",
+            (anon,),
+        )
+        await db.execute(
+            "INSERT INTO runs (run_id, paper_id, mode, status, owner_id, agent_run_id, tokens) "
+            "VALUES ('in-turn', 'p1', 'snap', 'done', ?, ?, 40000)",
+            (anon, turn.run_id),
+        )
+        await accounts.record_charge(caller, "library_ask", tokens=800)
+
+        usage = await accounts.daily_usage(caller)
+        self.assertEqual((usage.runs, usage.tokens), (3, 57_800))
+
     async def test_admin_account_follows_its_configuration(self) -> None:
         from app.db import database as db
         from app.services import accounts

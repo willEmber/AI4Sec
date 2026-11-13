@@ -7,6 +7,7 @@ logic are exercised directly, and the API is driven through TestClient.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import tempfile
@@ -490,6 +491,84 @@ class ModeToolTests(AgentP2TestCase):
         )
         self.assertEqual(run["status"], "failed")
         self.assertIn("lens exploded", run["error_msg"])
+
+    async def test_a_reports_model_calls_count_against_the_turn_and_its_run(self) -> None:
+        # The turn's meter is what `_execute_turn` opens around the stream; a
+        # report's utility passes and its writing call all reach it.
+        from app.agents.tools import modes, run_logic_lens
+        from app.db import database as db
+        from app.services import llm_usage
+
+        async def utility_pass() -> None:
+            await asyncio.sleep(0)
+            llm_usage.record(1_000, 500)
+
+        async def fake_subgraph(mode: str, state: dict[str, Any]) -> dict[str, Any]:
+            llm_usage.record(30_000, 9_000)
+            # Concurrent passes, as Lens runs its digest and evidence pool.
+            await asyncio.gather(utility_pass(), utility_pass())
+            state["final_markdown"] = "# Lens\n\nHow it works."
+            state["final_json"] = "{}"
+            return state
+
+        def _add(spent: int) -> None:
+            self.ctx.usage.tokens = (self.ctx.usage.tokens or 0) + spent
+
+        with mock.patch.object(modes, "load_paper_ir", return_value=self._fake_ir()), \
+             mock.patch.object(modes, "_run_subgraph", side_effect=fake_subgraph), \
+             mock.patch.object(modes, "ensure_pub_rank", return_value={}):
+            async with llm_usage.metering(sink=_add):
+                result = await self._call(run_logic_lens)
+
+        self.assertEqual(result["status"], "ok", result)
+        self.assertEqual(self.ctx.usage.tokens, 42_000)
+        run = await db.fetch_one("SELECT tokens FROM runs WHERE run_id = ?", (result["data"]["run_id"],))
+        self.assertEqual(run["tokens"], 42_000)
+
+    async def test_a_failed_report_records_what_it_spent(self) -> None:
+        from app.agents.tools import modes, run_logic_lens
+        from app.db import database as db
+        from app.services import llm_usage
+
+        async def boom(mode: str, state: dict[str, Any]) -> dict[str, Any]:
+            llm_usage.record(5_000, 1_000)
+            raise RuntimeError("lens exploded")
+
+        with mock.patch.object(modes, "load_paper_ir", return_value=self._fake_ir()), \
+             mock.patch.object(modes, "_run_subgraph", side_effect=boom), \
+             mock.patch.object(modes, "ensure_pub_rank", return_value={}):
+            with llm_usage.metering() as turn:
+                await self._call(run_logic_lens)
+
+        self.assertEqual(turn.total, 6_000)
+        run = await db.fetch_one(
+            "SELECT status, tokens FROM runs WHERE agent_session_id = ?", (self.session.session_id,)
+        )
+        self.assertEqual((run["status"], run["tokens"]), ("failed", 6_000))
+
+    async def test_a_new_focus_makes_a_new_report_and_the_same_one_reuses_it(self) -> None:
+        from app.agents.tools import modes, run_logic_lens
+
+        focuses: list[str] = []
+
+        async def fake_subgraph(mode: str, state: dict[str, Any]) -> dict[str, Any]:
+            focuses.append(state["user_question"])
+            state["final_markdown"] = f"# Lens\n\nOn {state['user_question'] or 'everything'}."
+            state["final_json"] = "{}"
+            return state
+
+        with mock.patch.object(modes, "load_paper_ir", return_value=self._fake_ir()), \
+             mock.patch.object(modes, "_run_subgraph", side_effect=fake_subgraph), \
+             mock.patch.object(modes, "ensure_pub_rank", return_value={}):
+            plain = await self._call(run_logic_lens)
+            steps = await self._call(run_logic_lens, focus="inversion steps")
+            again = await self._call(run_logic_lens, focus="Inversion  steps")
+
+        self.assertEqual(focuses, ["", "inversion steps"])
+        self.assertNotEqual(steps["data"]["run_id"], plain["data"]["run_id"])
+        self.assertIn("On inversion steps", steps["data"]["report"])
+        self.assertTrue(again["data"]["reused"])
+        self.assertEqual(again["data"]["run_id"], steps["data"]["run_id"])
 
     async def test_a_paper_outside_the_session_cannot_be_analysed(self) -> None:
         from app.agents.tools import run_research_sphere

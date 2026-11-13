@@ -34,6 +34,7 @@ from langgraph.graph.state import CompiledStateGraph
 
 from app.config import get_settings
 from app.db import database as db
+from app.services import llm_usage
 from app.services.agent_worker import HEARTBEAT_SECONDS, RUN_STALE_SECONDS, WORKER_ID
 from app.workflows.progress import emit_progress
 from app.workflows.state import MainGraphState
@@ -152,6 +153,29 @@ async def heartbeating(run_id: str) -> AsyncIterator[None]:
             await beater
 
 
+@contextlib.asynccontextmanager
+async def recording_tokens(run_id: str) -> AsyncIterator[llm_usage.UsageMeter]:
+    """Add what the block spends on the model to the run's `tokens`.
+
+    Added, not set: a run recovered after a crash is executed again, and both
+    attempts were paid for. Written however the block ends — a failed or
+    cancelled report was billed up to the point it stopped.
+    """
+    meter = llm_usage.metering()
+    try:
+        with meter:
+            yield meter
+    finally:
+        if meter.total:
+            with contextlib.suppress(Exception):
+                await asyncio.shield(
+                    db.execute(
+                        "UPDATE runs SET tokens = tokens + ? WHERE run_id = ?",
+                        (meter.total, run_id),
+                    )
+                )
+
+
 async def _fail(run_id: str, message: str) -> None:
     await db.execute(
         "UPDATE runs SET status = 'failed', error_msg = ?, finished_at = now() "
@@ -170,7 +194,8 @@ async def _execute(run_id: str) -> None:
             await _fail(run_id, "Server busy, please retry later")
             return
         try:
-            await _run_graph(run_id)
+            async with recording_tokens(run_id):
+                await _run_graph(run_id)
         finally:
             slots.release()
 

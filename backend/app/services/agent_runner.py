@@ -61,6 +61,7 @@ from app.models.agent_models import (
     RunStatus,
     SessionPaper,
 )
+from app.services import llm_usage
 from app.services.agent_worker import HEARTBEAT_SECONDS, WORKER_ID
 from app.services.llm_gateway import get_registry
 
@@ -633,13 +634,21 @@ async def _execute_turn(
         cut_short = ""
         hard_stop = ""
         next_cancel_check = 0.0
+
+        def _tool_tokens(spent: int) -> None:
+            usage.tokens = (usage.tokens or 0) + spent
+
         # The backstop. Ceilings are enforced where calls are made, but only
         # between calls; this is what ends a turn whose tool or provider never
         # returns. `TimeoutError` lands in the failure path below, which keeps
         # the text written so far.
+        # The meter counts what tools spend through `llm_service` — a mode
+        # report above all — into the same total the turn's own calls add to
+        # below, as it is spent; the turn's model is not called through
+        # `llm_service`, so nothing is counted twice.
         async with asyncio.timeout(
             max(1, budget.max_wall_seconds) + max(0, settings.agent_wrapup_seconds)
-        ):
+        ), llm_usage.metering(sink=_tool_tokens):
             async for stream_mode, chunk in agent.astream(
                 {
                     "messages": [

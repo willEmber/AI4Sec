@@ -18,7 +18,7 @@ from app.config import get_settings
 from app.services.llm_gateway import get_registry
 from app.models.schemas import LibraryAskRequest, LibrarySearchRequest
 from app.rate_limit import limiter
-from app.services import accounts, corpus_qa, dify_client
+from app.services import accounts, corpus_qa, dify_client, llm_usage
 from app.services.accounts import Caller
 from app.services.dify_client import DifyError
 
@@ -139,15 +139,17 @@ async def library_ask(
         llm_model = ""
 
     await require_quota(caller)
+    meter = llm_usage.metering()
     try:
-        answer = await corpus_qa.answer_corpus_question(
-            question,
-            top_k=req.top_k,
-            search_method=req.search_method,
-            language=language,
-            llm_model=llm_model,
-            dataset_id=req.dataset_id or None,
-        )
+        with meter:
+            answer = await corpus_qa.answer_corpus_question(
+                question,
+                top_k=req.top_k,
+                search_method=req.search_method,
+                language=language,
+                llm_model=llm_model,
+                dataset_id=req.dataset_id or None,
+            )
     except DifyError as exc:
         raise HTTPException(
             status_code=502,
@@ -158,5 +160,5 @@ async def library_ask(
             },
         )
     # Counted once it is answered: a knowledge base that was down cost nothing.
-    await accounts.record_charge(caller, "library_ask")
+    await accounts.record_charge(caller, "library_ask", tokens=meter.total)
     return answer
