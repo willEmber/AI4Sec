@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import statistics
+from collections import defaultdict
 from typing import Any
 
 from evals import judges
@@ -13,6 +14,12 @@ from evals.statements import Statement, split_statements
 
 POINT_CREDIT = {"stated": 1.0, "partial": 0.5, "missing": 0.0, "contradicted": 0.0}
 
+# An attempt passes when it finished on its own, got at least this share of
+# its key points (and of its report's) with none contradicted, and called the
+# tools it had to. A mean hides the run that dropped a step; this is what
+# finds it, and what the flips between two runs are counted on.
+PASS_CORRECTNESS = 0.75
+
 # Metrics a baseline is compared on; all are "higher is better" fractions.
 GATED_METRICS = (
     "completion_rate",
@@ -20,11 +27,49 @@ GATED_METRICS = (
     "abstention_accuracy",
     "citation_precision",
     "citation_recall",
+    "pass_rate",
+    "tool_selection_accuracy",
+    "report_correctness",
 )
+
+# Cost metrics `--max-cost-rise` may gate; "lower is better", compared relatively.
+COST_METRICS = ("tokens_mean", "wall_seconds_p95")
 
 
 def _ratio(numerator: float, denominator: float) -> float | None:
     return round(numerator / denominator, 4) if denominator else None
+
+
+def check_tools(case: EvalCase, record: dict[str, Any]) -> dict[str, Any] | None:
+    """Whether the scored turn called what it had to and nothing it must not.
+
+    Read from the record alone, so a stored run is re-checked without a judge.
+    """
+    if not case.checks_tools:
+        return None
+    called = {str(call.get("tool") or "") for call in record.get("tool_calls") or []}
+    missing = [name for name in case.expect_tools if name not in called]
+    any_met = not case.expect_any_tools or bool(called & set(case.expect_any_tools))
+    forbidden = sorted(called & set(case.forbid_tools))
+    return {
+        "called": sorted(called),
+        "missing": missing,
+        "any_met": any_met,
+        "forbidden": forbidden,
+        "ok": not missing and any_met and not forbidden,
+    }
+
+
+def scored_report(record: dict[str, Any]) -> str:
+    """The text of the last report the scored turn put on screen, '' when none."""
+    for report in reversed(record.get("reports") or []):
+        if (report.get("markdown") or "").strip():
+            return report["markdown"]
+    return ""
+
+
+def _credit(verdicts: list[str]) -> float:
+    return round(sum(POINT_CREDIT[v] for v in verdicts) / len(verdicts), 4)
 
 
 async def _score_citations(
@@ -107,6 +152,30 @@ async def _score_citations(
     }
 
 
+def passed(case: EvalCase, record: dict[str, Any], score: dict[str, Any]) -> bool | None:
+    """Whether this attempt did what the case asks; `None` when a judge could not say."""
+    if "content_judge_error" in score or "report_judge_error" in score:
+        return None
+    if not record.get("completed"):
+        return False
+    if case.key_points and (
+        score["correctness"] is None
+        or score["correctness"] < PASS_CORRECTNESS
+        or score["contradicted"]
+    ):
+        return False
+    if not case.answerable and not (score["abstention"] or {}).get("correct"):
+        return False
+    if case.report_key_points and (
+        score["report_correctness"] is None
+        or score["report_correctness"] < PASS_CORRECTNESS
+        or "contradicted" in score["report_points"]
+    ):
+        return False
+    tools = score.get("tools")
+    return not (tools and not tools["ok"])
+
+
 async def score_case(ask: AskJudge, case: EvalCase, record: dict[str, Any]) -> dict[str, Any]:
     """Score one recorded turn. A turn that produced no answer scores zero on
     what it was asked for; it is not dropped, or a crash would raise the mean."""
@@ -117,26 +186,27 @@ async def score_case(ask: AskJudge, case: EvalCase, record: dict[str, Any]) -> d
         "key_points": [],
         "contradicted": 0,
         "abstention": None,
+        "report_correctness": None,
+        "report_points": [],
+        "tools": check_tools(case, record),
         "judge_errors": 0,
     }
-    if not score["answered"]:
-        if case.answerable:
-            score["correctness"] = 0.0
-            score["key_points"] = ["missing"] * len(case.key_points)
-        else:
-            score["abstention"] = {"abstained": False, "fabricated": False, "correct": False}
-        return score
 
     async def content() -> None:
+        if not score["answered"]:
+            if case.answerable and case.key_points:
+                score["correctness"] = 0.0
+                score["key_points"] = ["missing"] * len(case.key_points)
+            elif not case.answerable:
+                score["abstention"] = {"abstained": False, "fabricated": False, "correct": False}
+            return
         try:
-            if case.answerable:
+            if case.answerable and case.key_points:
                 verdicts = await judges.judge_key_points(ask, case, answer)
                 score["key_points"] = verdicts
                 score["contradicted"] = verdicts.count("contradicted")
-                score["correctness"] = round(
-                    sum(POINT_CREDIT[v] for v in verdicts) / len(verdicts), 4
-                )
-            else:
+                score["correctness"] = _credit(verdicts)
+            elif not case.answerable:
                 verdict = await judges.judge_abstention(ask, case, answer)
                 verdict["correct"] = verdict["abstained"] and not verdict["fabricated"]
                 score["abstention"] = verdict
@@ -144,12 +214,35 @@ async def score_case(ask: AskJudge, case: EvalCase, record: dict[str, Any]) -> d
             score["judge_errors"] += 1
             score["content_judge_error"] = str(exc)
 
-    citation_scores, _ = await asyncio.gather(
-        _score_citations(ask, case, split_statements(answer), record.get("evidence") or {}),
-        content(),
-    )
-    score["judge_errors"] += citation_scores.pop("judge_errors")
-    score.update(citation_scores)
+    async def report() -> None:
+        if not case.report_key_points:
+            return
+        text = scored_report(record)
+        if not text:
+            # No report is a report that states none of its points.
+            score["report_points"] = ["missing"] * len(case.report_key_points)
+            score["report_correctness"] = 0.0
+            return
+        try:
+            verdicts = await judges.judge_report_points(ask, case, text)
+        except JudgeError as exc:
+            score["judge_errors"] += 1
+            score["report_judge_error"] = str(exc)
+            return
+        score["report_points"] = verdicts
+        score["report_correctness"] = _credit(verdicts)
+
+    async def citations() -> None:
+        if not (score["answered"] and case.cites):
+            return
+        found = await _score_citations(
+            ask, case, split_statements(answer), record.get("evidence") or {}
+        )
+        score["judge_errors"] += found.pop("judge_errors")
+        score.update(found)
+
+    await asyncio.gather(content(), report(), citations())
+    score["passed"] = passed(case, record, score)
     return score
 
 
@@ -157,11 +250,36 @@ def _mean(values: list[float]) -> float | None:
     return round(statistics.fmean(values), 4) if values else None
 
 
-def aggregate(results: list[dict[str, Any]]) -> dict[str, Any]:
-    """Dataset-level metrics from per-case results (`{case, record, score}`).
+def _percentile(values: list[float], q: float) -> float | None:
+    """The q-th percentile (0–100), interpolated; the value itself for one sample."""
+    if not values:
+        return None
+    if len(values) == 1:
+        return round(values[0], 1)
+    cuts = statistics.quantiles(values, n=100, method="inclusive")
+    return round(cuts[int(q) - 1], 1)
 
-    Correctness is a mean over cases; the citation metrics pool every sentence
-    and citation in the run, so a long answer weighs what it wrote.
+
+def case_outcomes(results: list[dict[str, Any]]) -> dict[str, dict[str, int]]:
+    """Per case: attempts scored, attempts a judge could decide, attempts passed."""
+    outcomes: dict[str, dict[str, int]] = defaultdict(lambda: {"attempts": 0, "decided": 0, "passed": 0})
+    for r in results:
+        if not r.get("score"):
+            continue
+        row = outcomes[r["case"]["id"]]
+        row["attempts"] += 1
+        verdict = r["score"].get("passed")
+        if verdict is not None:
+            row["decided"] += 1
+            row["passed"] += int(verdict)
+    return dict(outcomes)
+
+
+def aggregate(results: list[dict[str, Any]]) -> dict[str, Any]:
+    """Dataset-level metrics from per-attempt results (`{case, record, score}`).
+
+    Correctness is a mean over attempts; the citation metrics pool every
+    sentence and citation in the run, so a long answer weighs what it wrote.
     """
     scored = [r for r in results if r.get("score")]
     answerable = [r for r in scored if r["case"]["answerable"]]
@@ -183,44 +301,72 @@ def aggregate(results: list[dict[str, Any]]) -> dict[str, Any]:
 
     def content(rows: list[dict[str, Any]]) -> dict[str, Any]:
         graded = [r["score"]["correctness"] for r in rows if r["score"]["correctness"] is not None]
+        decided = [r["score"].get("passed") for r in rows if r["score"].get("passed") is not None]
         return {
             "cases": len(rows),
             "correctness": _mean(graded),
             "cases_with_contradiction": sum(1 for r in rows if r["score"]["contradicted"]),
+            "pass_rate": _ratio(sum(1 for p in decided if p), len(decided)),
         }
 
     abstentions = [r["score"]["abstention"] for r in unanswerable if r["score"]["abstention"]]
     usage = [r["record"].get("usage") or {} for r in scored]
     walls = [r["record"]["elapsed_seconds"] for r in scored if r["record"].get("elapsed_seconds")]
+    tokens = [float(u["tokens"]) for u in usage if u.get("tokens")]
+    decided = [r["score"].get("passed") for r in scored if r["score"].get("passed") is not None]
+    tools = [r["score"]["tools"] for r in scored if r["score"].get("tools")]
+    reports = [
+        r["score"]["report_correctness"] for r in scored
+        if r["score"].get("report_correctness") is not None
+    ]
+    outcomes = case_outcomes(results)
 
     categories = sorted({r["case"]["category"] for r in answerable})
     summary: dict[str, Any] = {
-        "cases": len(scored),
+        "cases": len(outcomes),
+        "attempts": len(scored),
         "skipped": len(results) - len(scored),
         "completion_rate": _ratio(
             sum(1 for r in scored if r["record"].get("completed")), len(scored)
         ),
-        **{k: v for k, v in content(answerable).items() if k != "cases"},
+        "pass_rate": _ratio(sum(1 for p in decided if p), len(decided)),
+        **{k: v for k, v in content(answerable).items() if k not in ("cases", "pass_rate")},
         "answerable_cases": len(answerable),
         "abstention_accuracy": _ratio(sum(1 for a in abstentions if a["correct"]), len(abstentions)),
         "fabrication_rate": _ratio(sum(1 for a in abstentions if a["fabricated"]), len(abstentions)),
         "unanswerable_cases": len(unanswerable),
+        "tool_selection_accuracy": _ratio(sum(1 for t in tools if t["ok"]), len(tools)),
+        "tool_checked_attempts": len(tools),
+        "report_correctness": _mean(reports),
+        "report_attempts": len(reports),
+        "reports_missing": sum(
+            1 for r in scored
+            if r["case"].get("report_key_points") and not scored_report(r["record"])
+        ),
         **pooled(scored),
         "answers_without_citation": sum(
             1 for r in answerable
-            if r["score"]["answered"] and not r["score"].get("citations", {}).get("judged")
+            if r["case"].get("cites", True)
+            and r["score"]["answered"]
+            and not r["score"].get("citations", {}).get("judged")
         ),
         "grouped_citation_markers": sum(
             int(r["record"].get("grouped_citation_markers") or 0) for r in scored
         ),
         "judge_errors": sum(r["score"]["judge_errors"] for r in scored),
+        "flaky_cases": sorted(
+            case_id for case_id, row in outcomes.items() if 0 < row["passed"] < row["decided"]
+        ),
+        "case_outcomes": outcomes,
         "cost": {
             "tool_calls_mean": _mean([float(u.get("tool_calls") or 0) for u in usage]),
             "llm_calls_mean": _mean([float(u.get("llm_calls") or 0) for u in usage]),
-            "tokens_mean": _mean([float(u["tokens"]) for u in usage if u.get("tokens")]),
+            "tokens_mean": _mean(tokens),
+            "tokens_p95": _percentile(tokens, 95),
             "tokens_total": sum(int(u.get("tokens") or 0) for u in usage),
             "wall_seconds_mean": _mean(walls),
             "wall_seconds_median": round(statistics.median(walls), 1) if walls else None,
+            "wall_seconds_p95": _percentile(walls, 95),
         },
         "by_category": {
             name: {
@@ -240,9 +386,14 @@ def aggregate(results: list[dict[str, Any]]) -> dict[str, Any]:
 
 
 def compare(
-    summary: dict[str, Any], baseline: dict[str, Any], *, max_drop: float
+    summary: dict[str, Any],
+    baseline: dict[str, Any],
+    *,
+    max_drop: float,
+    max_cost_rise: float = 0.0,
 ) -> list[dict[str, Any]]:
-    """Gated metrics that fell more than `max_drop` (absolute) below the baseline.
+    """Gated metrics that fell more than `max_drop` (absolute) below the baseline,
+    and, with `max_cost_rise`, cost metrics that rose more than that fraction.
 
     A metric missing on either side is not a regression — a subset run has no
     unanswerable cases, and that says nothing about abstention.
@@ -254,4 +405,52 @@ def compare(
             continue
         if before - now > max_drop:
             regressions.append({"metric": name, "baseline": before, "current": now})
+    if max_cost_rise > 0:
+        for name in COST_METRICS:
+            now = (summary.get("cost") or {}).get(name)
+            before = (baseline.get("cost") or {}).get(name)
+            if now is None or not before:
+                continue
+            if now > before * (1 + max_cost_rise):
+                regressions.append(
+                    {"metric": name, "baseline": before, "current": now, "kind": "cost"}
+                )
     return regressions
+
+
+def flips(summary: dict[str, Any], baseline: dict[str, Any]) -> list[dict[str, Any]]:
+    """Cases whose outcome changed against the baseline, worst first.
+
+    `regressed`: passed every decided attempt before, passed none now. Gated
+    only when both sides decided at least two attempts — one observation
+    cannot tell a broken case from a flaky one. `flaky`: passed every attempt
+    before, only some now. `fixed`: the reverse of `regressed`.
+    """
+    before_all = baseline.get("case_outcomes") or {}
+    now_all = summary.get("case_outcomes") or {}
+    out = []
+    for case_id in sorted(set(before_all) & set(now_all)):
+        before, now = before_all[case_id], now_all[case_id]
+        if not before["decided"] or not now["decided"]:
+            continue
+        was_pass = before["passed"] == before["decided"]
+        was_fail = before["passed"] == 0
+        is_pass = now["passed"] == now["decided"]
+        is_fail = now["passed"] == 0
+        if was_pass and is_fail:
+            kind = "regressed"
+        elif was_pass and not is_pass:
+            kind = "flaky"
+        elif was_fail and is_pass:
+            kind = "fixed"
+        else:
+            continue
+        out.append({
+            "case": case_id,
+            "kind": kind,
+            "baseline": f"{before['passed']}/{before['decided']}",
+            "current": f"{now['passed']}/{now['decided']}",
+            "gated": kind == "regressed" and min(before["decided"], now["decided"]) >= 2,
+        })
+    order = {"regressed": 0, "flaky": 1, "fixed": 2}
+    return sorted(out, key=lambda f: (order[f["kind"]], f["case"]))

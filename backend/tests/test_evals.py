@@ -177,6 +177,41 @@ class DatasetTests(unittest.TestCase):
         self.assertEqual(len(picked), 2)
         self.assertTrue(all(not c.answerable for c in picked))
 
+    def test_chain_dataset_is_valid_and_names_real_tools(self) -> None:
+        from app.agents.tools import ALL_AGENT_TOOLS
+
+        dataset = load_dataset("chains_seed")
+        self.assertGreaterEqual(dataset.repeats, 2, "one attempt cannot tell flaky from broken")
+        self.assertEqual(dataset.unknown_tools({t.name for t in ALL_AGENT_TOOLS}), {})
+        modes = {c.mode for c in dataset.cases} | {t.mode for c in dataset.cases for t in c.setup}
+        self.assertLessEqual({"snap", "lens", "sphere"}, modes)
+        self.assertLessEqual({"report", "follow_up", "acquisition"}, {c.category for c in dataset.cases})
+        # Every mode is also asked for without the composer picking it, or
+        # followed by a question about its report.
+        self.assertTrue(any(c.mode == "auto" and c.runs_modes for c in dataset.cases))
+
+    def test_unknown_tool_names_are_reported(self) -> None:
+        paper = {"p": {"paper_id": "a" * 40, "title": "t"}}
+        dataset = Dataset(name="d", version="1", papers=paper,
+                          cases=[_case(forbid_tools=["run_insight_snapp"])])
+        self.assertEqual(dataset.unknown_tools({"run_insight_snap"}), {"c1": ["run_insight_snapp"]})
+
+    def test_rules_for_chains(self) -> None:
+        with self.assertRaises(ValueError):          # a follow-up needs something to follow
+            _case(category="follow_up")
+        with self.assertRaises(ValueError):          # only acquisition starts with no paper
+            _case(papers=[])
+        _case(category="acquisition", papers=[])
+        with self.assertRaises(ValueError):          # a report to judge needs a turn that makes one
+            _case(category="report", key_points=[], report_key_points=["x"])
+        report = _case(category="report", key_points=[], report_key_points=["x"], mode="lens")
+        self.assertTrue(report.runs_modes)
+        with self.assertRaises(ValueError):
+            _case(expect_tools=["read_paper_section"], forbid_tools=["read_paper_section"])
+        follow_up = _case(category="follow_up", setup=[{"question": "q", "mode": "snap"}])
+        self.assertTrue(follow_up.runs_modes)
+        self.assertFalse(_case().runs_modes)
+
 
 class JudgeParsingTests(unittest.TestCase):
     def test_json_inside_a_fence(self) -> None:
@@ -237,12 +272,79 @@ class ScoreCaseTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_a_malformed_verdict_is_an_error_not_a_failure(self) -> None:
         judge = ScriptedJudge(points="not json", citation="not json", claims={"claims": []})
-        record = {"answer": f"PSNR 为 24.56。[{EV_A}]", "evidence": {EV_A: {"quote": "q"}}}
+        record = {"answer": f"PSNR 为 24.56。[{EV_A}]", "evidence": {EV_A: {"quote": "q"}},
+                  "completed": True}
         score = await scoring.score_case(judge, _case(), record)
         self.assertIsNone(score["correctness"])
         self.assertEqual(score["judge_errors"], 2)
         self.assertEqual(score["citations"]["judged"], 0)
         self.assertIsNone(score["citation_precision"])
+        self.assertIsNone(score["passed"], "undecided, not failed")
+
+    def _report_case(self, **overrides) -> EvalCase:
+        fields = dict(
+            category="report", mode="lens", cites=False,
+            key_points=["names the method"], report_key_points=["loss is MSE", "three terms"],
+            expect_tools=["run_logic_lens"],
+        )
+        fields.update(overrides)
+        return _case(**fields)
+
+    async def test_a_report_is_judged_on_the_report_and_its_summary_is_not_cited(self) -> None:
+        def points(prompt: str) -> dict:
+            n = 2 if "loss is MSE" in prompt else 1
+            # The report's facts are judged against the report's text.
+            if n == 2:
+                assert "L_gt is the MSE" in prompt, prompt[-200:]
+            return {"points": [{"n": i, "verdict": "stated"} for i in range(1, n + 1)]}
+
+        judge = ScriptedJudge(points=points)
+        record = {
+            "answer": "The method distils a sampler into one step.",
+            "completed": True,
+            "tool_calls": [{"tool": "run_logic_lens"}],
+            "reports": [{"mode": "lens", "markdown": "# Lens\n\nL_gt is the MSE of three terms."}],
+        }
+        score = await scoring.score_case(judge, self._report_case(), record)
+        self.assertEqual((score["correctness"], score["report_correctness"]), (1.0, 1.0))
+        self.assertNotIn("citations", score, "a report summary is told not to cite")
+        self.assertTrue(score["tools"]["ok"])
+        self.assertTrue(score["passed"])
+
+    async def test_no_report_and_a_forbidden_tool_fail_the_attempt(self) -> None:
+        judge = ScriptedJudge(points={"points": [{"n": 1, "verdict": "stated"}]})
+        record = {"answer": "Done.", "completed": True,
+                  "tool_calls": [{"tool": "read_paper_section"}], "reports": []}
+        score = await scoring.score_case(judge, self._report_case(), record)
+        self.assertEqual(score["report_correctness"], 0.0)
+        self.assertEqual(score["report_points"], ["missing", "missing"])
+        self.assertEqual(score["tools"]["missing"], ["run_logic_lens"])
+        self.assertFalse(score["passed"])
+
+        follow_up = _case(category="follow_up", setup=[{"question": "q", "mode": "lens"}],
+                          forbid_tools=["run_logic_lens"], key_points=["PSNR is 24.56"], cites=False)
+        record = {"answer": "24.56", "completed": True, "tool_calls": [{"tool": "run_logic_lens"}]}
+        score = await scoring.score_case(judge, follow_up, record)
+        self.assertEqual(score["tools"]["forbidden"], ["run_logic_lens"])
+        self.assertFalse(score["passed"], "asking for the report again is the dropped step")
+
+    async def test_expect_any_tools_needs_only_one(self) -> None:
+        case = _case(expect_any_tools=["read_paper_section", "search_paper_content"], cites=False)
+        judge = ScriptedJudge(points={"points": [{"n": 1, "verdict": "stated"}, {"n": 2, "verdict": "partial"}]})
+        record = {"answer": "PSNR 24.56, SSIM about 0.66", "completed": True,
+                  "tool_calls": [{"tool": "search_paper_content"}]}
+        score = await scoring.score_case(judge, case, record)
+        self.assertTrue(score["tools"]["ok"])
+        self.assertEqual(score["correctness"], 0.75)
+        self.assertTrue(score["passed"], "0.75 is the pass line")
+
+    async def test_an_answer_cut_short_fails_however_right_it_is(self) -> None:
+        judge = ScriptedJudge(points={"points": [{"n": 1, "verdict": "stated"}, {"n": 2, "verdict": "stated"}]})
+        score = await scoring.score_case(
+            judge, _case(cites=False), {"answer": "PSNR 24.56, SSIM 0.657", "completed": False}
+        )
+        self.assertEqual(score["correctness"], 1.0)
+        self.assertFalse(score["passed"])
 
 
 def _result(case: EvalCase, *, completed: bool = True, **score) -> dict:
@@ -299,6 +401,87 @@ class AggregateTests(unittest.TestCase):
         self.assertIn("| answer correctness (2 answerable) | 75.0% |", text)
         self.assertIn("skipped: paper not parsed here: p", text)
         self.assertIn("1 contradicted", text)
+
+
+def _attempts(case_id: str, outcomes: list[bool | None], *, wall: float = 10.0) -> list[dict]:
+    case = _case(id=case_id)
+    out = []
+    for number, verdict in enumerate(outcomes):
+        result = _result(case, correctness=1.0 if verdict else 0.0, passed=verdict)
+        result["record"].update(attempt=number, elapsed_seconds=wall + number)
+        out.append(result)
+    return out
+
+
+class RepeatTests(unittest.TestCase):
+    """Several attempts per case: what passed every time, what only sometimes."""
+
+    def setUp(self) -> None:
+        self.results = [
+            *_attempts("steady", [True, True, True]),
+            *_attempts("flaky", [True, False, True]),
+            *_attempts("broken", [False, False, None]),
+        ]
+        self.summary = scoring.aggregate(self.results)
+
+    def test_outcomes_per_case(self) -> None:
+        s = self.summary
+        self.assertEqual((s["cases"], s["attempts"]), (3, 9))
+        self.assertEqual(s["case_outcomes"]["flaky"], {"attempts": 3, "decided": 3, "passed": 2})
+        self.assertEqual(s["case_outcomes"]["broken"], {"attempts": 3, "decided": 2, "passed": 0})
+        self.assertEqual(s["flaky_cases"], ["flaky"])
+        self.assertEqual(s["pass_rate"], round(5 / 8, 4), "an undecided attempt is left out")
+
+    def test_latency_percentiles(self) -> None:
+        cost = self.summary["cost"]
+        self.assertEqual(cost["wall_seconds_median"], 11.0)
+        self.assertEqual(cost["wall_seconds_p95"], 12.0)
+        self.assertEqual(scoring._percentile([4.0], 95), 4.0)
+        self.assertIsNone(scoring._percentile([], 95))
+
+    def test_flips_against_a_baseline(self) -> None:
+        baseline = scoring.aggregate([
+            *_attempts("steady", [True, True]),
+            *_attempts("flaky", [True, True]),
+            *_attempts("broken", [True, True]),
+            *_attempts("fixed", [False, False]),
+        ])
+        now = scoring.aggregate([*self.results, *_attempts("fixed", [True, True])])
+        flips = {f["case"]: f for f in scoring.flips(now, baseline)}
+        self.assertNotIn("steady", flips)
+        self.assertEqual((flips["broken"]["kind"], flips["broken"]["gated"]), ("regressed", True))
+        self.assertEqual((flips["flaky"]["kind"], flips["flaky"]["gated"]), ("flaky", False))
+        self.assertEqual(flips["fixed"]["kind"], "fixed")
+        self.assertEqual([f["case"] for f in scoring.flips(now, baseline)][0], "broken")
+
+    def test_a_flip_seen_once_is_listed_but_not_gated(self) -> None:
+        before = scoring.aggregate(_attempts("c", [True]))
+        now = scoring.aggregate(_attempts("c", [False]))
+        (flip,) = scoring.flips(now, before)
+        self.assertEqual((flip["kind"], flip["gated"]), ("regressed", False))
+
+    def test_a_baseline_without_outcomes_has_no_flips(self) -> None:
+        self.assertEqual(scoring.flips(self.summary, {"correctness": 0.9}), [])
+
+    def test_cost_is_gated_only_when_asked(self) -> None:
+        baseline = {**self.summary, "cost": {**self.summary["cost"], "tokens_mean": 500.0}}
+        self.assertEqual(scoring.compare(self.summary, baseline, max_drop=1.0), [])
+        regressions = scoring.compare(self.summary, baseline, max_drop=1.0, max_cost_rise=0.5)
+        self.assertEqual([(r["metric"], r["kind"]) for r in regressions], [("tokens_mean", "cost")])
+
+    def test_report_lists_flips_and_flaky_cases(self) -> None:
+        meta = {"dataset": "d", "dataset_version": "1", "model": "m", "judge_model": "j",
+                "judge_prompt_version": "judge-1", "prompt_version": "p", "generated_at": "now",
+                "repeats": 3}
+        flips = [{"case": "broken", "kind": "regressed", "baseline": "2/2", "current": "0/2",
+                  "gated": True}]
+        text = render_markdown(meta, self.summary, self.results, [], None, case_flips=flips)
+        self.assertIn("(9 attempts, 3 per case)", text)
+        self.assertIn("| broken | regressed | 2/2 | 0/2 | yes |", text)
+        self.assertIn("- flaky: passed 2 of 3", text)
+        self.assertIn("| flaky #2 |", text)
+        # The console prints everything above the per-attempt table.
+        self.assertIn("Cases that changed", text.split("\n## Cases\n")[0])
 
 
 if __name__ == "__main__":

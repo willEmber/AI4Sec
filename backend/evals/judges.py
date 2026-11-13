@@ -162,20 +162,30 @@ def _numbered(items: list[str]) -> str:
     return "\n".join(f"{n}. {item}" for n, item in enumerate(items, start=1))
 
 
-async def judge_key_points(ask: AskJudge, case: EvalCase, answer: str) -> list[str]:
-    """One verdict per key point, in the case's order."""
+async def judge_points(ask: AskJudge, *, question: str, points: list[str], text: str) -> list[str]:
+    """One verdict per reference fact, in order, on whether `text` states it."""
 
     def check(data: dict[str, Any]) -> list[str]:
         by_n = {int(p["n"]): str(p["verdict"]).lower() for p in data["points"]}
-        verdicts = [by_n[n] for n in range(1, len(case.key_points) + 1)]
+        verdicts = [by_n[n] for n in range(1, len(points) + 1)]
         if any(v not in _POINT_VERDICTS for v in verdicts):
             raise ValueError(f"unknown verdict in {verdicts}")
         return verdicts
 
-    prompt = KEY_POINTS_PROMPT.format(
-        question=case.question, points=_numbered(case.key_points), answer=answer
-    )
+    prompt = KEY_POINTS_PROMPT.format(question=question, points=_numbered(points), answer=text)
     return await _ask_json(ask, prompt, check)
+
+
+async def judge_key_points(ask: AskJudge, case: EvalCase, answer: str) -> list[str]:
+    """One verdict per key point of the answer, in the case's order."""
+    return await judge_points(ask, question=case.question, points=case.key_points, text=answer)
+
+
+async def judge_report_points(ask: AskJudge, case: EvalCase, report: str) -> list[str]:
+    """One verdict per report key point, judged against the report itself."""
+    return await judge_points(
+        ask, question=case.question, points=case.report_key_points, text=report
+    )
 
 
 async def judge_abstention(ask: AskJudge, case: EvalCase, answer: str) -> dict[str, bool]:

@@ -13,16 +13,27 @@ never silently dropped.
     uv run python -m evals.run --rejudge data/evals/<run>/results.json
     uv run python -m evals.run --rejudge data/evals/<run>/results.json --control
     uv run python -m evals.run --baseline evals/baselines/reading_seed.json
+    uv run python -m evals.run --dataset chains_seed --repeats 3   # reports and chains
 
 Records land in `data/evals/<time>-<model>/` (`results.json`, `summary.md`).
-With `--baseline`, a gated metric more than `--max-drop` below the baseline
-makes the exit code 1. `--save-baseline` writes this run's summary there.
+With `--baseline`, a gated metric more than `--max-drop` below the baseline,
+a case that passed every attempt there and fails every attempt now (both sides
+having decided two attempts or more), or — with `--max-cost-rise` — tokens or
+p95 latency that rose by more than that fraction make the exit code 1.
+`--save-baseline` writes this run's summary there.
+
+Each case runs `--repeats` times (the dataset's `repeats` by default), in
+sessions of its own: one run cannot tell a broken case from a flaky one. A
+case that makes a report forgets its papers' cached reports first, so every
+attempt pays for — and measures — a report of its own; such cases on the same
+paper run one at a time.
 """
 
 from __future__ import annotations
 
 import argparse
 import asyncio
+import contextlib
 import json
 import logging
 import subprocess
@@ -56,9 +67,15 @@ def _split(value: str) -> list[str]:
 
 
 async def _run_cases(
-    dataset: Dataset, cases: list[EvalCase], *, model: str, concurrency: int, ask: AskJudge
+    dataset: Dataset,
+    cases: list[EvalCase],
+    *,
+    model: str,
+    concurrency: int,
+    repeats: int,
+    ask: AskJudge,
 ) -> list[dict[str, Any]]:
-    """Run and score the cases, a few at a time, keeping the dataset's order."""
+    """Run and score every attempt, a few at a time, keeping the dataset's order."""
     from app.services import identity
 
     from evals import runner
@@ -67,37 +84,63 @@ async def _run_cases(
     parsed = await runner.parsed_paper_ids(needed)
     owner_id, _ = await identity.create_principal(label=f"eval:{dataset.name}")
     slots = asyncio.Semaphore(concurrency)
+    # A report case forgets its papers' cached reports; two at once on one
+    # paper would each forget the other's, or share one report between them.
+    paper_locks: dict[str, asyncio.Lock] = {}
 
-    async def one(case: EvalCase) -> dict[str, Any]:
+    async def attempt(case: EvalCase, number: int) -> dict[str, Any]:
         result: dict[str, Any] = {"case": case.model_dump()}
-        missing = [key for key in case.papers if dataset.papers[key].paper_id not in parsed]
-        if missing:
-            result["skipped"] = f"paper not parsed here: {', '.join(missing)}"
-            print(f"  skip  {case.id}: {result['skipped']}")
-            return result
-        async with slots:
+        papers = sorted(dataset.papers[key].paper_id for key in case.papers)
+        locks = [paper_locks.setdefault(p, asyncio.Lock()) for p in papers] if case.runs_modes else []
+        async with slots, contextlib.AsyncExitStack() as held:
+            for lock in locks:
+                await held.enter_async_context(lock)
             try:
-                record = await runner.run_case(dataset, case, owner_id=owner_id, model=model)
+                record = await runner.run_case(
+                    dataset, case, owner_id=owner_id, model=model, attempt=number
+                )
             except Exception as exc:  # noqa: BLE001 — one case must not end the run
                 logger.exception("case %s failed outside the turn", case.id)
-                record = {"status": "error", "completed": False, "answer": "",
+                record = {"status": "error", "completed": False, "answer": "", "attempt": number,
                           "error_code": type(exc).__name__, "usage": {}}
         result["record"] = record
         result["score"] = await scoring.score_case(ask, case, record)
-        print(f"  {'done' if record.get('completed') else record.get('status'):5} {case.id}"
+        label = case.id + (f" #{number + 1}" if repeats > 1 else "")
+        print(f"  {'done' if record.get('completed') else record.get('status'):5} {label}"
               f" — {_headline(case, result['score'])}")
         return result
 
-    return list(await asyncio.gather(*(one(case) for case in cases)))
+    async def one(case: EvalCase) -> list[dict[str, Any]]:
+        missing = [key for key in case.papers if dataset.papers[key].paper_id not in parsed]
+        if missing:
+            skipped = f"paper not parsed here: {', '.join(missing)}"
+            print(f"  skip  {case.id}: {skipped}")
+            return [{"case": case.model_dump(), "skipped": skipped}]
+        # A case's attempts one after another: they share its papers' reports.
+        return [await attempt(case, number) for number in range(repeats)]
+
+    per_case = await asyncio.gather(*(one(case) for case in cases))
+    return [result for results in per_case for result in results]
 
 
 def _headline(case: EvalCase, score: dict[str, Any]) -> str:
-    if case.answerable:
-        content = f"correct {report._pct(score['correctness'])}"
-    else:
-        content = "abstained" if (score["abstention"] or {}).get("correct") else "did not abstain"
-    return (f"{content}, cit P {report._pct(score.get('citation_precision'))}"
-            f" R {report._pct(score.get('citation_recall'))}")
+    parts = []
+    if not case.answerable:
+        parts.append(
+            "abstained" if (score["abstention"] or {}).get("correct") else "did not abstain"
+        )
+    elif score.get("correctness") is not None:
+        parts.append(f"correct {report._pct(score['correctness'])}")
+    if score.get("report_correctness") is not None:
+        parts.append(f"report {report._pct(score['report_correctness'])}")
+    if score.get("tools"):
+        parts.append("tools ok" if score["tools"]["ok"] else "tools wrong")
+    if case.cites:
+        parts.append(f"cit P {report._pct(score.get('citation_precision'))}"
+                     f" R {report._pct(score.get('citation_recall'))}")
+    verdict = score.get("passed")
+    parts.append("pass" if verdict else ("undecided" if verdict is None else "FAIL"))
+    return ", ".join(parts)
 
 
 def _shuffle_evidence(results: list[dict[str, Any]]) -> None:
@@ -163,21 +206,34 @@ async def main() -> int:
     parser.add_argument("--baseline", default="", help="Summary to compare against")
     parser.add_argument("--max-drop", type=float, default=0.05,
                         help="Largest tolerated fall of a gated metric (absolute)")
+    parser.add_argument("--max-cost-rise", type=float, default=0.0,
+                        help="Largest tolerated rise of tokens / p95 latency (fraction; 0 = not gated)")
+    parser.add_argument("--repeats", type=int, default=0,
+                        help="Attempts per case; defaults to the dataset's `repeats`")
     parser.add_argument("--save-baseline", default="", help="Write this run's summary here")
     args = parser.parse_args()
 
     dataset = load_dataset(args.dataset)
+    repeats = args.repeats or dataset.repeats
     cases = dataset.select(
         ids=_split(args.case), categories=_split(args.category), limit=args.limit
     )
     if args.control and not args.rejudge:
         raise SystemExit("--control scores a stored run: pass --rejudge <results.json>.")
+
+    # Offline: the tool list is code, not a call. A misspelt forbidden tool
+    # would pass every run, so a dataset naming one is refused.
+    from app.agents.tools import ALL_AGENT_TOOLS
+
+    unknown = dataset.unknown_tools({tool.name for tool in ALL_AGENT_TOOLS})
+    if unknown:
+        raise SystemExit(f"{dataset.name}: unknown tool names {unknown}")
     if args.validate:
         by_category: dict[str, int] = {}
         for case in dataset.cases:
             by_category[case.category] = by_category.get(case.category, 0) + 1
         print(f"{dataset.name} v{dataset.version}: {len(dataset.cases)} cases, "
-              f"{len(dataset.papers)} papers — {by_category}")
+              f"{len(dataset.papers)} papers, {dataset.repeats} attempt(s) each — {by_category}")
         return 0
     if not cases:
         raise SystemExit("No case matches the selection.")
@@ -205,12 +261,13 @@ async def main() -> int:
                     "control": "shuffled_evidence" if args.control else ""}
         else:
             model = args.model or settings.agent_model or registry.agent_default_model
-            print(f"{dataset.name} v{dataset.version}: {len(cases)} cases · model {model} "
-                  f"· judge {judge_model}\n")
+            print(f"{dataset.name} v{dataset.version}: {len(cases)} cases × {repeats} "
+                  f"· model {model} · judge {judge_model}\n")
             await agent_runner.open_agent_checkpointer()
             try:
                 results = await _run_cases(
-                    dataset, cases, model=model, concurrency=args.concurrency, ask=ask
+                    dataset, cases, model=model, concurrency=args.concurrency,
+                    repeats=repeats, ask=ask,
                 )
             finally:
                 await agent_runner.close_agent_checkpointer()
@@ -222,6 +279,7 @@ async def main() -> int:
                 "commit": _commit(),
                 "generated_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
                 "partial": len(cases) != len(dataset.cases),
+                "repeats": repeats,
             }
         meta.update(judge_model=judge_model, judge_prompt_version=JUDGE_PROMPT_VERSION)
     finally:
@@ -231,8 +289,14 @@ async def main() -> int:
     summary = scoring.aggregate(results)
     baseline = json.loads(Path(args.baseline).read_text(encoding="utf-8")) if args.baseline else None
     regressions = (
-        scoring.compare(summary, baseline["summary"], max_drop=args.max_drop) if baseline else []
+        scoring.compare(
+            summary, baseline["summary"], max_drop=args.max_drop, max_cost_rise=args.max_cost_rise
+        )
+        if baseline else []
     )
+    # What a mean hides: the case that passed every time and now never does.
+    case_flips = scoring.flips(summary, baseline["summary"]) if baseline else []
+    gated_flips = [f for f in case_flips if f["gated"]]
 
     out = Path(args.out) if args.out else (
         Path(args.rejudge).parent if args.rejudge
@@ -246,7 +310,8 @@ async def main() -> int:
         json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"
     )
     markdown = report.render_markdown(
-        meta, summary, results, regressions, baseline["summary"] if baseline else None
+        meta, summary, results, regressions, baseline["summary"] if baseline else None,
+        case_flips=case_flips,
     )
     (out / f"{stem[1]}.md").write_text(markdown, encoding="utf-8")
     if args.save_baseline:
@@ -255,9 +320,9 @@ async def main() -> int:
             encoding="utf-8",
         )
 
-    print("\n" + markdown.split("## Cases")[0])
+    print("\n" + markdown.split("\n## Cases\n")[0])
     print(f"report: {out / f'{stem[1]}.md'}")
-    return 1 if regressions else 0
+    return 1 if regressions or gated_flips else 0
 
 
 if __name__ == "__main__":

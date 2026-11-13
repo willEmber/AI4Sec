@@ -1,0 +1,157 @@
+{
+  "name": "chains_seed",
+  "version": "1",
+  "description": "Whole-paper reports and the chains around them: each of the three modes on request and unprompted, a question answered after a report (the step a folded-in report could drop), a report asked to weigh a specific concern, and a paper found and fetched before it is read. Same two papers as reading_seed. Costly: every attempt makes its reports anew, and the acquisition case downloads and parses a paper.",
+  "repeats": 3,
+  "papers": {
+    "sinsr": {
+      "paper_id": "1806f4c0a7af40a9a5cb5928039eddee9bb032ad",
+      "title": "SinSR: Diffusion-Based Image Super-Resolution in a Single Step",
+      "source": "arXiv:2311.14760 (CVPR 2024 camera-ready)"
+    },
+    "supermark": {
+      "paper_id": "e2ce9240cb0c45b50b763dc9442fe57266302164",
+      "title": "SuperMark: Robust and Training-free Image Watermarking via Diffusion-based Super-Resolution",
+      "source": "anonymous double-blind submission PDF (OpenReview)"
+    }
+  },
+  "cases": [
+    {
+      "id": "snap-sinsr",
+      "category": "report",
+      "papers": ["sinsr"],
+      "mode": "snap",
+      "question": "帮我快速评估一下这篇论文值不值得读。",
+      "cites": false,
+      "expect_tools": ["run_insight_snap"],
+      "key_points": [
+        "指出论文的核心贡献是让基于扩散模型的超分辨率只用一步推理",
+        "给出明确的阅读判断（例如值得精读、可以略读或不建议读）"
+      ],
+      "report_key_points": [
+        "报告说明该方法把扩散超分辨率蒸馏为单步（one-step）推理",
+        "报告给出至少一项外部信号（发表场所、引用数、代码仓库、开放获取或撤稿状态中的任一项）",
+        "报告给出总体判断（是否值得阅读）"
+      ]
+    },
+    {
+      "id": "snap-unprompted-supermark",
+      "category": "report",
+      "papers": ["supermark"],
+      "question": "这篇值得我花时间精读吗？先给我一个快速判断。",
+      "cites": false,
+      "expect_tools": ["run_insight_snap"],
+      "key_points": [
+        "说明 SuperMark 是基于扩散超分辨率的免训练（training-free）图像水印方法",
+        "给出明确的阅读判断（例如值得精读、可以略读或不建议读）"
+      ]
+    },
+    {
+      "id": "snap-followup-signals",
+      "category": "follow_up",
+      "papers": ["sinsr"],
+      "setup": [{"question": "快速评估一下这篇论文值不值得读。", "mode": "snap"}],
+      "question": "报告里的外部信号具体是什么？它发表在哪里，被引用了多少次？",
+      "forbid_tools": [
+        "run_insight_snap", "get_paper_metadata", "query_publication_rank", "resolve_paper", "search_papers"
+      ],
+      "key_points": [
+        "说明论文发表于 CVPR 2024",
+        "给出引用数，并注明是哪个数据库统计的（如 Semantic Scholar 或 OpenAlex）"
+      ]
+    },
+    {
+      "id": "lens-sinsr",
+      "category": "report",
+      "papers": ["sinsr"],
+      "mode": "lens",
+      "question": "详细讲讲这篇论文的方法。",
+      "cites": false,
+      "expect_tools": ["run_logic_lens"],
+      "key_points": [
+        "概括出方法核心：从 ResShift 推导出确定性采样，再把它蒸馏成单步学生模型"
+      ],
+      "report_key_points": [
+        "从 ResShift 原本随机的采样过程推导出一个确定性采样过程，得到输入噪声与生成的高分辨率图像之间的确定性映射",
+        "把这个确定性映射蒸馏到学生网络，使其只用一步推理完成超分辨率",
+        "提出一致性保持损失（consistency-preserving loss），在蒸馏时利用真实（ground-truth）图像，使学生模型不只受限于教师模型",
+        "一致性保持损失为 L_gt = L_MSE(f(x̂_T, y, T), x_0)，即从学生预测的反演重建出的图像与真实图像之间的均方误差",
+        "整体训练目标是蒸馏损失、反演损失和一致性保持损失三项之和"
+      ]
+    },
+    {
+      "id": "lens-focus-supermark-steps",
+      "category": "report",
+      "papers": ["supermark"],
+      "mode": "lens",
+      "question": "用逻辑透镜分析这篇论文。我最想弄清楚推理步数和反演步数分别怎样影响保真度和鲁棒性。",
+      "cites": false,
+      "expect_tools": ["run_logic_lens"],
+      "key_points": [
+        "回答了推理步数与反演步数各自的影响：反演步数影响很小，推理步数越多保真度略降、鲁棒性明显提升"
+      ],
+      "report_key_points": [
+        "反演（inversion）步数对保真度和鲁棒性影响都很小",
+        "增加推理（inference）步数会使保真度略有下降",
+        "增加推理步数会显著提升鲁棒性，尤其是在自适应攻击下",
+        "论文的解释是更多推理步数让 SR 模型生成更多细节，使水印图像与原图差异变大，但这些细节在反演时提供了更多可逆像素"
+      ]
+    },
+    {
+      "id": "lens-followup-verify-numbers",
+      "category": "follow_up",
+      "papers": ["sinsr"],
+      "setup": [{"question": "详细讲讲这篇论文的方法。", "mode": "lens"}],
+      "question": "报告里提到单步模型在 ImageNet-Test 上的结果。请对照原文表格核实 SinSR 单步模型的 PSNR、LPIPS 和 MUSIQ 具体是多少。",
+      "expect_any_tools": ["read_paper_section", "search_paper_content"],
+      "forbid_tools": ["run_logic_lens"],
+      "key_points": [
+        "SinSR-1 的 PSNR 为 24.56",
+        "SinSR-1 的 LPIPS 为 0.221",
+        "SinSR-1 的 MUSIQ 为 53.357"
+      ]
+    },
+    {
+      "id": "sphere-sinsr",
+      "category": "report",
+      "papers": ["sinsr"],
+      "mode": "sphere",
+      "question": "这篇在领域里处于什么位置？相关工作有哪些？",
+      "cites": false,
+      "expect_tools": ["run_research_sphere"],
+      "key_points": [
+        "点明 SinSR 建立在 ResShift 之上（ResShift 是它的教师模型或直接前序工作）"
+      ],
+      "report_key_points": [
+        "报告把 ResShift 列为直接相关的前序工作或对比基线",
+        "报告列出至少一篇其他基于扩散模型的图像超分辨率方法（如 SR3、LDM、StableSR 等）",
+        "报告指出至少一个研究空白或未来方向"
+      ]
+    },
+    {
+      "id": "sphere-followup-next-read",
+      "category": "follow_up",
+      "papers": ["sinsr"],
+      "setup": [{"question": "这篇在领域里处于什么位置？相关工作有哪些？", "mode": "sphere"}],
+      "question": "全景报告里和 SinSR 最直接竞争的是哪几篇？从中挑一篇最值得我接着读的，说明理由。",
+      "cites": false,
+      "forbid_tools": ["run_research_sphere"],
+      "key_points": [
+        "给出了报告中具体的论文名称作为直接竞争的方法",
+        "从中推荐了一篇，并给出与 SinSR 相关的理由"
+      ]
+    },
+    {
+      "id": "acquire-read-sinsr",
+      "category": "acquisition",
+      "papers": [],
+      "question": "arXiv 2311.14760 这篇论文的单步模型在 ImageNet-Test 上的 PSNR 和 LPIPS 是多少？请读原文回答。",
+      "expect_tools": ["download_paper"],
+      "expect_any_tools": ["read_paper_section", "search_paper_content"],
+      "key_points": [
+        "SinSR-1 的 PSNR 为 24.56",
+        "SinSR-1 的 LPIPS 为 0.221"
+      ]
+    }
+  ]
+}
