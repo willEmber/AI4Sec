@@ -81,8 +81,13 @@ _resumes: set[asyncio.Task[None]] = set()
 
 
 async def recover_stale_runs(*, stale_after_seconds: int = RUN_STALE_SECONDS) -> list[str]:
-    """Close runs whose worker stopped reporting. Returns the run ids closed."""
-    from app.services import agent_runner
+    """Close runs whose worker stopped reporting. Returns the run ids closed.
+
+    A report the turn was writing as its answer (P16) dies with it: nobody is
+    left to write the rest, so its row is closed in the same pass rather than
+    waiting for its own heartbeat to go stale.
+    """
+    from app.services import agent_runner, answer_reports
 
     recovered: list[str] = []
     for run in await repo.list_stale_runs(stale_after_seconds=stale_after_seconds):
@@ -114,6 +119,11 @@ async def recover_stale_runs(*, stale_after_seconds: int = RUN_STALE_SECONDS) ->
             "Recovered interrupted run %s (worker %s, last heartbeat %s)",
             run.run_id, run.worker_id or "unknown", run.heartbeat_at or "never",
         )
+    if recovered:
+        with contextlib.suppress(Exception):
+            await answer_reports.close_for_turns(
+                recovered, reason="Interrupted (the turn writing this report stopped)"
+            )
     return recovered
 
 

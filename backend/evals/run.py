@@ -223,9 +223,9 @@ async def main() -> int:
 
     # Offline: the tool list is code, not a call. A misspelt forbidden tool
     # would pass every run, so a dataset naming one is refused.
-    from app.agents.tools import ALL_AGENT_TOOLS
+    from app.agents.tools import EVERY_TOOL
 
-    unknown = dataset.unknown_tools({tool.name for tool in ALL_AGENT_TOOLS})
+    unknown = dataset.unknown_tools({tool.name for tool in EVERY_TOOL})
     if unknown:
         raise SystemExit(f"{dataset.name}: unknown tool names {unknown}")
     if args.validate:
@@ -238,7 +238,7 @@ async def main() -> int:
     if not cases:
         raise SystemExit("No case matches the selection.")
 
-    from app.agents.prompts import PROMPT_VERSION
+    from app.agents.prompts import current_prompt_version
     from app.config import get_settings
     from app.db import database as db
     from app.services import agent_runner
@@ -275,7 +275,7 @@ async def main() -> int:
                 "dataset": dataset.name,
                 "dataset_version": dataset.version,
                 "model": model,
-                "prompt_version": PROMPT_VERSION,
+                "prompt_version": current_prompt_version(),
                 "commit": _commit(),
                 "generated_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
                 "partial": len(cases) != len(dataset.cases),

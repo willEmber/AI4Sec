@@ -33,6 +33,7 @@ from __future__ import annotations
 from app.models.agent_models import AgentMemory, AgentProject, SessionPaper
 
 # Recorded on every run so an evaluation can tell which prompt produced a result.
+# A turn with report modes written as answers records more (`current_prompt_version`).
 PROMPT_VERSION = "p15-aliases-1"
 
 
@@ -476,6 +477,93 @@ def mode_instruction(mode: str, language: str = "zh") -> str:
     return table.get(mode, "")
 
 
+# ── Report modes written as answers (P16) ───────────────────────────────────
+#
+# With `AGENT_ANSWER_REPORT_MODES` empty the prompt above is used as it is.
+# With a mode switched on, its section is rebuilt: that mode is started with
+# `begin_report` and written as the answer, the others keep their tool and the
+# rules about summarising a tool's report.
+
+_REPORT_HEADINGS = {"zh": "## 三种整篇报告模式", "en": "## The three whole-paper report modes"}
+
+_MODE_LINES = {
+    "zh": {
+        "snap": "快速洞察——几分钟内给出\"值不值得读\"的判断：核心主张、结果支撑程度、外部信号（引用、期刊等级、代码、撤稿）。适合\"帮我快速评估一下\"、\"这篇值得读吗\"。",
+        "lens": "逻辑透镜——深挖方法：核心思想、流程、每个公式的含义、算法步骤、数据集与结果表、可复现性。适合\"详细讲讲方法\"、\"公式怎么理解\"。",
+        "sphere": "研究全景——扩展引用图谱、筛选核心文献、聚类比较、指出研究空白。最慢，常需十分钟以上。适合\"这篇在领域里处于什么位置\"、\"相关工作有哪些\"。",
+    },
+    "en": {
+        "snap": "Insight Snap: a fast \"is this worth reading\" verdict — core claims, how well the results support them, external signals (citations, venue rank, code, retraction). For \"quickly assess this\", \"is it worth reading\".",
+        "lens": "Logic Lens: the method in depth — core idea, pipeline, every equation explained, algorithm steps, datasets and result tables, reproducibility. For \"walk me through the method\", \"explain the equations\".",
+        "sphere": "Research Sphere: expands the citation graph, selects and clusters the core literature, compares, names research gaps. Slowest, often ten minutes or more. For \"where does this sit in the field\", \"related work\".",
+    },
+}
+
+_TOOL_OF_MODE = {"snap": "run_insight_snap", "lens": "run_logic_lens", "sphere": "run_research_sphere"}
+
+
+def _report_section(language: str, answer_modes: frozenset[str]) -> str:
+    zh = language == "zh"
+    lines = _MODE_LINES["zh" if zh else "en"]
+    entries = []
+    for mode in ("snap", "lens", "sphere"):
+        how = f'`begin_report(mode="{mode}")`' if mode in answer_modes else f"`{_TOOL_OF_MODE[mode]}`"
+        entries.append(f"- {how}{'：' if zh else ' — '}{lines[mode]}")
+    legacy = [m for m in ("snap", "lens", "sphere") if m not in answer_modes]
+    if zh:
+        rules = [
+            "- 用户在界面里选定了某个模式时，本轮就写对应的报告，不要改用逐段阅读替代。",
+            "- 用户没有选模式时，只有当问题确实需要整篇分析（评估整体价值、系统梳理方法、定位领域）才写报告；具体问题用检索和精读回答更快也更准。",
+            "- 用 `begin_report` 开始的报告就是本轮的最终回答。先调用它拿到这种报告的写作方法，按方法阅读，读完后一次性写完；每条事实性结论都像普通回答一样用 `[E12]` 引用读到的证据。一轮只写一份报告。",
+            "- 报告写完之后的追问：报告就在对话里，直接回答，不要再调用 `begin_report`，也不要重写报告。",
+        ]
+        if legacy:
+            tools = "、".join(f"`{_TOOL_OF_MODE[m]}`" for m in legacy)
+            rules += [
+                f"- {tools}：同一篇论文同一模式不要重复调用；工具会直接返回已有报告。",
+                f"- {tools} 生成报告后，用户已经看到了完整报告。你只需用几句话概括要点并指出值得注意之处，不要复述报告，也不要给报告内容加 `[E12]` 这样的引用——它是分析结果，不是论文原文。例外：工具结果 `signals` 里的外部信号各带 `evidence_id`，陈述它们时引用这些编号。",
+            ]
+        head = "除了逐段阅读，你还能写三种整篇报告，报告会以卡片形式展示给用户："
+        return "\n\n".join([_REPORT_HEADINGS["zh"], head, "\n".join(entries), "使用规则：", "\n".join(rules)]) + "\n\n"
+    rules = [
+        "- When the reader picked a mode in the interface, write that report this turn; do not substitute passage reading.",
+        "- Without a chosen mode, write one only when the question genuinely needs a whole-paper analysis (overall worth, systematic method walkthrough, position in the field). Specific questions are faster and more accurate through search and section reads.",
+        "- A report started with `begin_report` is this turn's final answer. Call it first to get the method for that report, read as the method says, then write the report once, at the end, citing every factual statement with `[E12]` evidence numbers as in any answer. One report per turn.",
+        "- Follow-ups after a report: the report is in the conversation; answer directly. Do not call `begin_report` again or rewrite the report.",
+    ]
+    if legacy:
+        tools = ", ".join(f"`{_TOOL_OF_MODE[m]}`" for m in legacy)
+        rules += [
+            f"- {tools}: never run the same mode twice on the same paper; the tool returns the existing report.",
+            f"- Once {tools} has produced a report the reader has already seen it in full. Summarise its key points in a few sentences and flag what deserves attention. Do not repeat it, and do not attach `[E12]`-style citations to its content — it is an analysis, not paper text. The exception is the external signals under `signals`: each carries an `evidence_id`; cite it when you state one.",
+        ]
+    head = "Besides reading passage by passage, you can write three whole-paper reports, shown to the reader as a card:"
+    return "\n\n".join([_REPORT_HEADINGS["en"], head, "\n".join(entries), "Rules:", "\n".join(rules)]) + "\n\n"
+
+
+def _with_answer_modes(base: str, language: str, answer_modes: frozenset[str]) -> str:
+    """`base` with its report section rebuilt for the modes written as answers."""
+    if not answer_modes:
+        return base
+    heading = _REPORT_HEADINGS["zh" if language == "zh" else "en"]
+    start = base.find(heading)
+    end = base.find("\n## ", start + len(heading)) if start >= 0 else -1
+    if start < 0 or end < 0:  # pragma: no cover — the section is part of the template
+        return base
+    return base[:start] + _report_section(language, answer_modes) + base[end + 1 :]
+
+
+def current_prompt_version(answer_modes: frozenset[str] | None = None) -> str:
+    """The prompt version a turn records: the base version, plus the report
+    methods it was offered when any mode is written as an answer."""
+    from app.agents import skills
+
+    modes = skills.enabled_modes() if answer_modes is None else answer_modes
+    if not modes:
+        return PROMPT_VERSION
+    return f"{PROMPT_VERSION}+answer:{skills.version_tag(modes)}"
+
+
 # How many of a project's other papers the prompt lists. Each is one short
 # line; past this the list costs more than the occasional paper it would name.
 PROJECT_PAPERS_IN_PROMPT = 40
@@ -533,10 +621,12 @@ def build_system_prompt(
     project: AgentProject | None = None,
     project_papers: list[SessionPaper] | None = None,
     memories_omitted: int = 0,
+    answer_modes: frozenset[str] = frozenset(),
 ) -> str:
     """Assemble the run's system prompt: reading rules, the session's papers,
-    its project, the reader's memories."""
-    base = _ZH if language == "zh" else _EN
+    its project, the reader's memories. `answer_modes` are the report modes
+    written as the answer (P16)."""
+    base = _with_answer_modes(_ZH if language == "zh" else _EN, language, answer_modes)
     return (
         base
         + _format_papers(papers or [], language)

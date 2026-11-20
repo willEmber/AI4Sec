@@ -153,6 +153,17 @@ class AppSettings(BaseSettings):
     # Must be one offered for conversations; empty switches fallback off.
     agent_fallback_modelname: str = Field(default="", alias="AGENT_FALLBACK_MODELNAME")
     agent_max_message_chars: int = Field(default=20_000, alias="AGENT_MAX_MESSAGE_CHARS")
+    # The report modes written as the turn's own answer (P16): comma-separated
+    # `snap`, `lens`, `sphere`. A mode listed here is started with
+    # `begin_report` and written by the conversation; the others keep their
+    # report tool. Switched on one mode at a time, after its evaluation passes.
+    agent_answer_report_modes: str = Field(default="", alias="AGENT_ANSWER_REPORT_MODES")
+    # Output ceiling of every model call in a report turn. Reasoning is billed
+    # against it too, so it has to hold a full trace plus a long report; the
+    # gateway default is sized for a chat answer.
+    agent_report_max_output_tokens: int = Field(
+        default=40_960, alias="AGENT_REPORT_MAX_OUTPUT_TOKENS"
+    )
     # Turns one principal may have in flight across sessions (0 = unlimited),
     # and turns one process executes at once; the rest wait their turn.
     agent_max_active_runs_per_principal: int = Field(
@@ -353,6 +364,12 @@ class AppSettings(BaseSettings):
     def thinking_models(self) -> list[str]:
         """Selectable thinking models, parsed from the comma-separated env var."""
         return [m.strip() for m in self.thinking_model.split(",") if m.strip()]
+
+    @property
+    def answer_report_modes(self) -> frozenset[str]:
+        """The report modes this deployment writes as answers (see above)."""
+        named = {m.strip().casefold() for m in self.agent_answer_report_modes.split(",")}
+        return frozenset(named & {"snap", "lens", "sphere"})
 
     @property
     def default_thinking_model(self) -> str:

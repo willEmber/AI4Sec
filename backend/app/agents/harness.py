@@ -101,11 +101,13 @@ def warm_up(
 
     The model is never called: the agent is constructed and discarded.
     """
-    from app.agents.tools import ALL_AGENT_TOOLS
+    from app.agents.tools import agent_tools
 
     register_scholar_harness_profile()
     create_paper_agent(
-        tools=ALL_AGENT_TOOLS,
+        # The tools a turn is offered, report modes written as answers (P16)
+        # included: a different list is a different graph.
+        tools=agent_tools(),
         system_prompt="warm-up",
         model=model if model is not None else _ToolSurfaceProbe(),
         context_schema=context_schema,

@@ -20,12 +20,13 @@ An argument the tool rejects comes back from the tool node as plain text; it
 is rewrapped as an `invalid_argument` result, so the stream and the failure
 count see it as the failure it is rather than as an unlabelled success.
 
-*Model calls*: once a turn ceiling is reached the next call is the closing
-one — made without tools, told to answer from what was gathered. Before this,
-reaching a ceiling cut the turn off where it stood, and a paper parsed on the
-last allowed call was never read. A call that returns nothing is made once
-more; a call that fails before writing anything moves the turn to the fallback
-model when one is configured.
+*Model calls*: in a turn writing a report (P16) every call carries the report
+output ceiling, `AGENT_REPORT_MAX_OUTPUT_TOKENS`. Once a turn ceiling is
+reached the next call is the closing one — made without tools, told to answer
+from what was gathered. Before this, reaching a ceiling cut the turn off where
+it stood, and a paper parsed on the last allowed call was never read. A call
+that returns nothing is made once more; a call that fails before writing
+anything moves the turn to the fallback model when one is configured.
 """
 
 from __future__ import annotations
@@ -37,13 +38,18 @@ import logging
 from collections.abc import Awaitable, Callable
 from typing import Any
 
-from langchain.agents.middleware.types import AgentMiddleware, ModelRequest, ModelResponse
+from langchain.agents.middleware.types import (
+    AgentMiddleware,
+    ModelRequest,
+    ModelResponse,
+)
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
 from app.agents.context import AgentContext
 from app.agents.errors import EmptyModelResponse, classify_error
 from app.agents.model_factory import STREAM_PROBE, StreamProbe
+from app.config import get_settings
 from app.models.agent_models import ErrorCode, EventType, ToolResult
 
 logger = logging.getLogger("scholar.agents.guard")
@@ -68,6 +74,8 @@ TOOL_SECONDS: dict[str, float | None] = {
     "run_insight_snap": None,
     "run_logic_lens": None,
     "run_research_sphere": None,
+    # Opens a report; waits for the paper's parse like the report tools do.
+    "begin_report": None,
 }
 
 # The identical call that is no longer run.
@@ -511,6 +519,14 @@ class TurnGuardMiddleware(AgentMiddleware):
             if reason:
                 logger.warning("Run %s reached %s; closing the turn", ctx.run_id, reason)
                 ctx.begin_wrapup(reason)
+        if ctx.report is not None:
+            # A report is a long answer written after a reasoning trace, and
+            # both are billed against the output ceiling (P16 §3.5).
+            ceiling = get_settings().agent_report_max_output_tokens
+            if ceiling > 0:
+                request = request.override(
+                    model_settings={**request.model_settings, "max_tokens": ceiling}
+                )
         closing = bool(ctx.wrapup)
         if closing:
             ctx.wrapup_call_started = True

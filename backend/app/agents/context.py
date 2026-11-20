@@ -238,6 +238,10 @@ class AgentContext:
     # leaves ids as stored. Typed `Any` because the tools' runtime schema is
     # built from these annotations and the book imports this module.
     aliases: Any = None
+    # The report this turn writes as its answer (P16), an
+    # `answer_reports.ReportTurn` hung here by `begin_report`; `None` in an
+    # ordinary turn. Set once: a turn writes at most one report.
+    report: Any = None
 
     def elapsed(self) -> float:
         """Seconds this turn has been running, also recorded on `usage`."""

@@ -18,7 +18,7 @@ import time
 from typing import Any
 
 from app.agents.context import RunBudget
-from app.agents.prompts import PROMPT_VERSION
+from app.agents.prompts import current_prompt_version
 from app.db import agent_repository as repo
 from app.db import database as db
 from app.models.agent_models import Availability, EventType, MessageRole, RunStatus
@@ -40,6 +40,13 @@ async def parsed_paper_ids(paper_ids: list[str]) -> set[str]:
     return {r["paper_id"] for r in rows}
 
 
+# The cached work a report reuses, by key prefix: a report tool's whole report,
+# and the parts a report written as the answer caches — the literature map and
+# the blind review (P16 §3.4). Each attempt has to pay for them, or its cost
+# is not comparable with the baseline's.
+REPORT_JOB_PREFIXES = ("mode", "sphere_map", "blind_review")
+
+
 async def forget_mode_reports(paper_ids: list[str]) -> int:
     """Drop the finished report jobs of these papers, so the next one is made anew.
 
@@ -50,11 +57,11 @@ async def forget_mode_reports(paper_ids: list[str]) -> int:
     """
     removed = 0
     for paper_id in paper_ids:
-        removed += await db.execute(
-            "DELETE FROM agent_jobs WHERE kind = 'mode' AND idempotency_key LIKE ? "
-            "AND status <> 'running'",
-            (f"mode:{paper_id}:%",),
-        )
+        for prefix in REPORT_JOB_PREFIXES:
+            removed += await db.execute(
+                "DELETE FROM agent_jobs WHERE idempotency_key LIKE ? AND status <> 'running'",
+                (f"{prefix}:{paper_id}:%",),
+            )
     return removed
 
 
@@ -121,7 +128,7 @@ async def _turn(
         session_id=session.session_id,
         owner_id=owner_id,
         llm_model=model,
-        prompt_version=PROMPT_VERSION,
+        prompt_version=current_prompt_version(),
         budget=RunBudget.from_settings().as_dict(),
     )
     await repo.append_message(

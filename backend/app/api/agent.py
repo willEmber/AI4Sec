@@ -872,6 +872,6 @@ def _run_budget(quota: accounts.QuotaUsage | None = None) -> dict[str, object]:
 
 
 def _prompt_version() -> str:
-    from app.agents.prompts import PROMPT_VERSION
+    from app.agents.prompts import current_prompt_version
 
-    return PROMPT_VERSION
+    return current_prompt_version()

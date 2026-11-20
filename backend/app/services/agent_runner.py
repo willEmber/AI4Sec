@@ -35,10 +35,12 @@ import contextlib
 import logging
 import re
 import time
+from collections.abc import Callable
 from typing import Any
 
 from langchain_core.messages import AIMessage, AIMessageChunk, ToolMessage
 
+from app.agents import skills
 from app.agents.aliases import AliasBook, CitationRewriter, strip_alias_markers
 from app.agents.context import AgentContext, BudgetUsage, RunBudget
 from app.agents.errors import EmptyModelResponse, classify_error, error_summary
@@ -47,7 +49,8 @@ from app.agents.middleware import build_agent_middleware
 from app.agents.model_factory import build_chat_model, fallback_model_name
 from app.agents.prompts import PROMPT_VERSION, build_system_prompt, mode_instruction
 from app.agents.tool_events import ToolCallTracker, preview_of, summarise_input
-from app.agents.tools import ALL_AGENT_TOOLS
+from app.agents.tools import ALL_AGENT_TOOLS, agent_tools
+from app.agents.tools.report import composer_note, start_report
 from app.config import get_settings
 from app.db import agent_repository as repo
 from app.models.agent_models import (
@@ -60,8 +63,9 @@ from app.models.agent_models import (
     MessageRole,
     RunStatus,
     SessionPaper,
+    ToolResult,
 )
-from app.services import llm_usage
+from app.services import answer_reports, llm_usage
 from app.services.agent_worker import HEARTBEAT_SECONDS, WORKER_ID
 from app.services.llm_gateway import get_registry
 
@@ -317,18 +321,23 @@ async def _citations_of(text: str, collected: list[str], session_id: str) -> lis
     return current + [eid for eid in earlier if eid in citable]
 
 
-async def _heartbeat(run_id: str) -> None:
+async def _heartbeat(run_id: str, report_run: Callable[[], str] = lambda: "") -> None:
     """Say this worker is still on the run, until the turn stops it.
 
     Without this the only signal of life is the run's status, which says
     "running" just as loudly after the process holding it is gone. Scoped to
     this worker, so a stamp from a process that has already been recovered does
-    not resurrect the run.
+    not resurrect the run. A report the turn is writing as its answer (P16)
+    lives exactly as long as the turn, so its row is beaten here too.
     """
     while True:
         await asyncio.sleep(HEARTBEAT_SECONDS)
         with contextlib.suppress(Exception):
             await repo.heartbeat_run(run_id, worker_id=WORKER_ID)
+        report = report_run()
+        if report:
+            with contextlib.suppress(Exception):
+                await answer_reports.beat(report)
 
 
 async def start_turn(
@@ -519,6 +528,63 @@ def _model_input(question: str, mode: str, language: str) -> str:
     return f"{question}\n\n{note}" if note else question
 
 
+# The call id the composer's report opening is announced under; it was not a
+# model call, so it has no id of its own.
+COMPOSER_REPORT_CALL_ID = "composer-begin-report"
+
+
+async def _open_composer_report(
+    context: AgentContext, stream: DeltaCoalescer, mode: str
+) -> str:
+    """Open the report the reader picked in the composer, before the model is called.
+
+    The same `start_report` the tool runs, announced as that tool so the turn's
+    activity shows it. Returns what follows the reader's message: the method,
+    or why the report could not begin.
+    """
+    await stream.emit(
+        EventType.TOOL_STARTED,
+        {
+            "tool": "begin_report",
+            "call_id": COMPOSER_REPORT_CALL_ID,
+            "input": summarise_input({"mode": mode}),
+        },
+    )
+    try:
+        result = await start_report(context, mode=mode)
+    except Exception:  # noqa: BLE001 — the turn goes on without the report
+        logger.exception("Run %s could not open its %s report", context.run_id, mode)
+        result = ToolResult.failed(
+            ErrorCode.INTERNAL_ERROR, "The report could not be opened.", retryable=False
+        )
+    payload = _tool_completion_payload(
+        ToolMessage(
+            content=result.to_json(), name="begin_report", tool_call_id=COMPOSER_REPORT_CALL_ID
+        )
+    )
+    payload.pop("_evidence_ids", None)
+    payload.pop("_attached_paper", None)
+    await stream.emit(
+        EventType.TOOL_FAILED if payload.get("status") == "error" else EventType.TOOL_COMPLETED,
+        payload,
+    )
+    return composer_note(mode, result, context.language)
+
+
+async def _close_report(context: AgentContext | None, *, status: str, reason: str) -> None:
+    """Close the report of a turn that did not finish; its text stays an answer."""
+    report = context.report if context is not None else None
+    if report is None:
+        return
+    with contextlib.suppress(Exception):
+        await answer_reports.close(
+            report.run_id,
+            status=status,
+            reason=reason,
+            tokens=max(0, (context.usage.tokens or 0) - report.tokens_at_start),
+        )
+
+
 async def _execute_turn(
     *, session: AgentSession, run: AgentRun, question: str, mode: str = "auto"
 ) -> None:
@@ -538,16 +604,25 @@ async def _execute_turn(
     heartbeat: asyncio.Task[None] | None = None
     slots: asyncio.Semaphore | None = None
     settings = get_settings()
+    # Report modes written as this turn's answer rather than by a tool (P16).
+    answer_modes = skills.enabled_modes()
     stream = DeltaCoalescer(
         session_id=session.session_id,
         run_id=run.run_id,
         flush_ms=settings.agent_delta_flush_ms,
         flush_chars=settings.agent_delta_flush_chars,
     )
+    # Where the answer stood after the latest tool result: the report is what
+    # the turn wrote after it, not the narration between its reads.
+    report_mark = 0
+
+    def _report_run() -> str:
+        report = context.report if context is not None else None
+        return report.run_id if report is not None else ""
 
     try:
         await repo.claim_run(run.run_id, worker_id=WORKER_ID)
-        heartbeat = asyncio.create_task(_heartbeat(run.run_id))
+        heartbeat = asyncio.create_task(_heartbeat(run.run_id, _report_run))
         await stream.emit(
             EventType.RUN_STARTED,
             {"question": question, "model": run.llm_model, "mode": mode},
@@ -610,7 +685,7 @@ async def _execute_turn(
         # included.
         agent = await asyncio.to_thread(
             create_paper_agent,
-            tools=ALL_AGENT_TOOLS,
+            tools=agent_tools(answer_modes) if answer_modes else ALL_AGENT_TOOLS,
             system_prompt=build_system_prompt(
                 language=session.language,
                 papers=papers,
@@ -618,6 +693,7 @@ async def _execute_turn(
                 memories_omitted=memories_omitted,
                 project=project,
                 project_papers=project_papers,
+                answer_modes=answer_modes,
             ),
             model=chat_model,
             context_schema=AgentContext,
@@ -649,15 +725,13 @@ async def _execute_turn(
         async with asyncio.timeout(
             max(1, budget.max_wall_seconds) + max(0, settings.agent_wrapup_seconds)
         ), llm_usage.metering(sink=_tool_tokens):
+            if mode in answer_modes:
+                note = await _open_composer_report(context, stream, mode)
+                model_input = f"{question}\n\n{note}"
+            else:
+                model_input = _model_input(question, mode, session.language)
             async for stream_mode, chunk in agent.astream(
-                {
-                    "messages": [
-                        {
-                            "role": "user",
-                            "content": _model_input(question, mode, session.language),
-                        }
-                    ]
-                },
+                {"messages": [{"role": "user", "content": model_input}]},
                 config=context.config(),
                 context=context,
                 stream_mode=["messages"],
@@ -698,6 +772,7 @@ async def _execute_turn(
                         # paper list beside the conversation, so it has to hear about
                         # it now rather than on the next reload.
                         await stream.emit(EventType.PAPER_ADDED, attached)
+                    report_mark = len(stream.shown_text())
                     continue
 
                 if isinstance(message, (AIMessage, AIMessageChunk)):
@@ -737,9 +812,11 @@ async def _execute_turn(
         # What the reader was shown, citations rewritten to stored ids; the
         # model's own text (aliases and all) stays in `answer_parts` and the
         # checkpoint.
-        answer = stream.shown_text().strip()
+        shown = stream.shown_text()
+        answer = shown.strip()
 
         if cancelled:
+            await _close_report(context, status="cancelled", reason="Cancelled")
             await _record_unsaved_text(
                 agent, context, text_by_message, ErrorCode.CANCELLED.value
             )
@@ -786,6 +863,17 @@ async def _execute_turn(
         )
         await repo.set_session_title(session.session_id, question[:60])
 
+        if context.report is not None:
+            if completion == "complete":
+                await _save_report(
+                    context, stream, body=shown[report_mark:].strip(),
+                    stop_reason=stop_reason or "", sink=_tool_tokens,
+                )
+            else:
+                await _close_report(
+                    context, status="failed", reason=f"The answer ended early ({stop_reason})."
+                )
+
         await repo.finish_run(run.run_id, status=RunStatus.DONE, usage=usage.as_dict())
         await repo.touch_session(session.session_id)
         await stream.emit(
@@ -800,6 +888,7 @@ async def _execute_turn(
 
     except asyncio.CancelledError:
         usage.wall_seconds = time.perf_counter() - started
+        await _close_report(context, status="cancelled", reason="Cancelled")
         kept = False
         with contextlib.suppress(Exception):
             kept = await _keep_partial(
@@ -832,6 +921,7 @@ async def _execute_turn(
         logger.exception("Agent run %s failed (%s)", run.run_id, code.value)
         usage.wall_seconds = time.perf_counter() - started
         usage.errors += 1
+        await _close_report(context, status="failed", reason=f"The turn failed ({code.value}).")
         kept = False
         with contextlib.suppress(Exception):
             await stream.close()
@@ -860,6 +950,39 @@ async def _execute_turn(
             slots.release()
         if heartbeat is not None:
             heartbeat.cancel()
+
+
+async def _save_report(
+    context: AgentContext,
+    stream: DeltaCoalescer,
+    *,
+    body: str,
+    stop_reason: str,
+    sink: Callable[[int], None],
+) -> None:
+    """Save the report this turn wrote and put its card under the answer.
+
+    Its extraction calls are metered into the turn like a tool's. A failure
+    here leaves the answer as it is — already stored — and closes the row.
+    """
+    report = context.report
+    usage = context.usage
+    try:
+        with llm_usage.metering(sink=sink):
+            artifact = await answer_reports.snapshot(
+                report,
+                body=body,
+                owner_id=context.owner_id,
+                language=context.language,
+                stop_reason=stop_reason,
+                spent=lambda: usage.tokens or 0,
+            )
+    except Exception:  # noqa: BLE001 — the answer is stored; only the report is lost
+        logger.exception("Run %s could not save its %s report", context.run_id, report.mode)
+        await _close_report(context, status="failed", reason="The report could not be saved.")
+        return
+    if artifact is not None:
+        await stream.emit(EventType.ARTIFACT_CREATED, artifact)
 
 
 async def _project_context(

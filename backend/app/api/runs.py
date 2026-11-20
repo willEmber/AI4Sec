@@ -20,7 +20,7 @@ from app.config import get_settings
 from app.db import database as db
 from app.rate_limit import limiter
 from app.models.schemas import RecentRunResponse, RunOutputResponse, RunResponse
-from app.services import mode_runs, report_images, zotero_export
+from app.services import mode_runs, report_citations, report_images, zotero_export
 from app.services.accounts import Caller
 
 router = APIRouter(tags=["runs"])
@@ -108,6 +108,29 @@ async def get_run_output(request: Request, run_id: str):
     return RunOutputResponse(**row)
 
 
+def _exported_markdown(output: dict[str, Any] | None, run: dict[str, Any]) -> str:
+    """The report's text as it leaves the application.
+
+    A report written as an answer (P16) cites `[ev_…]`, which means nothing
+    outside the conversation: it goes out numbered, with a references section
+    built from the citation table frozen when it was saved. Older reports cite
+    pages and go out as stored.
+    """
+    if not output:
+        return ""
+    markdown = output.get("markdown") or ""
+    try:
+        data = json.loads(output.get("json_data") or "{}")
+    except (TypeError, ValueError):
+        data = {}
+    citations = data.get("citations") if isinstance(data, dict) else None
+    if not isinstance(citations, dict) or not citations:
+        return markdown
+    return report_citations.to_numbered(
+        markdown, citations, paper_id=run["paper_id"], language=run.get("language") or "en"
+    )
+
+
 @router.get("/runs/{run_id}/zotero-bundle")
 @limiter.limit("20/minute")
 async def get_run_zotero_bundle(request: Request, run_id: str):
@@ -128,9 +151,9 @@ async def get_run_zotero_bundle(request: Request, run_id: str):
         raise HTTPException(status_code=404, detail="Paper not found")
 
     output = await db.fetch_one(
-        "SELECT markdown FROM run_outputs WHERE run_id = ?", (run_id,)
+        "SELECT markdown, json_data FROM run_outputs WHERE run_id = ?", (run_id,)
     )
-    markdown_report = output["markdown"] if output else ""
+    markdown_report = _exported_markdown(output, run)
 
     settings = get_settings()
     pdf_path = (settings.data_dir / paper["file_path"]).resolve()
@@ -170,14 +193,14 @@ async def get_run_markdown_export(request: Request, run_id: str):
         "SELECT * FROM papers WHERE paper_id = ?", (run["paper_id"],)
     )
     output = await db.fetch_one(
-        "SELECT markdown FROM run_outputs WHERE run_id = ?", (run_id,)
+        "SELECT markdown, json_data FROM run_outputs WHERE run_id = ?", (run_id,)
     )
     if not output or not (output["markdown"] or "").strip():
         raise HTTPException(status_code=404, detail="Run output not found")
 
     settings = get_settings()
     markdown_text = await report_images.process_report_markdown(
-        output["markdown"],
+        _exported_markdown(output, run),
         paper_id=run["paper_id"],
         data_dir=settings.data_dir,
         embed_fallback=False,

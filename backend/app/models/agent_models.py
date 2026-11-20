@@ -348,6 +348,10 @@ class SessionArtifact(BaseModel):
     language: str = "en"
     status: str = "done"
     created_at: str = ""
+    # Written as the turn's answer (P16), and the budget that closed that
+    # turn if one did — the report may then stop short.
+    answer: bool = False
+    stop_reason: str = ""
 
 
 class MemoryKind(str, Enum):

@@ -902,12 +902,15 @@ async def list_session_artifacts(session_id: str, *, limit: int = 100) -> list[S
     alone. A reused report still belongs to the session that first produced it,
     but this conversation also showed it and must keep the card after a reload.
     `agent_run_id` is the turn that announced the card here, so it sits under
-    the answer that produced (or reused) it.
+    the answer that produced (or reused) it. `answer` marks a report that *is*
+    that answer (P16), whose card follows the text rather than preceding it.
     """
     rows = await db.fetch_all(
         """SELECT r.run_id, e.run_id AS agent_run_id, r.paper_id,
                   COALESCE(p.title, '') AS paper_title,
-                  r.mode, r.language, r.status, e.created_at
+                  r.mode, r.language, r.status, e.created_at,
+                  COALESCE((e.payload_json::jsonb ->> 'answer')::boolean, false) AS answer,
+                  COALESCE(e.payload_json::jsonb ->> 'stop_reason', '') AS stop_reason
              FROM agent_events e
              JOIN runs r ON r.run_id = (e.payload_json::jsonb ->> 'run_id')
              LEFT JOIN papers p ON p.paper_id = r.paper_id
@@ -926,6 +929,8 @@ async def list_session_artifacts(session_id: str, *, limit: int = 100) -> list[S
             language=r["language"] or "en",
             status=r["status"],
             created_at=r["created_at"] or "",
+            answer=bool(r["answer"]),
+            stop_reason=r["stop_reason"] or "",
         )
         for r in rows
     ]
