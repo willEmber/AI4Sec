@@ -108,6 +108,21 @@ class DatabaseTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(before, after)
         self.assertTrue(all(re.fullmatch(r"\d{4}", r["version"]) for r in after))
 
+    async def test_starting_up_leaves_runs_other_processes_are_making(self) -> None:
+        # A report is made inside a turn on whichever replica holds it; another
+        # process opening the database must not close it. Orphans are the
+        # recovery sweep's, decided by heartbeat.
+        from app.db import database as db
+
+        await db.execute("INSERT INTO papers (paper_id, file_path) VALUES (?, ?)", ("p9", "x"))
+        await db.execute(
+            "INSERT INTO runs (run_id, paper_id, mode, status, heartbeat_at) "
+            "VALUES ('r_live', 'p9', 'lens', 'running', now())"
+        )
+        await db.init_db()
+        row = await db.fetch_one("SELECT status FROM runs WHERE run_id = 'r_live'")
+        self.assertEqual(row["status"], "running")
+
     async def test_full_text_search_column_follows_the_row(self) -> None:
         from app.db import database as db
 

@@ -129,23 +129,20 @@ def _require_pool() -> AsyncConnectionPool:
 
 
 async def init_db() -> None:
-    """Open the pool, apply pending migrations, and close out orphaned legacy runs."""
+    """Open the pool and apply pending migrations.
+
+    Runs left active by a process that died are not closed here: a report is
+    made inside a turn on whichever replica holds it, and closing every active
+    run at startup closed the reports other replicas — or an evaluation
+    sharing the database — were still writing. Each run heartbeats, and the
+    recovery sweep closes the ones whose heartbeat stopped
+    (`mode_runs.recover_stale`).
+    """
     pool = await open_pool()
     async with pool.connection() as conn:
         applied = await apply_migrations(conn)
         if applied:
             logger.info("Applied %d schema migration(s): %s", len(applied), ", ".join(applied))
-        # A legacy (non-agent) run still pending/running at startup lost the
-        # background task that owned it when the previous process exited, so
-        # it can never finish. Agent runs are not touched here: they carry a
-        # worker heartbeat, and `agent_worker` decides from that.
-        cursor = await conn.execute(
-            "UPDATE runs SET status = 'failed', "
-            "error_msg = 'Interrupted (server restarted)', finished_at = now() "
-            "WHERE status IN ('pending', 'running')"
-        )
-        if cursor.rowcount:
-            logger.info("Reconciled %d interrupted run(s) on startup", cursor.rowcount)
 
 
 # ── SQL and row translation ─────────────────────────────────────────────────
