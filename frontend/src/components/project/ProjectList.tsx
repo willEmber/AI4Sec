@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createProject, describeApiError, listProjects } from "@/lib/agent";
 import type { AgentProject } from "@/lib/agent";
+import { getMe } from "@/lib/auth";
 import { useTranslation } from "@/lib/i18n";
 import { useChatShell } from "@/components/agent/ChatShell";
 import { IconArrowRight, IconFolder, IconPlus } from "@/components/icons";
@@ -32,12 +33,27 @@ export default function ProjectList({ initialCreateOpen = false }: { initialCrea
   }, [initialCreateOpen]);
 
   useEffect(() => {
-    listProjects(showArchived)
-      .then((data) => {
+    let cancelled = false;
+    (async () => {
+      const me = await getMe();
+      if (cancelled) return;
+      if (!me?.principal_id) {
+        setProjects([]);
+        if (!showArchived) setCreateOpen(true);
+        return;
+      }
+      try {
+        const data = await listProjects(showArchived);
+        if (cancelled) return;
         setProjects(data.projects);
         if (data.projects.length === 0 && !showArchived) setCreateOpen(true);
-      })
-      .catch(() => setProjects([]));
+      } catch {
+        if (!cancelled) setProjects([]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [showArchived]);
 
   const create = useCallback(async () => {

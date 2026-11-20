@@ -34,6 +34,7 @@ const KNOWN_ERRORS = new Set([
 export function AuthMenu({ placement = "below" }: { placement?: "below" | "above" } = {}) {
   const { t } = useTranslation();
   const [me, setMe] = useState<AuthMe | null>(null);
+  const [checked, setChecked] = useState(false);
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -41,8 +42,10 @@ export function AuthMenu({ placement = "below" }: { placement?: "below" | "above
   const [password, setPassword] = useState("");
   const rootRef = useRef<HTMLDivElement>(null);
 
-  const refresh = useCallback(() => {
-    getMe().then(setMe).catch(() => setMe(null));
+  const refresh = useCallback((force = false) => {
+    getMe({ force })
+      .then((next) => setMe(next))
+      .finally(() => setChecked(true));
   }, []);
 
   useEffect(() => {
@@ -58,6 +61,14 @@ export function AuthMenu({ placement = "below" }: { placement?: "below" | "above
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [refresh]);
 
+  // Recover automatically when the backend comes back after a dev reload or offline blip.
+  useEffect(() => {
+    if (!checked || me) return;
+    const onFocus = () => refresh(true);
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
+  }, [checked, me, refresh]);
+
   useEffect(() => {
     if (!open) return;
     const onClick = (e: MouseEvent) => {
@@ -67,7 +78,17 @@ export function AuthMenu({ placement = "below" }: { placement?: "below" | "above
     return () => document.removeEventListener("mousedown", onClick);
   }, [open]);
 
-  if (!me) return null;
+  if (!me) {
+    if (!checked) return null;
+    return (
+      <Link
+        href="/account"
+        className="inline-flex items-center rounded-lg border border-border px-2.5 py-1 text-xs font-medium text-muted-foreground transition-colors hover:border-foreground/25 hover:text-foreground"
+      >
+        {t("account.title")}
+      </Link>
+    );
+  }
   // Nobody logs in here, but the one local reader still has memories and
   // projects to manage.
   if (me.mode === "single_user") {

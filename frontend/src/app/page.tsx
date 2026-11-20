@@ -37,15 +37,19 @@ export default function Home() {
   // marketing splash every time.
   useEffect(() => {
     let cancelled = false;
-    Promise.all([
-      getMe().catch(() => null),
-      listSessions().catch(() => ({ sessions: [] })),
-    ]).then(([me, sess]) => {
-      if (cancelled) return;
-      if (me?.mode === "single_user" || me?.authenticated || sess.sessions.length > 0) {
+    (async () => {
+      const me = await getMe();
+      if (cancelled || !me) return;
+      if (me.mode === "single_user" || me.authenticated) {
+        router.replace("/chat");
+        return;
+      }
+      if (!me.principal_id) return;
+      const sess = await listSessions().catch(() => ({ sessions: [] }));
+      if (!cancelled && sess.sessions.length > 0) {
         router.replace("/chat");
       }
-    });
+    })();
     return () => {
       cancelled = true;
     };

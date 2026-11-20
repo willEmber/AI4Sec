@@ -24,6 +24,18 @@ const BACKEND_SSE_BASE =
 const AGENT_TOKEN_KEY = "scholar_agent_token";
 export const AGENT_TOKEN_HEADER = "X-Agent-Token";
 
+const principalListeners = new Set<() => void>();
+
+/** Register a listener notified when a route may have minted an anonymous principal. */
+export function onPrincipalMayChange(fn: () => void): () => void {
+  principalListeners.add(fn);
+  return () => principalListeners.delete(fn);
+}
+
+function notifyPrincipalMayChange(): void {
+  for (const fn of principalListeners) fn();
+}
+
 /** An API failure with the server's error code, when it sent one. */
 export class AgentApiError extends Error {
   constructor(
@@ -372,19 +384,24 @@ export async function createSession(input: {
   paper_ids?: string[];
   project_id?: string;
 }): Promise<{ session_id: string; thread_id: string; created_at: string }> {
-  return agentRequest("/agent/sessions", {
-    method: "POST",
-    body: JSON.stringify({
-      title: input.title || "",
-      language: input.language || "zh",
-      llm_model: input.llm_model || "",
-      paper_ids: input.paper_ids || [],
-      project_id: input.project_id || "",
-      // Lets mode reports made in this conversation appear in the compare
-      // matrix beside reports made from the classic upload page.
-      owner_token: getOwnerToken(),
-    }),
-  });
+  const created = await agentRequest<{ session_id: string; thread_id: string; created_at: string }>(
+    "/agent/sessions",
+    {
+      method: "POST",
+      body: JSON.stringify({
+        title: input.title || "",
+        language: input.language || "zh",
+        llm_model: input.llm_model || "",
+        paper_ids: input.paper_ids || [],
+        project_id: input.project_id || "",
+        // Lets mode reports made in this conversation appear in the compare
+        // matrix beside reports made from the classic upload page.
+        owner_token: getOwnerToken(),
+      }),
+    },
+  );
+  notifyPrincipalMayChange();
+  return created;
 }
 
 export async function attachPapers(
@@ -468,10 +485,12 @@ export async function createProject(input: {
   title: string;
   description?: string;
 }): Promise<{ project: AgentProject }> {
-  return agentRequest("/agent/projects", {
+  const created = await agentRequest<{ project: AgentProject }>("/agent/projects", {
     method: "POST",
     body: JSON.stringify({ title: input.title, description: input.description || "" }),
   });
+  notifyPrincipalMayChange();
+  return created;
 }
 
 export async function getProject(projectId: string): Promise<ProjectDetail> {

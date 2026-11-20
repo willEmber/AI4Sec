@@ -57,8 +57,12 @@ export default function ClientLayout({
   const isLanding = pathname === "/";
 
   useEffect(() => {
-    // Traffic collection must never affect page rendering or navigation.
-    recordVisit(pathname).catch(() => {});
+    // Delay slightly so instant redirect routes (`/`, `/upload`, `/compare`)
+    // do not fire and immediately abort an in-flight visit request.
+    const timer = setTimeout(() => {
+      recordVisit(pathname).catch(() => {});
+    }, 250);
+    return () => clearTimeout(timer);
   }, [pathname]);
 
   return (

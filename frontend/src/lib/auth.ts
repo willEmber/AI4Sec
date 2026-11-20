@@ -12,6 +12,7 @@ import {
   apiErrorFrom,
   forgetLegacyAgentToken,
   getAgentToken,
+  onPrincipalMayChange,
 } from "./agent";
 
 export interface AuthProvider {
@@ -44,7 +45,19 @@ export interface AuthMe {
   quota: AuthQuota | null;
 }
 
-export async function getMe(): Promise<AuthMe> {
+const ME_CACHE_TTL_MS = 5000;
+let cachedMe: { value: AuthMe; at: number } | null = null;
+let inflightMe: Promise<AuthMe | null> | null = null;
+
+/** Drop the cached `/api/auth/me` snapshot after login, logout, or principal creation. */
+export function invalidateMe(): void {
+  cachedMe = null;
+  inflightMe = null;
+}
+
+onPrincipalMayChange(invalidateMe);
+
+async function fetchMeOnce(): Promise<AuthMe> {
   const headers = new Headers();
   // A pre-accounts browser still holds its credential in storage; this call
   // has the server move it into the cookie, after which it is forgotten.
@@ -55,6 +68,44 @@ export async function getMe(): Promise<AuthMe> {
   const me = (await res.json()) as AuthMe;
   if (legacy && me.principal_id) forgetLegacyAgentToken();
   return me;
+}
+
+/**
+ * Fetch caller identity, coalescing concurrent mounts (`ChatShell`, `AuthMenu`,
+ * `Home`) into a single request and retrying once across brief dev-server reloads.
+ * Resolves to `null` when the backend is unreachable rather than throwing.
+ */
+export async function getMe(opts: { force?: boolean } = {}): Promise<AuthMe | null> {
+  if (opts.force) invalidateMe();
+  if (cachedMe && Date.now() - cachedMe.at < ME_CACHE_TTL_MS) {
+    return cachedMe.value;
+  }
+  if (inflightMe) return inflightMe;
+
+  let task: Promise<AuthMe | null> | null = null;
+  task = (async (): Promise<AuthMe | null> => {
+    try {
+      const me = await fetchMeOnce();
+      cachedMe = { value: me, at: Date.now() };
+      return me;
+    } catch {
+      // One brief backoff retry covers uvicorn `--reload` restarts without
+      // leaving components empty; if the server is genuinely down, return null.
+      await new Promise((r) => setTimeout(r, 350));
+      try {
+        const me = await fetchMeOnce();
+        cachedMe = { value: me, at: Date.now() };
+        return me;
+      } catch {
+        return null;
+      }
+    } finally {
+      if (inflightMe === task) inflightMe = null;
+    }
+  })();
+
+  inflightMe = task;
+  return task;
 }
 
 /** Send the browser to the provider; it comes back to the current page. */
@@ -80,6 +131,7 @@ export async function adminLogin(username: string, password: string): Promise<vo
     body: JSON.stringify({ username, password }),
   });
   if (!res.ok) throw await apiErrorFrom(res);
+  invalidateMe();
 }
 
 /** How much deleting the caller's data would remove. */
@@ -93,6 +145,7 @@ export async function getMyData(): Promise<{ sessions: number; runs: number; pro
 export async function deleteMyData(): Promise<void> {
   const res = await fetch("/api/auth/me", { method: "DELETE", credentials: "same-origin" });
   if (!res.ok) throw await apiErrorFrom(res);
+  invalidateMe();
 }
 
 export async function logout(): Promise<void> {
@@ -101,6 +154,7 @@ export async function logout(): Promise<void> {
     credentials: "same-origin",
   });
   if (!res.ok) throw await apiErrorFrom(res);
+  invalidateMe();
 }
 
 /** Read and strip `?auth_error=` the callback leaves on a failed login. */

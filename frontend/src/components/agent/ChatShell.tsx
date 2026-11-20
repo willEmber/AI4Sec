@@ -7,6 +7,7 @@ import { usePathname } from "next/navigation";
 import { listProjects, listSessions } from "@/lib/agent";
 import type { AgentProject, AgentSession } from "@/lib/agent";
 import { listModels, listRecentRuns } from "@/lib/api";
+import { getMe } from "@/lib/auth";
 import { useTranslation } from "@/lib/i18n";
 import { usePersistentState } from "@/hooks/usePersistentState";
 import ChatNav from "@/components/agent/ChatNav";
@@ -75,14 +76,23 @@ export default function ChatShell({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let cancelled = false;
-    listSessions(scoped ? projectId : undefined)
-      .then((data) => {
+    (async () => {
+      const me = await getMe();
+      if (cancelled) return;
+      if (!me?.principal_id) {
+        setSessions([]);
+        setLoaded(true);
+        return;
+      }
+      try {
+        const data = await listSessions(scoped ? projectId : undefined);
         if (!cancelled) setSessions(data.sessions);
-      })
-      .catch(() => {})
-      .finally(() => {
+      } catch {
+        // Unreachable or unauthorized: keep current state.
+      } finally {
         if (!cancelled) setLoaded(true);
-      });
+      }
+    })();
     return () => {
       cancelled = true;
     };
@@ -90,15 +100,23 @@ export default function ChatShell({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let cancelled = false;
-    listProjects()
-      .then((data) => {
+    (async () => {
+      const me = await getMe();
+      if (cancelled || !me?.principal_id) {
+        if (!cancelled) setProjects([]);
+        return;
+      }
+      try {
+        const data = await listProjects();
         if (!cancelled) setProjects(data.projects);
-      })
-      .catch(() => {});
+      } catch {
+        // Ignore transient failure.
+      }
+    })();
     return () => {
       cancelled = true;
     };
-  }, [projectsToken]);
+  }, [projectsToken, sessionsToken]);
 
   useEffect(() => {
     let cancelled = false;

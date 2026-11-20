@@ -21,6 +21,14 @@ export default function AccountPage() {
   const router = useRouter();
   const [tab, setTab] = useState<Tab>("overview");
   const [me, setMe] = useState<AuthMe | null>(null);
+  const [loaded, setLoaded] = useState(false);
+
+  const loadMe = useCallback((force = false) => {
+    setLoaded(false);
+    getMe({ force })
+      .then((next) => setMe(next))
+      .finally(() => setLoaded(true));
+  }, []);
 
   useEffect(() => {
     const raw = new URLSearchParams(window.location.search).get("tab");
@@ -29,8 +37,8 @@ export default function AccountPage() {
       return;
     }
     if (raw === "memory") setTab("memory");
-    getMe().then(setMe).catch(() => setMe(null));
-  }, [router]);
+    loadMe();
+  }, [router, loadMe]);
 
   const choose = useCallback((next: Tab) => {
     setTab(next);
@@ -62,7 +70,9 @@ export default function AccountPage() {
         ))}
       </div>
 
-      {tab === "overview" && <Overview me={me} onOpen={choose} />}
+      {tab === "overview" && (
+        <Overview me={me} loaded={loaded} onRetry={() => loadMe(true)} onOpen={choose} />
+      )}
       {tab === "memory" && <MemoryManager />}
     </div>
   );
@@ -73,12 +83,32 @@ const heading = "mb-3 text-xs font-semibold text-muted-foreground";
 const outlineButton =
   "rounded-lg border border-border px-3.5 py-1.5 text-sm text-foreground transition-colors hover:bg-muted disabled:opacity-50";
 
-function Overview({ me, onOpen }: { me: AuthMe | null; onOpen: (tab: Tab) => void }) {
+function Overview({
+  me,
+  loaded,
+  onRetry,
+  onOpen,
+}: {
+  me: AuthMe | null;
+  loaded: boolean;
+  onRetry: () => void;
+  onOpen: (tab: Tab) => void;
+}) {
   const { t } = useTranslation();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
-  if (!me) return null;
+  if (!me) {
+    if (!loaded) return null;
+    return (
+      <section className={`${card} flex items-center justify-between gap-3`}>
+        <p className="text-sm text-muted-foreground">{t("chat.error.network")}</p>
+        <button type="button" onClick={onRetry} className={outlineButton}>
+          {t("chat.retry")}
+        </button>
+      </section>
+    );
+  }
 
   const local = me.mode === "single_user";
   const name = local
