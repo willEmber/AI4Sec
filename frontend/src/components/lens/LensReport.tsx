@@ -16,7 +16,7 @@
  */
 
 import { isLocalImageSrc } from "@/lib/safeUrl";
-import { useMemo } from "react";
+import { useMemo, type ReactNode } from "react";
 import { IconCheck } from "@/components/icons";
 import MarkdownRenderer from "@/components/MarkdownRenderer";
 import {
@@ -66,10 +66,12 @@ function FullProse({
   label,
   content,
   onCite,
+  renderEvidence,
 }: {
   label: string;
   content: string;
   onCite?: (page: number) => void;
+  renderEvidence?: (evidenceId: string) => ReactNode;
 }) {
   return (
     <details className="mt-4 rounded-xl border border-border bg-card/60">
@@ -77,7 +79,7 @@ function FullProse({
         {label}
       </summary>
       <div className="border-t border-border/60 px-4 py-3">
-        <MarkdownRenderer content={content} onCitationClick={onCite} />
+        <MarkdownRenderer content={content} onCitationClick={onCite} renderEvidence={renderEvidence} />
       </div>
     </details>
   );
@@ -315,11 +317,14 @@ export default function LensReport({
   data,
   markdown,
   onCitationClick,
+  renderEvidence,
 }: {
   data: LensData;
   /** The report the digest was extracted from; each section carries its part. */
   markdown?: string;
   onCitationClick?: (page: number) => void;
+  /** A report written as an answer (P16) cites `[ev_…]` from its frozen table. */
+  renderEvidence?: (evidenceId: string) => ReactNode;
 }) {
   const { t } = useTranslation();
   const d = data.digest;
@@ -402,7 +407,7 @@ export default function LensReport({
             </div>
           )}
           {prose?.overview && (
-            <FullProse label={t("lens.full_section")} content={prose.overview} onCite={onCitationClick} />
+            <FullProse label={t("lens.full_section")} content={prose.overview} onCite={onCitationClick} renderEvidence={renderEvidence} />
           )}
         </Section>
       )}
@@ -452,7 +457,7 @@ export default function LensReport({
             </div>
           )}
           {prose?.method && (
-            <FullProse label={t("lens.full_section")} content={prose.method} onCite={onCitationClick} />
+            <FullProse label={t("lens.full_section")} content={prose.method} onCite={onCitationClick} renderEvidence={renderEvidence} />
           )}
         </Section>
       )}
@@ -493,7 +498,7 @@ export default function LensReport({
             </div>
           )}
           {prose?.experiments && (
-            <FullProse label={t("lens.full_section")} content={prose.experiments} onCite={onCitationClick} />
+            <FullProse label={t("lens.full_section")} content={prose.experiments} onCite={onCitationClick} renderEvidence={renderEvidence} />
           )}
         </Section>
       )}
@@ -530,7 +535,7 @@ export default function LensReport({
             </div>
           )}
           {prose?.assessment && (
-            <FullProse label={t("lens.full_section")} content={prose.assessment} onCite={onCitationClick} />
+            <FullProse label={t("lens.full_section")} content={prose.assessment} onCite={onCitationClick} renderEvidence={renderEvidence} />
           )}
         </Section>
       )}
@@ -538,7 +543,7 @@ export default function LensReport({
       {/* The report did not split into the four parts: show it whole rather
           than guess which text belongs under which cards. */}
       {!prose && markdown && (
-        <FullProse label={t("lens.full_report")} content={markdown} onCite={onCitationClick} />
+        <FullProse label={t("lens.full_report")} content={markdown} onCite={onCitationClick} renderEvidence={renderEvidence} />
       )}
     </div>
   );

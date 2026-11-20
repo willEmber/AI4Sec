@@ -386,7 +386,12 @@ export default function RunPage() {
             ) : showStructured && lensData ? (
               <div className="px-6 pb-8 pt-2 sm:px-8">
                 <div className="mx-auto max-w-3xl">
-                  <LensReport data={lensData} markdown={markdown} onCitationClick={handleCitationClick} />
+                  <LensReport
+                    data={lensData}
+                    markdown={markdown}
+                    onCitationClick={handleCitationClick}
+                    renderEvidence={renderEvidence}
+                  />
                 </div>
               </div>
             ) : markdown ? (

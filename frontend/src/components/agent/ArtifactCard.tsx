@@ -228,7 +228,7 @@ export function ArtifactView({
           <SnapReport data={snapData} onCitationClick={jump} />
         )}
         {showStructured && !sphereData && !snapData && lensData && (
-          <LensReport data={lensData} markdown={markdown} onCitationClick={jump} />
+          <LensReport data={lensData} markdown={markdown} onCitationClick={jump} renderEvidence={renderEvidence} />
         )}
         {!showStructured && markdown && (
           <MarkdownRenderer content={markdown} onCitationClick={jump} renderEvidence={renderEvidence} />
