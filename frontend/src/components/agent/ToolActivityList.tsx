@@ -18,6 +18,7 @@ import {
   IconSearch,
   IconSnap,
   IconSphere,
+  IconTable,
   IconTool,
 } from "@/components/icons";
 
@@ -29,6 +30,7 @@ const TOOL_ICON: Record<string, Icon> = {
   get_paper_outline: IconBook,
   search_paper_content: IconBook,
   read_paper_section: IconBook,
+  get_paper_elements: IconTable,
   search_papers: IconSearch,
   resolve_paper: IconSearch,
   get_related_papers: IconSearch,
@@ -41,6 +43,8 @@ const TOOL_ICON: Record<string, Icon> = {
   download_paper: IconDownload,
   ensure_paper_parsed: IconDownload,
   begin_report: IconDocument,
+  get_triage_signals: IconSearch,
+  review_paper_blind: IconListChecks,
   run_insight_snap: IconSnap,
   run_logic_lens: IconLens,
   run_research_sphere: IconSphere,
