@@ -87,6 +87,7 @@ async def list_recent_runs(
     owner_token: str = "",
     limit: int = 20,
     active_only: bool = False,
+    days: int = _RECENT_RUN_DAYS,
     caller: Caller | None = Depends(optional_caller),
 ):
     """Recent runs for the caller, with paper title.
@@ -95,15 +96,10 @@ async def list_recent_runs(
     accounts carry only the browser's `owner_token`; the first principal that
     lists them with that token adopts them, which grants nothing the token did
     not already grant. When `active_only=true`, only pending/running runs are
-    returned — used by the upload page banner to surface tasks the user
-    navigated away from. Declared before `/runs/{run_id}` so the literal path
-    wins.
-
-    Only runs from the last ``_RECENT_RUN_DAYS`` days are returned. A run whose
-    worker died is not this listing's business: the recovery sweep runs it
-    again or closes it.
+    returned. Pass `days=0` to list runs across all dates (up to `limit`).
     """
     limit = max(1, min(limit, 100))
+    days = max(0, min(days, 3650))
     owner_token = (owner_token or "").strip()[:_MAX_OWNER_TOKEN_LEN]
 
     if caller is not None and owner_token:
@@ -113,13 +109,14 @@ async def list_recent_runs(
         )
     conds = [
         "(r.owner_id = ? OR (r.owner_id IS NULL AND r.owner_token = ?))",
-        "r.started_at >= now() - make_interval(days => ?)",
     ]
     params: list[Any] = [
         caller.principal_id if caller is not None else "",
         owner_token,
-        _RECENT_RUN_DAYS,
     ]
+    if days > 0:
+        conds.append("r.started_at >= now() - make_interval(days => ?)")
+        params.append(days)
     if active_only:
         conds.append("r.status IN ('pending', 'running')")
     where = "WHERE " + " AND ".join(conds)
@@ -128,7 +125,8 @@ async def list_recent_runs(
         SELECT r.run_id, r.paper_id, COALESCE(p.title, '') AS paper_title,
                r.mode, r.status, r.started_at, r.finished_at,
                COALESCE(r.current_step, '') AS current_step,
-               COALESCE(r.user_question, '') AS user_question
+               COALESCE(r.user_question, '') AS user_question,
+               COALESCE(r.agent_session_id, '') AS agent_session_id
           FROM runs r
           LEFT JOIN papers p ON p.paper_id = r.paper_id
           {where}

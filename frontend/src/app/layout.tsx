@@ -2,7 +2,14 @@ import "./globals.css";
 import type { Metadata } from "next";
 import { cookies } from "next/headers";
 import ClientLayout from "./client-layout";
-import { DEFAULT_LOCALE, LOCALE_COOKIE, parseLocale } from "@/lib/locale";
+import {
+  DEFAULT_LOCALE,
+  DEFAULT_THEME,
+  LOCALE_COOKIE,
+  THEME_COOKIE,
+  parseLocale,
+  parseTheme,
+} from "@/lib/locale";
 
 export const metadata: Metadata = {
   title: "Scholar — AI Paper Reading",
@@ -14,15 +21,17 @@ export default async function RootLayout({
 }: {
   children: React.ReactNode;
 }) {
-  // Read the language on the server so the first HTML is already in it;
-  // resolving it after mount showed every page in the default language first.
-  const stored = parseLocale((await cookies()).get(LOCALE_COOKIE)?.value);
+  // Read the language and theme on the server so the first HTML matches;
+  // resolving them after mount flashed defaults on every load.
+  const jar = await cookies();
+  const stored = parseLocale(jar.get(LOCALE_COOKIE)?.value);
   const locale = stored ?? DEFAULT_LOCALE;
+  const theme = parseTheme(jar.get(THEME_COOKIE)?.value) ?? DEFAULT_THEME;
 
   return (
-    <html lang={locale === "zh" ? "zh-CN" : "en"}>
+    <html lang={locale === "zh" ? "zh-CN" : "en"} data-theme={theme}>
       <body>
-        <ClientLayout initialLocale={locale} hasStoredLocale={stored !== null}>
+        <ClientLayout initialLocale={locale} hasStoredLocale={stored !== null} initialTheme={theme}>
           {children}
         </ClientLayout>
       </body>

@@ -460,6 +460,10 @@ export async function listProjects(includeArchived = false): Promise<{ projects:
   return agentRequest(`/agent/projects${includeArchived ? "?include_archived=true" : ""}`);
 }
 
+export async function listOwnerPapers(limit = 150): Promise<{ papers: SessionPaper[] }> {
+  return agentRequest(`/agent/papers?limit=${limit}`);
+}
+
 export async function createProject(input: {
   title: string;
   description?: string;

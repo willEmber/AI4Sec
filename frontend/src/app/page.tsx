@@ -1,6 +1,10 @@
 "use client";
 
+import { useEffect } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { listSessions } from "@/lib/agent";
+import { getMe } from "@/lib/auth";
 import { useTranslation } from "@/lib/i18n";
 import {
   IconSnap,
@@ -26,6 +30,26 @@ const CAPABILITIES = ["home.cap.multiturn", "home.cap.tools", "home.cap.context"
 
 export default function Home() {
   const { t } = useTranslation();
+  const router = useRouter();
+
+  // Returning readers, logged-in accounts and local single-user setups go
+  // straight into the conversation workspace instead of clicking through a
+  // marketing splash every time.
+  useEffect(() => {
+    let cancelled = false;
+    Promise.all([
+      getMe().catch(() => null),
+      listSessions().catch(() => ({ sessions: [] })),
+    ]).then(([me, sess]) => {
+      if (cancelled) return;
+      if (me?.mode === "single_user" || me?.authenticated || sess.sessions.length > 0) {
+        router.replace("/chat");
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [router]);
 
   return (
     <div className="mx-auto max-w-5xl px-6 pb-24 pt-16 sm:pt-24">
@@ -36,11 +60,11 @@ export default function Home() {
           {t("home.eyebrow")}
         </span>
 
-        <h1 className="font-display mx-auto mt-7 max-w-3xl text-balance text-5xl font-semibold leading-[1.08] tracking-tight sm:text-6xl">
+        <h1 className="font-display mx-auto mt-7 max-w-3xl text-balance text-4xl font-semibold leading-[1.1] tracking-tight sm:text-6xl">
           {t("home.title")}
         </h1>
 
-        <p className="mx-auto mt-6 max-w-2xl text-lg leading-relaxed text-muted-foreground">
+        <p className="mx-auto mt-6 max-w-2xl text-base leading-relaxed text-muted-foreground sm:text-lg">
           {t("home.subtitle")}
         </p>
 
@@ -52,12 +76,6 @@ export default function Home() {
             <IconSparkles className="text-lg" />
             {t("home.cta")}
             <IconArrowRight className="text-lg transition-transform group-hover:translate-x-0.5" />
-          </Link>
-          <Link
-            href="/upload"
-            className="inline-flex items-center gap-2 rounded-xl border border-border bg-card px-5 py-3.5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
-          >
-            {t("home.cta_classic")}
           </Link>
         </div>
 
@@ -72,12 +90,12 @@ export default function Home() {
       </section>
 
       {/* Modes */}
-      <section className="mt-24">
+      <section className="mt-20">
         <div className="mb-8 text-center">
           <h2 className="font-display text-2xl font-semibold tracking-tight sm:text-3xl">
             {t("home.modes_heading")}
           </h2>
-          <p className="mt-2 text-muted-foreground">{t("home.modes_sub")}</p>
+          <p className="mt-2 text-sm text-muted-foreground">{t("home.modes_sub")}</p>
         </div>
 
         <div className="grid gap-5 sm:grid-cols-3">

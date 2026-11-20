@@ -38,6 +38,7 @@ import { usePersistentState } from "@/hooks/usePersistentState";
 import { sealActivity } from "@/lib/agentEvents";
 import type { TimelineItem, ToolActivity } from "@/lib/agentEvents";
 import { useTranslation } from "@/lib/i18n";
+import { resolveTurnPrompt } from "@/lib/libraryHub";
 import { answerOutcome, errorTextKey } from "@/lib/outcome";
 import { groupTurns } from "@/lib/turns";
 import ArtifactCard, { ArtifactView } from "@/components/agent/ArtifactCard";
@@ -61,14 +62,17 @@ import {
   IconAlert,
   IconArrowDown,
   IconBook,
+  IconBookmark,
   IconFolder,
   IconMenu,
   IconMore,
   IconPanelRightClose,
   IconPanelRightOpen,
+  IconPlus,
   IconRefresh,
   IconSparkles,
   IconTrash,
+  IconX,
 } from "@/components/icons";
 
 const ACTIVE_STATUSES = new Set(["pending", "running"]);
@@ -121,6 +125,8 @@ function ChatSession() {
   const [overlayOpen, setOverlayOpen] = useState(false);
   const [tab, setTab] = useState<PanelTab>("pdf");
   const [reportArtifact, setReportArtifact] = useState<SessionArtifact | null>(null);
+  const [memoriesModalOpen, setMemoriesModalOpen] = useState(false);
+  const pdfUploadRef = useRef<HTMLInputElement>(null);
 
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState("");
@@ -193,7 +199,7 @@ function ChatSession() {
         if (cancelled) return;
         const firstPaper = data.papers.find((p) => p.paper_id);
         if (firstPaper) setActivePaperId(firstPaper.paper_id);
-        else setTab("papers");
+        if (data.artifacts.length > 0) setReportArtifact((prev) => prev ?? data.artifacts[0]);
         const running = data.runs.find((r) => ACTIVE_STATUSES.has(r.status));
         if (running) {
           setActiveRunId(running.run_id);
@@ -402,19 +408,31 @@ function ChatSession() {
     }
   }, [sending, stream.isStreaming, sessionId, detail, turns.length, startStream, reload, t]);
 
+  const sendWithMode = useCallback(
+    (chosenMode: AgentMode) => {
+      const hasReadable = (detail?.papers ?? []).some((p) => Boolean(p.paper_id));
+      if (chosenMode !== "auto" && !draft.trim() && !hasReadable) return;
+      const content = resolveTurnPrompt(draft, chosenMode, (m) =>
+        t(`chat.mode.${m}.default_prompt`),
+      );
+      if (!content || sending || stream.isStreaming) return;
+      const previousDraft = draft;
+      setDraft("");
+      // A mode is a request about this turn; the next question starts from auto.
+      setMode("auto");
+      if (chosenMode !== "auto") shell.refreshRuns();
+      void submit(content, chosenMode).then((accepted) => {
+        if (accepted) return;
+        setDraft(previousDraft);
+        setMode(chosenMode);
+      });
+    },
+    [detail?.papers, draft, sending, stream.isStreaming, submit, shell, t],
+  );
+
   const send = useCallback(() => {
-    const content = draft.trim();
-    if (!content || sending || stream.isStreaming) return;
-    const chosenMode = mode;
-    setDraft("");
-    // A mode is a request about this turn; the next question starts from auto.
-    setMode("auto");
-    void submit(content, chosenMode).then((accepted) => {
-      if (accepted) return;
-      setDraft(content);
-      setMode(chosenMode);
-    });
-  }, [draft, mode, sending, stream.isStreaming, submit]);
+    sendWithMode(mode);
+  }, [mode, sendWithMode]);
 
   // The same question as a new turn. What the failed one already downloaded
   // and parsed is keyed, so asking again does not pay for it twice.
@@ -577,10 +595,12 @@ function ChatSession() {
     return map;
   }, [detail?.artifacts, activeRunId]);
 
+  const allArtifacts = detail?.artifacts ?? [];
+  const activeReport = reportArtifact ?? allArtifacts[0] ?? null;
   const contextStats = detail?.context;
   const readablePapers = papers.filter((p) => p.paper_id);
   const runsById = useMemo(() => new Map(runs.map((r) => [r.run_id, r])), [runs]);
-  const openArtifactId = panelOpen && tab === "report" ? reportArtifact?.run_id ?? "" : "";
+  const openArtifactId = panelOpen && tab === "report" ? activeReport?.run_id ?? "" : "";
 
   // The live view covers a turn until its persisted record arrives: an
   // answer message, or a terminal run row that says why there is none.
@@ -715,6 +735,15 @@ function ChatSession() {
                   ))}
                 </select>
               </label>
+              <MenuItem
+                onSelect={() => {
+                  close();
+                  setMemoriesModalOpen(true);
+                }}
+              >
+                <IconBookmark className="text-[14px] text-muted-foreground" />
+                {t("chat.header.memories")}
+              </MenuItem>
               <div className="my-1 h-px bg-border" />
               <MenuItem
                 danger
@@ -926,6 +955,7 @@ function ChatSession() {
             mode={mode}
             onModeChange={setMode}
             onSend={send}
+            onQuickMode={(m) => sendWithMode(m)}
             onStop={() => void stop()}
             streaming={stream.isStreaming}
             sending={sending}
@@ -951,7 +981,7 @@ function ChatSession() {
       tab={tab}
       onTab={setTab}
       onClose={() => setPanelOpen(false)}
-      hasReport={reportArtifact !== null}
+      hasReport={activeReport !== null}
       paperCount={papers.length}
       pdf={
         pdfUrl ? (
@@ -960,7 +990,7 @@ function ChatSession() {
             targetPage={targetPage}
             jumpToken={jumpToken}
             toolbarStart={
-              <div className="mr-1 flex min-w-0 max-w-[45%] items-center gap-1.5 text-muted-foreground">
+              <div className="mr-1 flex min-w-0 max-w-[52%] items-center gap-1 text-muted-foreground">
                 <IconBook className="shrink-0 text-[14px]" />
                 <select
                   value={activePaperId}
@@ -977,35 +1007,66 @@ function ChatSession() {
                     </option>
                   ))}
                 </select>
+                <input
+                  ref={pdfUploadRef}
+                  type="file"
+                  accept=".pdf,application/pdf"
+                  className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) upload(file).catch((err) => setLoadError(describeApiError(err, t)));
+                    e.currentTarget.value = "";
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={() => pdfUploadRef.current?.click()}
+                  title={t("chat.papers.upload")}
+                  aria-label={t("chat.papers.upload")}
+                  className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-border bg-background text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                >
+                  <IconPlus className="text-[13px]" />
+                </button>
               </div>
             }
           />
         ) : (
-          <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center">
-            <p className="text-sm text-muted-foreground">{t("chat.panel.no_pdf")}</p>
-            <button
-              type="button"
-              onClick={() => setTab("papers")}
-              className="rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-muted"
-            >
-              {t("chat.panel.go_papers")}
-            </button>
-          </div>
+          <PaperList
+            papers={papers}
+            activePaperId={activePaperId}
+            onSelectPaper={selectPaper}
+            onUpload={upload}
+            projectPapers={detail?.project_papers ?? []}
+            onAddProjectPaper={addProjectPaper}
+          />
         )
       }
-      papers={
-        <PaperList
-          papers={papers}
-          activePaperId={activePaperId}
-          onSelectPaper={selectPaper}
-          onUpload={upload}
-          projectPapers={detail?.project_papers ?? []}
-          onAddProjectPaper={addProjectPaper}
-        />
+      report={
+        activeReport && (
+          <ArtifactView
+            artifact={activeReport}
+            artifacts={allArtifacts}
+            onSelectArtifact={setReportArtifact}
+            onJumpToPage={jumpToPage}
+          />
+        )
       }
-      sources={<SourcesTab turns={turns} onJumpToPage={jumpToPage} onPickTurn={pickTurn} />}
-      memory={<MemoryPanel refreshToken={memoriesToken} projectId={project?.project_id ?? ""} embedded />}
-      report={reportArtifact && <ArtifactView artifact={reportArtifact} onJumpToPage={jumpToPage} />}
+      sources={
+        <div className="h-full overflow-y-auto">
+          <SourcesTab turns={turns} onJumpToPage={jumpToPage} onPickTurn={pickTurn} embedded />
+          <div className="border-t border-border">
+            <PaperList
+              papers={papers}
+              activePaperId={activePaperId}
+              onSelectPaper={selectPaper}
+              onUpload={upload}
+              projectPapers={detail?.project_papers ?? []}
+              onAddProjectPaper={addProjectPaper}
+              embedded
+            />
+          </div>
+        </div>
+      }
     />
   );
 
@@ -1024,6 +1085,42 @@ function ChatSession() {
       />
       {isWide === false && overlayOpen && (
         <div className="animate-fade-in fixed inset-0 z-30 bg-background">{panel}</div>
+      )}
+      {memoriesModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
+          <button
+            type="button"
+            aria-label="Close"
+            onClick={() => setMemoriesModalOpen(false)}
+            className="animate-fade-in fixed inset-0 bg-foreground/25 backdrop-blur-[2px]"
+          />
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label={t("chat.header.memories_title")}
+            className="animate-fade-in relative z-10 flex max-h-[75vh] w-full max-w-md flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-2xl"
+          >
+            <div className="flex shrink-0 items-center justify-between border-b border-border px-4 py-3">
+              <h2 className="text-sm font-medium text-foreground">
+                {t("chat.header.memories_title")}
+              </h2>
+              <button
+                type="button"
+                onClick={() => setMemoriesModalOpen(false)}
+                className="flex h-7 w-7 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground"
+              >
+                <IconX className="text-[14px]" />
+              </button>
+            </div>
+            <div className="min-h-0 flex-1 overflow-y-auto">
+              <MemoryPanel
+                refreshToken={memoriesToken}
+                projectId={project?.project_id ?? ""}
+                embedded
+              />
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

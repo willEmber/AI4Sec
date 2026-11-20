@@ -1,24 +1,34 @@
 "use client";
 
+import { Suspense } from "react";
+import { useSearchParams } from "next/navigation";
 import { useTranslation } from "@/lib/i18n";
-import { IconDocument } from "@/components/icons";
 import ProjectList from "@/components/project/ProjectList";
 
-/** Research projects: groups of conversations about one question. */
 export default function ProjectsPage() {
+  return (
+    <Suspense fallback={<div className="mx-auto max-w-3xl px-6 py-10" />}>
+      <ProjectsContent />
+    </Suspense>
+  );
+}
+
+function ProjectsContent() {
   const { t } = useTranslation();
+  const searchParams = useSearchParams();
+  const initialCreateOpen = searchParams.get("new") === "1";
 
   return (
-    <main className="mx-auto max-w-3xl px-6 py-12">
-      <div className="mb-8">
-        <p className="mb-2 inline-flex items-center gap-1.5 text-xs font-medium uppercase tracking-wider text-accent-foreground">
-          <IconDocument className="h-4 w-4" />
-          {t("project.list.eyebrow")}
+    <div className="mx-auto max-w-3xl px-6 py-10">
+      <header className="mb-7">
+        <h1 className="font-display text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
+          {t("project.list.title")}
+        </h1>
+        <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">
+          {t("project.list.subtitle")}
         </p>
-        <h1 className="font-display text-3xl font-bold text-foreground">{t("project.list.title")}</h1>
-        <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{t("project.list.subtitle")}</p>
-      </div>
-      <ProjectList />
-    </main>
+      </header>
+      <ProjectList initialCreateOpen={initialCreateOpen} />
+    </div>
   );
 }

@@ -4,30 +4,29 @@ import type { ReactNode } from "react";
 import { useTranslation } from "@/lib/i18n";
 import { IconX } from "@/components/icons";
 
-export type PanelTab = "pdf" | "papers" | "sources" | "memory" | "report";
+export type PanelTab = "pdf" | "report" | "sources";
 
 interface Props {
   tab: PanelTab;
   onTab: (tab: PanelTab) => void;
   onClose: () => void;
-  /** The report tab exists only while a report is open. */
+  /** Shown whenever the conversation holds at least one mode report. */
   hasReport: boolean;
   paperCount: number;
-  /** Kept mounted while another tab shows, so the document does not reload. */
+  /** Kept mounted while another tab shows, so the PDF document does not reload. */
   pdf: ReactNode;
-  papers: ReactNode;
-  sources: ReactNode;
-  memory: ReactNode;
   report: ReactNode;
+  sources: ReactNode;
 }
 
 /**
- * What this conversation is working with: the open paper, the papers it can
- * read, the passages it has cited, what the agent remembers, and a report when
- * one is open.
+ * Streamlined 3-tab reading & reference panel beside the conversation:
+ *   1. Paper (`pdf`) — PDF reader with inline paper switcher & upload
+ *   2. Report (`report`) — structured / Markdown mode reports when available
+ *   3. Sources & Papers (`sources`) — cited passages and session/project papers
  *
- * These used to be spread over a left sidebar and a PDF pane. They are one
- * thing — the conversation's context — and the conversation list is another.
+ * Low-frequency long-term memory management lives in the conversation options
+ * modal and account settings rather than competing with reading tabs.
  */
 export default function ContextPanel({
   tab,
@@ -36,24 +35,21 @@ export default function ContextPanel({
   hasReport,
   paperCount,
   pdf,
-  papers,
-  sources,
-  memory,
   report,
+  sources,
 }: Props) {
   const { t } = useTranslation();
-  const tabs: [PanelTab, string][] = [
-    ["pdf", t("chat.panel.pdf")],
-    ["papers", paperCount > 0 ? `${t("chat.panel.papers")} ${paperCount}` : t("chat.panel.papers")],
-    ["sources", t("chat.panel.sources")],
-    ["memory", t("chat.memory.heading")],
-  ];
+  const tabs: [PanelTab, string][] = [["pdf", t("chat.panel.pdf")]];
   if (hasReport) tabs.push(["report", t("chat.panel.report")]);
+  tabs.push([
+    "sources",
+    paperCount > 0 ? `${t("chat.panel.refs")} · ${paperCount}` : t("chat.panel.refs"),
+  ]);
 
   return (
     <div className="flex h-full flex-col bg-background">
-      <div className="flex h-12 shrink-0 items-center gap-1 border-b border-border pl-2 pr-1.5">
-        <div role="tablist" className="no-scrollbar flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto">
+      <div className="flex h-12 shrink-0 items-center gap-1 border-b border-border pl-2.5 pr-1.5">
+        <div role="tablist" className="no-scrollbar flex min-w-0 flex-1 items-center gap-1 overflow-x-auto">
           {tabs.map(([key, label]) => (
             <button
               key={key}
@@ -61,7 +57,7 @@ export default function ContextPanel({
               role="tab"
               aria-selected={tab === key}
               onClick={() => onTab(key)}
-              className={`shrink-0 rounded-md px-2.5 py-1.5 text-[0.8125rem] transition-colors ${
+              className={`shrink-0 rounded-lg px-2.5 py-1.5 text-[0.8125rem] transition-colors ${
                 tab === key
                   ? "bg-muted font-medium text-foreground"
                   : "text-muted-foreground hover:text-foreground"
@@ -84,10 +80,8 @@ export default function ContextPanel({
 
       <div className="relative min-h-0 flex-1">
         <div className={tab === "pdf" ? "h-full" : "hidden"}>{pdf}</div>
-        {tab === "papers" && papers}
-        {tab === "sources" && sources}
-        {tab === "memory" && memory}
         {tab === "report" && report}
+        {tab === "sources" && sources}
       </div>
     </div>
   );

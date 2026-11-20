@@ -5,6 +5,7 @@ import logging
 
 from fastapi import APIRouter, Request
 
+from app.config import get_settings
 from app.services.llm_gateway import get_registry
 from app.db import database as db
 from app.models.schemas import (
@@ -32,6 +33,7 @@ async def list_models(request: Request) -> ModelListResponse:
         default=registry.default_model,
         agent_models=registry.agent_models(),
         agent_default=registry.agent_default_model,
+        library_enabled=get_settings().dify_enabled,
     )
 
 

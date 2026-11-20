@@ -11,6 +11,9 @@ interface Props {
   buttonClassName?: string;
   /** Menu width in px. */
   width?: number;
+  /** Horizontal alignment against the trigger button. */
+  align?: "start" | "end";
+  disabled?: boolean;
   children: (close: () => void) => ReactNode;
 }
 
@@ -22,7 +25,15 @@ interface Props {
  * viewport has room, and closes on a click elsewhere, Escape, or when the page
  * under it moves.
  */
-export default function Menu({ trigger, label, buttonClassName = "", width = 208, children }: Props) {
+export default function Menu({
+  trigger,
+  label,
+  buttonClassName = "",
+  width = 208,
+  align = "end",
+  disabled = false,
+  children,
+}: Props) {
   const [place, setPlace] = useState<{ left: number; top?: number; bottom?: number } | null>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -30,16 +41,18 @@ export default function Menu({ trigger, label, buttonClassName = "", width = 208
   const close = useCallback(() => setPlace(null), []);
 
   const toggle = useCallback(() => {
+    if (disabled) return;
     if (open) return close();
     const rect = buttonRef.current?.getBoundingClientRect();
     if (!rect) return;
-    const left = Math.max(8, Math.min(rect.right - width, window.innerWidth - width - 8));
+    const rawLeft = align === "start" ? rect.left : rect.right - width;
+    const left = Math.max(8, Math.min(rawLeft, window.innerWidth - width - 8));
     setPlace(
       rect.bottom > window.innerHeight - 260
         ? { left, bottom: window.innerHeight - rect.top + 4 }
         : { left, top: rect.bottom + 4 },
     );
-  }, [open, close, width]);
+  }, [disabled, open, close, align, width]);
 
   useEffect(() => {
     if (!open) return;
@@ -72,6 +85,7 @@ export default function Menu({ trigger, label, buttonClassName = "", width = 208
       <button
         ref={buttonRef}
         type="button"
+        disabled={disabled}
         onClick={toggle}
         title={label}
         aria-label={label}

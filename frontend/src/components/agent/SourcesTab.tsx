@@ -13,6 +13,7 @@ interface Props {
   turns: Turn[];
   onJumpToPage: (paperId: string, page: number) => void;
   onPickTurn: (index: number) => void;
+  embedded?: boolean;
 }
 
 interface SourceGroup {
@@ -27,7 +28,7 @@ interface SourceGroup {
  * they do not say which passages keep being relied on. This does: each passage
  * once, with the turns that cited it.
  */
-export default function SourcesTab({ turns, onJumpToPage, onPickTurn }: Props) {
+export default function SourcesTab({ turns, onJumpToPage, onPickTurn, embedded = false }: Props) {
   const { t } = useTranslation();
 
   // evidence id → the turns whose answers cite it, in first-cited order.
@@ -81,7 +82,7 @@ export default function SourcesTab({ turns, onJumpToPage, onPickTurn }: Props) {
   }
 
   return (
-    <div className="h-full space-y-5 overflow-y-auto p-3">
+    <div className={`${embedded ? "" : "h-full overflow-y-auto"} space-y-5 p-3`}>
       {groups.map((group) => (
         <section key={group.title}>
           <h3 className="mb-1.5 flex items-baseline gap-2 px-1">

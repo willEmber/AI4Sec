@@ -35,6 +35,7 @@ interface Props {
   projectPapers?: SessionPaper[];
   /** Attach one of `projectPapers` (by paper_id) to this session. */
   onAddProjectPaper?: (paperId: string) => Promise<void>;
+  embedded?: boolean;
 }
 
 /**
@@ -52,6 +53,7 @@ export default function PaperList({
   onUpload,
   projectPapers = [],
   onAddProjectPaper,
+  embedded = false,
 }: Props) {
   const { t } = useTranslation();
   const inputRef = useRef<HTMLInputElement>(null);
@@ -99,7 +101,7 @@ export default function PaperList({
   );
 
   return (
-    <div className="h-full overflow-y-auto p-3">
+    <div className={`${embedded ? "" : "h-full overflow-y-auto"} p-3`}>
       {onUpload && (
         <>
           <input

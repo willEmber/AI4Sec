@@ -3,9 +3,18 @@
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
 import type { ReactNode } from "react";
 
-import { DEFAULT_LOCALE, LOCALE_COOKIE, parseLocale, type Locale } from "./locale";
+import {
+  DEFAULT_LOCALE,
+  DEFAULT_THEME,
+  LOCALE_COOKIE,
+  THEME_COOKIE,
+  parseLocale,
+  type Locale,
+  type ThemeChoice,
+} from "./locale";
+import { IconMonitor, IconMoon, IconSun } from "@/components/icons";
 
-export type { Locale };
+export type { Locale, ThemeChoice };
 
 const translations: Record<Locale, Record<string, string>> = {
   en: {
@@ -694,6 +703,55 @@ const translations: Record<Locale, Record<string, string>> = {
     "chat.entry.greeting": "What are you reading today?",
     "chat.entry.greeting_sub": "Ask a question, or attach a paper. Every claim cites the passage it came from.",
     "chat.entry.recent_papers": "Continue with a paper",
+
+    // Workspace & unified redesign
+    "nav.library_hub": "Library",
+    "nav.workspace": "Open workspace",
+    "nav.recent_chats": "Recent chats",
+    "nav.all_projects": "All projects ({count})",
+    "nav.new_project": "New project",
+    "theme.system": "Theme: System",
+    "theme.light": "Theme: Light",
+    "theme.dark": "Theme: Dark",
+    "search.trigger": "Search chats & papers",
+    "search.placeholder": "Search conversations, projects, or papers…",
+    "search.section.chats": "Recent conversations",
+    "search.section.projects": "Projects",
+    "search.section.papers": "Papers",
+    "search.section.turns": "Matched answers",
+    "search.hint": "↑↓ to navigate · Enter to open · Esc to close",
+    "chat.mode.snap.default_prompt": "Generate an Insight Snap triage report for this paper.",
+    "chat.mode.lens.default_prompt": "Generate a Logic Lens deep analysis report for this paper.",
+    "chat.mode.sphere.default_prompt": "Generate a Research Sphere literature landscape report for this paper.",
+    "chat.mode.reset": "Switch back to Auto",
+    "chat.composer.project_pick": "Project",
+    "chat.composer.project_none": "No project",
+    "chat.composer.remove_paper": "Remove paper",
+    "chat.composer.quick_reports": "One-click report:",
+    "chat.composer.mode_ready_hint": "Press Send to run {mode} directly, or add an optional focus above",
+    "chat.panel.refs": "Sources & Papers",
+    "chat.panel.open_short": "Reader & sources",
+    "chat.header.memories": "Memories",
+    "chat.header.memories_title": "Memories active in this conversation",
+    "hub.title": "Library",
+    "hub.subtitle": "All papers you have read or uploaded, generated reports, and side-by-side matrix triage.",
+    "hub.tab.papers": "Papers & Reports",
+    "hub.tab.compare": "Matrix Compare",
+    "hub.tab.corpus": "External Corpus",
+    "hub.filter.all": "All",
+    "hub.filter.with_reports": "With reports",
+    "hub.filter.readable": "Full text ready",
+    "hub.search_placeholder": "Filter by title, venue, or year…",
+    "hub.new_chat": "New paper chat",
+    "hub.open_chat": "Discuss",
+    "hub.continue_chat": "Open chat",
+    "hub.selected_count": "{count} selected",
+    "hub.compare_chat": "Compare in chat",
+    "hub.compare_matrix": "Snap matrix",
+    "hub.clear_selection": "Clear",
+    "hub.empty": "No papers or reports yet. Drop a PDF or search for papers in a conversation to get started.",
+    "hub.no_match": "No papers match the current filter.",
+    "project.create.toggle": "New project",
   },
   zh: {
     // Nav
@@ -1380,18 +1438,71 @@ const translations: Record<Locale, Record<string, string>> = {
     "chat.entry.greeting": "今天想读点什么？",
     "chat.entry.greeting_sub": "直接提问，或附上一篇论文。每个结论都会标注它引用的原文段落。",
     "chat.entry.recent_papers": "接着读这些论文",
+
+    // Workspace & unified redesign
+    "nav.library_hub": "文库",
+    "nav.workspace": "进入工作台",
+    "nav.recent_chats": "最近对话",
+    "nav.all_projects": "查看全部项目（{count}）",
+    "nav.new_project": "新建项目",
+    "theme.system": "外观：跟随系统",
+    "theme.light": "外观：浅色",
+    "theme.dark": "外观：深色",
+    "search.trigger": "搜索对话与论文",
+    "search.placeholder": "搜索历史对话、研究项目或论文标题…",
+    "search.section.chats": "最近对话",
+    "search.section.projects": "研究项目",
+    "search.section.papers": "我的论文",
+    "search.section.turns": "命中的历史问答",
+    "search.hint": "↑↓ 选择 · Enter 打开 · Esc 关闭",
+    "chat.mode.snap.default_prompt": "请生成这篇论文的 Insight Snap 速览报告。",
+    "chat.mode.lens.default_prompt": "请生成这篇论文的 Logic Lens 深度精读报告。",
+    "chat.mode.sphere.default_prompt": "请生成这篇论文的 Research Sphere 文献脉络报告。",
+    "chat.mode.reset": "切回自动对话",
+    "chat.composer.project_pick": "归入项目",
+    "chat.composer.project_none": "不归入项目",
+    "chat.composer.remove_paper": "移除论文",
+    "chat.composer.quick_reports": "快捷生成整篇报告：",
+    "chat.composer.mode_ready_hint": "可直接发送运行 {mode}，也可在上方输入侧重关注点",
+    "chat.panel.refs": "来源与论文",
+    "chat.panel.open_short": "原文与来源",
+    "chat.header.memories": "对话记忆",
+    "chat.header.memories_title": "当前对话生效的长期记忆",
+    "hub.title": "文库",
+    "hub.subtitle": "集中管理读过的论文、生成的结构化报告，并支持多篇勾选对比。",
+    "hub.tab.papers": "论文与报告",
+    "hub.tab.compare": "矩阵对比",
+    "hub.tab.corpus": "外部语料库",
+    "hub.filter.all": "全部",
+    "hub.filter.with_reports": "已有报告",
+    "hub.filter.readable": "全文可读",
+    "hub.search_placeholder": "按论文标题、期刊或年份筛选…",
+    "hub.new_chat": "上传 / 新对话",
+    "hub.open_chat": "对话精读",
+    "hub.continue_chat": "回到对话",
+    "hub.selected_count": "已选 {count} 篇",
+    "hub.compare_chat": "发起对比对话",
+    "hub.compare_matrix": "Snap 矩阵对比",
+    "hub.clear_selection": "取消选择",
+    "hub.empty": "文库中还没有论文或报告。在对话中上传 PDF 或检索论文后会自动沉淀到这里。",
+    "hub.no_match": "没有符合当前筛选条件的论文。",
+    "project.create.toggle": "新建项目",
   },
 };
 
 interface LanguageContextValue {
   locale: Locale;
   setLocale: (l: Locale) => void;
+  theme: ThemeChoice;
+  setTheme: (theme: ThemeChoice) => void;
   t: (key: string, vars?: Record<string, string | number>) => string;
 }
 
 const LanguageContext = createContext<LanguageContextValue>({
   locale: DEFAULT_LOCALE,
   setLocale: () => { },
+  theme: DEFAULT_THEME,
+  setTheme: () => { },
   t: (key) => key,
 });
 
@@ -1402,18 +1513,26 @@ function writeLocaleCookie(locale: Locale) {
   document.cookie = `${LOCALE_COOKIE}=${locale}; path=/; max-age=31536000; samesite=lax`;
 }
 
+function writeThemeCookie(theme: ThemeChoice) {
+  document.cookie = `${THEME_COOKIE}=${theme}; path=/; max-age=31536000; samesite=lax`;
+}
+
 export function LanguageProvider({
   initialLocale = DEFAULT_LOCALE,
   hasStoredLocale = false,
+  initialTheme = DEFAULT_THEME,
   children,
 }: {
   /** The locale the server rendered with, read from the cookie. */
   initialLocale?: Locale;
   /** Whether that locale came from the cookie rather than the default. */
   hasStoredLocale?: boolean;
+  /** The theme the server rendered with, read from the cookie. */
+  initialTheme?: ThemeChoice;
   children: ReactNode;
 }) {
   const [locale, setLocaleState] = useState<Locale>(initialLocale);
+  const [theme, setThemeState] = useState<ThemeChoice>(initialTheme);
 
   // The state starts from what the server rendered, so there is nothing to
   // correct after mount — except for a choice made before the cookie existed.
@@ -1434,9 +1553,18 @@ export function LanguageProvider({
     document.documentElement.lang = locale === "zh" ? "zh-CN" : "en";
   }, [locale]);
 
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+  }, [theme]);
+
   const setLocale = useCallback((l: Locale) => {
     setLocaleState(l);
     writeLocaleCookie(l);
+  }, []);
+
+  const setTheme = useCallback((next: ThemeChoice) => {
+    setThemeState(next);
+    writeThemeCookie(next);
   }, []);
 
   const t = useCallback(
@@ -1453,7 +1581,7 @@ export function LanguageProvider({
   );
 
   return (
-    <LanguageContext.Provider value={{ locale, setLocale, t }}>
+    <LanguageContext.Provider value={{ locale, setLocale, theme, setTheme, t }}>
       {children}
     </LanguageContext.Provider>
   );
@@ -1463,16 +1591,46 @@ export function useTranslation() {
   return useContext(LanguageContext);
 }
 
-export function LanguageToggle() {
+export function LanguageToggle({ compact = false }: { compact?: boolean } = {}) {
   const { locale, setLocale } = useTranslation();
 
   return (
     <button
+      type="button"
       onClick={() => setLocale(locale === "en" ? "zh" : "en")}
-      className="rounded-full border border-border px-3 py-1.5 text-sm font-medium text-muted-foreground transition-colors hover:border-foreground/25 hover:text-foreground"
+      className={
+        compact
+          ? "flex h-8 w-8 items-center justify-center rounded-lg text-xs font-medium text-muted-foreground transition-colors hover:bg-card hover:text-foreground"
+          : "rounded-lg border border-border px-2.5 py-1 text-xs font-medium text-muted-foreground transition-colors hover:border-foreground/25 hover:text-foreground"
+      }
       title={locale === "en" ? "切换到中文" : "Switch to English"}
     >
       {locale === "en" ? "中文" : "EN"}
+    </button>
+  );
+}
+
+const THEME_ORDER: ThemeChoice[] = ["system", "light", "dark"];
+
+export function ThemeToggle({ compact = false }: { compact?: boolean } = {}) {
+  const { theme, setTheme, t } = useTranslation();
+  const next = THEME_ORDER[(THEME_ORDER.indexOf(theme) + 1) % THEME_ORDER.length];
+  const Icon = theme === "light" ? IconSun : theme === "dark" ? IconMoon : IconMonitor;
+  const label = t(`theme.${theme}`);
+
+  return (
+    <button
+      type="button"
+      onClick={() => setTheme(next)}
+      title={label}
+      aria-label={label}
+      className={
+        compact
+          ? "flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-card hover:text-foreground"
+          : "flex h-7 w-7 items-center justify-center rounded-lg border border-border text-muted-foreground transition-colors hover:border-foreground/25 hover:text-foreground"
+      }
+    >
+      <Icon className="text-[14px]" />
     </button>
   );
 }

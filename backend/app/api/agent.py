@@ -21,6 +21,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 
 from app.api.deps import (
+    optional_caller,
     principal_or_new,
     quota_exceeded,
     require_caller,
@@ -521,6 +522,20 @@ async def update_memory(
     if memory is None:
         raise HTTPException(status_code=404, detail="No such memory.")
     return memory.model_dump(mode="json")
+
+
+@router.get("/papers")
+@limiter.limit("60/minute")
+async def list_papers(
+    request: Request,
+    limit: int = Query(default=100, ge=1, le=500),
+    caller: Caller | None = Depends(optional_caller),
+) -> dict[str, Any]:
+    """Every work attached across the caller's conversations, deduplicated."""
+    if caller is None:
+        return {"papers": []}
+    papers = await repo.list_owner_papers(caller.principal_id, limit=limit)
+    return {"papers": [p.model_dump() for p in papers]}
 
 
 # ── Research projects (P8) ──────────────────────────────────────────────────

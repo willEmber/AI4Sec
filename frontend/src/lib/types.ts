@@ -20,6 +20,7 @@ export interface ModelListResponse {
   // The subset verified for conversations; absent on an older backend.
   agent_models?: string[];
   agent_default?: string;
+  library_enabled?: boolean;
 }
 
 export interface RunResponse {
@@ -50,6 +51,7 @@ export interface RecentRunResponse {
   finished_at: string | null;
   current_step: string;
   user_question: string;
+  agent_session_id?: string;
 }
 
 export interface ProgressEntry {

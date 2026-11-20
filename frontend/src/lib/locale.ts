@@ -12,3 +12,13 @@ export const LOCALE_COOKIE = "scholar-locale";
 export function parseLocale(value: string | undefined | null): Locale | null {
   return value === "zh" || value === "en" ? value : null;
 }
+
+export type ThemeChoice = "system" | "light" | "dark";
+
+export const DEFAULT_THEME: ThemeChoice = "system";
+
+export const THEME_COOKIE = "scholar-theme";
+
+export function parseTheme(value: string | undefined | null): ThemeChoice | null {
+  return value === "system" || value === "light" || value === "dark" ? value : null;
+}

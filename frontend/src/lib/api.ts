@@ -77,12 +77,14 @@ export async function listPaperRuns(paperId: string): Promise<RunResponse[]> {
 export async function listRecentRuns(
   limit = 20,
   activeOnly = false,
+  days?: number,
 ): Promise<RecentRunResponse[]> {
   const qs = new URLSearchParams({
     limit: String(limit),
     active_only: activeOnly ? "true" : "false",
     owner_token: getOwnerToken(),
   });
+  if (days !== undefined) qs.set("days", String(days));
   return request(`/runs/recent?${qs.toString()}`);
 }
 

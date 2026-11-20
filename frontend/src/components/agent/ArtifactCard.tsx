@@ -90,9 +90,13 @@ export default function ArtifactCard({
  */
 export function ArtifactView({
   artifact,
+  artifacts = [],
+  onSelectArtifact,
   onJumpToPage,
 }: {
   artifact: SessionArtifact;
+  artifacts?: SessionArtifact[];
+  onSelectArtifact?: (artifact: SessionArtifact) => void;
   onJumpToPage?: (paperId: string, page: number) => void;
 }) {
   const { t } = useTranslation();
@@ -135,13 +139,30 @@ export function ArtifactView({
   return (
     <div className="flex h-full flex-col">
       <div className="flex shrink-0 items-center gap-2 border-b border-border bg-card/60 px-3 py-2">
-        <p className="min-w-0 flex-1 truncate text-sm text-foreground">
-          <span className="font-medium">{t(`chat.mode.${artifact.mode}.label`)}</span>
-          <span className="mx-1.5 opacity-40">·</span>
-          <span className="text-muted-foreground">
-            {artifact.paper_title || artifact.paper_id.slice(0, 12)}
-          </span>
-        </p>
+        {artifacts.length > 1 && onSelectArtifact ? (
+          <select
+            value={artifact.run_id}
+            onChange={(e) => {
+              const chosen = artifacts.find((a) => a.run_id === e.target.value);
+              if (chosen) onSelectArtifact(chosen);
+            }}
+            className="min-w-0 flex-1 truncate rounded-md border border-border bg-background px-2 py-1 text-xs text-foreground focus:outline-none"
+          >
+            {artifacts.map((item) => (
+              <option key={item.run_id} value={item.run_id}>
+                {t(`chat.mode.${item.mode}.label`)} · {item.paper_title || item.paper_id.slice(0, 12)}
+              </option>
+            ))}
+          </select>
+        ) : (
+          <p className="min-w-0 flex-1 truncate text-sm text-foreground">
+            <span className="font-medium">{t(`chat.mode.${artifact.mode}.label`)}</span>
+            <span className="mx-1.5 opacity-40">·</span>
+            <span className="text-muted-foreground">
+              {artifact.paper_title || artifact.paper_id.slice(0, 12)}
+            </span>
+          </p>
+        )}
         {structured && (
           <div className="flex shrink-0 items-center rounded-md border border-border p-0.5">
             {(

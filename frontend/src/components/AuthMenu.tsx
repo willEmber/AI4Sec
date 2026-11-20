@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
+import Link from "next/link";
 
 import { AgentApiError } from "@/lib/agent";
 import {
@@ -71,12 +72,12 @@ export function AuthMenu({ placement = "below" }: { placement?: "below" | "above
   // projects to manage.
   if (me.mode === "single_user") {
     return (
-      <a
+      <Link
         href="/account"
-        className="rounded-full border border-border px-3 py-1.5 text-sm font-medium text-muted-foreground transition-colors hover:border-foreground/25 hover:text-foreground"
+        className="inline-flex items-center rounded-lg border border-border px-2.5 py-1 text-xs font-medium text-muted-foreground transition-colors hover:border-foreground/25 hover:text-foreground"
       >
         {t("account.title")}
-      </a>
+      </Link>
     );
   }
 
@@ -135,16 +136,16 @@ export function AuthMenu({ placement = "below" }: { placement?: "below" | "above
         [
           ["/account", "account.title"],
           ["/account?tab=memory", "account.tab.memory"],
-          ["/account?tab=projects", "account.tab.projects"],
         ] as const
       ).map(([href, key]) => (
-        <a
+        <Link
           key={href}
           href={href}
+          onClick={() => setOpen(false)}
           className="rounded-lg px-2 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
         >
           {t(key)}
-        </a>
+        </Link>
       ))}
     </div>
   );

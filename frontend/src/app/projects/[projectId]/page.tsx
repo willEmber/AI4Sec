@@ -6,6 +6,7 @@ import { useParams, useRouter } from "next/navigation";
 import { deleteMemory, deleteProject, getProject, searchConversations, updateProject } from "@/lib/agent";
 import type { ProjectDetail, RecalledTurn, SessionPaper } from "@/lib/agent";
 import { useTranslation } from "@/lib/i18n";
+import { useChatShell } from "@/components/agent/ChatShell";
 import { IconChevronLeft, IconPlus } from "@/components/icons";
 
 const AVAILABILITY_CLASS: Record<SessionPaper["availability"], string> = {
@@ -29,6 +30,7 @@ export default function ProjectPage() {
   const { t } = useTranslation();
 
   const router = useRouter();
+  const { refreshProjects, refreshSessions } = useChatShell();
   const [detail, setDetail] = useState<ProjectDetail | null>(null);
   const [notFound, setNotFound] = useState(false);
   const [editing, setEditing] = useState(false);
@@ -62,6 +64,7 @@ export default function ProjectPage() {
       try {
         await updateProject(projectId, changes);
         await reload();
+        refreshProjects();
         setEditing(false);
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err));
@@ -83,6 +86,8 @@ export default function ProjectPage() {
     setError("");
     try {
       await deleteProject(projectId, withSessions ? "delete" : "keep");
+      refreshProjects();
+      if (withSessions) refreshSessions();
       router.push("/projects");
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -124,7 +129,7 @@ export default function ProjectPage() {
   }
 
   const project = detail?.project;
-  const sectionHeading = "mb-3 text-[0.7rem] font-semibold uppercase tracking-wider text-muted-foreground";
+  const sectionHeading = "mb-3 text-xs font-semibold text-muted-foreground";
 
   return (
     <main className="mx-auto max-w-4xl px-6 py-10">
@@ -193,7 +198,7 @@ export default function ProjectPage() {
             </div>
             <div className="flex shrink-0 items-center gap-2">
               <Link
-                href={`/chat?new=1&project=${projectId}`}
+                href={`/chat?project=${projectId}`}
                 className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary-hover"
               >
                 <IconPlus className="text-[12px]" />
@@ -269,7 +274,7 @@ export default function ProjectPage() {
           {(results ?? []).map((turn) => (
             <Link
               key={`${turn.session_id}-${turn.run_id}`}
-              href={`/chat/${turn.session_id}`}
+              href={`/chat/${turn.session_id}?run=${turn.run_id}`}
               className="block rounded-xl border border-border bg-card px-4 py-3 transition-colors hover:border-foreground/20"
             >
               <span className="flex items-center justify-between gap-3 text-[0.7rem] text-muted-foreground">

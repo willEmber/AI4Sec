@@ -6,6 +6,7 @@ import { useParams, useRouter } from "next/navigation";
 import { cancelRun, deleteRun, getRun, getRunOutput, getPaperPdfUrl, getPaper, getZoteroBundleUrl, getMarkdownExportUrl } from "@/lib/api";
 import { useRunStream } from "@/hooks/useRunStream";
 import { useTranslation } from "@/lib/i18n";
+import { useChatShell } from "@/components/agent/ChatShell";
 import MarkdownRenderer from "@/components/MarkdownRenderer";
 import PdfViewer from "@/components/LazyPdfViewer";
 import SplitPane from "@/components/SplitPane";
@@ -25,6 +26,7 @@ export default function RunPage() {
   const runId = params.runId as string;
   const { t } = useTranslation();
   const router = useRouter();
+  const { refreshRuns } = useChatShell();
 
   const [run, setRun] = useState<RunResponse | null>(null);
   const [paper, setPaper] = useState<PaperResponse | null>(null);
@@ -212,12 +214,15 @@ export default function RunPage() {
     if (!window.confirm(t("run.delete_confirm"))) return;
     setActionError("");
     deleteRun(runId)
-      .then(() => router.push("/upload"))
+      .then(() => {
+        refreshRuns();
+        router.push("/library");
+      })
       .catch(() => setActionError(t("run.not_owner")));
-  }, [runId, router, t]);
+  }, [runId, refreshRuns, router, t]);
 
   return (
-    <div className="flex h-[calc(100dvh-3.5rem)] flex-col">
+    <div className="flex h-full flex-col">
       {/* Header bar */}
       <div className="flex shrink-0 items-center gap-4 border-b border-border bg-card/60 px-5 py-2.5">
         <div className="min-w-0 flex-1">

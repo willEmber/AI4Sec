@@ -1,6 +1,17 @@
 @import "tailwindcss";
 @import "katex/dist/katex.min.css";
 
+@custom-variant dark {
+  &:where([data-theme="dark"], [data-theme="dark"] *) {
+    @slot;
+  }
+  @media (prefers-color-scheme: dark) {
+    &:where(:not([data-theme="light"], [data-theme="light"] *)) {
+      @slot;
+    }
+  }
+}
+
 /* ------------------------------------------------------------------ */
 /* Design tokens — warm "Claude / Anthropic" palette                   */
 /* ------------------------------------------------------------------ */
@@ -37,8 +48,29 @@
     serif;
 }
 
+:root[data-theme="dark"] {
+  --background: #262624; /* warm slate */
+  --card: #30302e;
+  --muted: #36352f;
+  --accent: #3a2d25;
+
+  --foreground: #f0eee6;
+  --muted-foreground: #a8a59b;
+  --accent-foreground: #e3a07f;
+
+  --border: #423f39;
+
+  --primary: #c96442;
+  --primary-hover: #d97757;
+  --primary-foreground: #ffffff;
+
+  --destructive: #e06a5b;
+  --success: #6fae82;
+  --ring: #d07a59;
+}
+
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
     --background: #262624; /* warm slate */
     --card: #30302e;
     --muted: #36352f;

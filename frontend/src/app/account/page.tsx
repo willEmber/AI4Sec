@@ -1,40 +1,36 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { describeApiError } from "@/lib/agent";
 import { deleteMyData, getMe, getMyData, logout, startLogin, type AuthMe } from "@/lib/auth";
 import { useTranslation } from "@/lib/i18n";
 import MemoryManager from "@/components/account/MemoryManager";
-import ProjectList from "@/components/project/ProjectList";
 
-type Tab = "overview" | "memory" | "projects";
-const TABS: Tab[] = ["overview", "memory", "projects"];
-
-function tabFromUrl(): Tab {
-  const tab = new URLSearchParams(window.location.search).get("tab");
-  return TABS.includes(tab as Tab) ? (tab as Tab) : "overview";
-}
+type Tab = "overview" | "memory";
+const TABS: Tab[] = ["overview", "memory"];
 
 /**
- * The reader's own page: who they are here, what the agent remembers about
- * them, and their research projects.
+ * Account, quota & long-term memory center.
  *
- * It exists for every visitor, not only a logged-in one — an anonymous
- * visitor and the single local user have memories and projects too — so it is
- * reached from the account control wherever that is shown, and never asks for
- * a login before showing what is already theirs.
+ * Research projects live directly in the workspace sidebar (`/projects`); legacy
+ * `/account?tab=projects` links redirect there cleanly.
  */
 export default function AccountPage() {
   const { t } = useTranslation();
+  const router = useRouter();
   const [tab, setTab] = useState<Tab>("overview");
   const [me, setMe] = useState<AuthMe | null>(null);
 
-  // Read after mount (the server render has no query string to agree with),
-  // and kept in the URL so a tab can be linked to and survives a reload.
   useEffect(() => {
-    setTab(tabFromUrl());
+    const raw = new URLSearchParams(window.location.search).get("tab");
+    if (raw === "projects") {
+      router.replace("/projects");
+      return;
+    }
+    if (raw === "memory") setTab("memory");
     getMe().then(setMe).catch(() => setMe(null));
-  }, []);
+  }, [router]);
 
   const choose = useCallback((next: Tab) => {
     setTab(next);
@@ -42,10 +38,12 @@ export default function AccountPage() {
   }, []);
 
   return (
-    <main className="mx-auto max-w-3xl px-6 py-12">
-      <h1 className="font-display text-3xl font-bold text-foreground">{t("account.title")}</h1>
+    <div className="mx-auto max-w-3xl px-6 py-10">
+      <h1 className="font-display text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
+        {t("account.title")}
+      </h1>
 
-      <div role="tablist" className="mb-8 mt-6 flex gap-1 border-b border-border">
+      <div role="tablist" className="mb-8 mt-5 flex gap-1 border-b border-border">
         {TABS.map((key) => (
           <button
             key={key}
@@ -66,20 +64,12 @@ export default function AccountPage() {
 
       {tab === "overview" && <Overview me={me} onOpen={choose} />}
       {tab === "memory" && <MemoryManager />}
-      {tab === "projects" && (
-        <>
-          <p className="mb-5 text-sm leading-relaxed text-muted-foreground">
-            {t("project.list.subtitle")}
-          </p>
-          <ProjectList />
-        </>
-      )}
-    </main>
+    </div>
   );
 }
 
-const card = "rounded-2xl border border-border bg-card p-5";
-const heading = "mb-3 text-[0.7rem] font-semibold uppercase tracking-wider text-muted-foreground";
+const card = "rounded-2xl border border-border bg-card p-5 soft-shadow";
+const heading = "mb-3 text-xs font-semibold text-muted-foreground";
 const outlineButton =
   "rounded-lg border border-border px-3.5 py-1.5 text-sm text-foreground transition-colors hover:bg-muted disabled:opacity-50";
 
@@ -117,7 +107,6 @@ function Overview({ me, onOpen }: { me: AuthMe | null; onOpen: (tab: Tab) => voi
   const signOut = () =>
     guard(async () => {
       await logout();
-      // A new visitor now: whatever the page shows belongs to the old one.
       window.location.href = "/";
     });
 
@@ -135,7 +124,7 @@ function Overview({ me, onOpen }: { me: AuthMe | null; onOpen: (tab: Tab) => voi
   const quota = me.quota;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       <section className={`${card} flex items-center gap-4`}>
         {me.user?.avatar_url ? (
           // eslint-disable-next-line @next/next/no-img-element -- provider avatars come from arbitrary hosts
@@ -198,21 +187,16 @@ function Overview({ me, onOpen }: { me: AuthMe | null; onOpen: (tab: Tab) => voi
         </section>
       )}
 
-      <section className="grid gap-3 sm:grid-cols-2">
-        {(["memory", "projects"] as const).map((key) => (
-          <button
-            key={key}
-            type="button"
-            onClick={() => onOpen(key)}
-            className={`${card} lift text-left`}
-          >
-            <span className="block text-sm font-medium text-foreground">{t(`account.tab.${key}`)}</span>
-            <span className="mt-1 block text-xs leading-relaxed text-muted-foreground">
-              {t(`account.card.${key}`)}
-            </span>
-          </button>
-        ))}
-      </section>
+      <button
+        type="button"
+        onClick={() => onOpen("memory")}
+        className={`${card} lift block w-full text-left`}
+      >
+        <span className="block text-sm font-medium text-foreground">{t("account.tab.memory")}</span>
+        <span className="mt-1 block text-xs leading-relaxed text-muted-foreground">
+          {t("account.card.memory")}
+        </span>
+      </button>
 
       {!local && !admin && (
         <section className={card}>

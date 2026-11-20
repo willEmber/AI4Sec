@@ -363,6 +363,33 @@ async def list_project_papers(
     return papers[:limit]
 
 
+async def list_owner_papers(owner_id: str, *, limit: int = 200) -> list[SessionPaper]:
+    """All works attached across the caller's active conversations, one row per work.
+
+    Like `list_project_papers`, keeps the highest-availability copy when several
+    sessions hold the same work, ordered newest first.
+    """
+    if not owner_id:
+        return []
+    limit = max(1, min(limit, 500))
+    rows = await db.fetch_all(
+        f"""SELECT DISTINCT ON (sp.literature_id)
+                   sp.session_id, sp.literature_id, sp.paper_id, sp.availability,
+                   sp.added_by, sp.note, sp.updated_at,
+                   li.title, li.year, li.year_known, li.venue, li.doi, li.arxiv_id
+              FROM session_papers sp
+              JOIN agent_sessions s ON s.session_id = sp.session_id
+              JOIN literature_items li ON li.literature_id = sp.literature_id
+             WHERE s.owner_id = ? AND s.status = 'active'
+             ORDER BY sp.literature_id, {_AVAILABILITY_RANK}, (sp.paper_id = ''),
+                      sp.updated_at DESC""",
+        (owner_id,),
+    )
+    papers = [_row_to_session_paper(r) for r in rows]
+    papers.sort(key=lambda p: p.updated_at, reverse=True)
+    return papers[:limit]
+
+
 async def find_project_paper(project_id: str, handle: str) -> SessionPaper | None:
     """A project paper by `paper_id` or `literature_id`; `None` if the project has none such."""
     handle = (handle or "").strip()

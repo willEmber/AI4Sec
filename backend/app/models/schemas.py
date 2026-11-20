@@ -66,6 +66,8 @@ class ModelListResponse(BaseModel):
     # The subset offered for conversations, and its default.
     agent_models: list[str] = []
     agent_default: str = ""
+    # Whether the external Dify knowledge-base integration is configured.
+    library_enabled: bool = False
 
 
 class TrafficVisitResponse(BaseModel):
@@ -102,6 +104,7 @@ class RecentRunResponse(BaseModel):
     finished_at: str | None
     current_step: str = ""
     user_question: str = ""
+    agent_session_id: str = ""
 
 
 class RunOutputResponse(BaseModel):

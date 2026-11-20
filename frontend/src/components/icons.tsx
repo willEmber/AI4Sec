@@ -443,3 +443,46 @@ export function IconQuote(props: IconProps) {
     </Svg>
   );
 }
+
+export function IconChevronDown(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="m6 9 6 6 6-6" />
+    </Svg>
+  );
+}
+
+export function IconSun(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <circle cx="12" cy="12" r="4" />
+      <path d="M12 2.5v2.5M12 19v2.5M4.9 4.9l1.8 1.8M17.3 17.3l1.8 1.8M2.5 12H5M19 12h2.5M4.9 19.1l1.8-1.8M17.3 6.7l1.8-1.8" />
+    </Svg>
+  );
+}
+
+export function IconMoon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M20.5 14.5A8.5 8.5 0 0 1 9.5 3.5a8.5 8.5 0 1 0 11 11Z" />
+    </Svg>
+  );
+}
+
+export function IconMonitor(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <rect x="3" y="4" width="18" height="12" rx="2" />
+      <path d="M8 20h8M12 16v4" />
+    </Svg>
+  );
+}
+
+export function IconUser(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <circle cx="12" cy="8" r="4" />
+      <path d="M5 20a7 7 0 0 1 14 0" />
+    </Svg>
+  );
+}
