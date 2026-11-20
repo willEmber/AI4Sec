@@ -65,6 +65,46 @@ class SectionViewTests(unittest.TestCase):
         self.assertEqual(views["4 Experiments"].block_end, 40)
         self.assertEqual(views["Abstract"].block_end, 4)
 
+    def test_a_parse_with_the_title_above_every_heading_nests_by_numbering(self) -> None:
+        # SinSR as stored: the title at depth 1, every heading at depth 2, so
+        # "4. Methodology" covered its own heading only and Lens read each
+        # subsection on its own.
+        titled = [
+            _section(1, "SinSR: Diffusion-Based Image Super-Resolution in a Single Step", 0, 2),
+            _section(2, "Abstract", 3, 5, depth=2),
+            _section(3, "1. Introduction", 6, 9, depth=2),
+            _section(4, "4. Methodology", 10, 10, depth=2),
+            _section(5, "4.1. Deterministic Sampling", 11, 20, depth=2),
+            _section(6, "4.2. Consistency Preserving Distillation", 21, 30, depth=2),
+            _section(7, "5. Experiment", 31, 31, depth=2),
+            _section(8, "5.3. Analysis", 32, 40, depth=2),
+            _section(9, "Is a more sophisticated distillation strategy necessary?", 41, 45, depth=2),
+            _section(10, "6. Conclusion", 46, 48, depth=2),
+            _section(11, "Acknowledgements", 49, 50, depth=2),
+            _section(12, "References", 51, 90, depth=2),
+        ]
+        views = {v.title: v for v in section_views(titled)}
+        self.assertEqual((views["4. Methodology"].level, views["4.1. Deterministic Sampling"].level), (2, 3))
+        self.assertEqual(views["4. Methodology"].block_end, 30)
+        # An unnumbered heading inside 5.3 is part of it, and of 5.
+        self.assertEqual(views["5.3. Analysis"].block_end, 45)
+        self.assertEqual(views["5. Experiment"].block_end, 45)
+        # Back matter is not folded into the conclusion.
+        self.assertEqual(views["6. Conclusion"].block_end, 48)
+        self.assertEqual(views["Acknowledgements"].level, 2)
+        self.assertEqual(views["Abstract"].block_end, 5)
+
+    def test_a_title_that_reads_as_appendix_a_does_not_set_the_base(self) -> None:
+        views = {
+            v.title: v
+            for v in section_views([
+                _section(1, "A Survey of Routing", 0, 2),
+                _section(2, "2 Method", 10, 10, depth=2),
+                _section(3, "2.1 Gates", 11, 20, depth=2),
+            ])
+        }
+        self.assertEqual(views["2 Method"].block_end, 20)
+
     def test_a_checklist_is_folded_into_one_entry(self) -> None:
         views = section_views(FLAT)
         listed = [v.title for v in views if not v.folded]

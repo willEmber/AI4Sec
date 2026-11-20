@@ -9,8 +9,13 @@ outline. Rebuilding stored parses is a separate job; this works on what is
 stored, at read time:
 
 * a section's level is the deeper of its stored depth and its numbering
-  (`3.1`, `3.1.`, `A.1` → 2), and its body runs through the deeper sections
-  that follow it, so reading "3 Methodology" returns 3.1 to 3.4;
+  (`3.1`, `3.1.`, `A.1` → 2), counted from the depth the top-level numbered
+  headings sit at — a parse that put the paper's title at depth 1 has "4
+  Methodology" and "4.1" both at depth 2 — and its body runs through the
+  deeper sections that follow it, so reading "3 Methodology" returns 3.1 to
+  3.4. An unnumbered heading inside a numbered subsection ("Is a more
+  sophisticated strategy necessary?" after "5.3 Analysis") belongs to it,
+  unless it is back matter;
 * everything after a heading that names a checklist is folded under it, up
   to an appendix heading;
 * each section gets a short id, `<first 8 of paper_id>:s<n>`, instead of the
@@ -34,6 +39,13 @@ _NUMBERED_RE = re.compile(r"^\s*((?:\d{1,2}|[A-Z])(?:\.\d{1,2})*)\.?\s+\S")
 _CHECKLIST_RE = re.compile(r"\bchecklist\b", re.IGNORECASE)
 # What ends a checklist trailer: an appendix after it ("Appendix", "A Proofs").
 _APPENDIX_RE = re.compile(r"^\s*(?:appendix|supplementary|[A-Z](?:\.\d{1,2})*\.?\s)", re.IGNORECASE)
+# Unnumbered headings that are never part of the section before them.
+_BACK_MATTER_RE = re.compile(
+    r"^\s*(?:references|bibliography|acknowledge?ments?|appendi(?:x|ces)|supplementary"
+    r"|checklist|(?:broader )?impacts?(?: statement)?|ethics|reproducibility statement"
+    r"|author contributions|funding|limitations)\b",
+    re.IGNORECASE,
+)
 _STORED_INDEX_RE = re.compile(r":section:(\d+)(?::|$)")
 _SHORT_RE = re.compile(r"^([0-9A-Za-z]{4,40}):s(\d+)$")
 SHORT_PAPER_CHARS = 8
@@ -77,11 +89,27 @@ def section_views(nodes: list[PaperNode]) -> list[SectionView]:
         (n for n in nodes if n.node_type == "section"),
         key=lambda n: (n.block_start, n.order_idx),
     )
+    titled = [(node, (node.title or node.title_path.split("/")[-1]).strip()) for node in sections]
+    # Numbering counts from where "1 Introduction" sits. Digit-numbered
+    # headings decide it when there are any: a title such as "A Survey of …"
+    # reads as appendix A.
+    tops = [n.depth for n, t in titled if numbered_level(t) == 1 and t[:1].isdigit()] or [
+        n.depth for n, t in titled if numbered_level(t) == 1
+    ]
+    base = max(1, min(tops)) if tops else 1
+
     views: list[SectionView] = []
     trailer: SectionView | None = None
-    for node in sections:
-        title = (node.title or node.title_path.split("/")[-1]).strip()
-        level = max(node.depth, numbered_level(title), 1)
+    numbered = (0, 0)  # (level, numbering depth) of the latest numbered heading
+    for node, title in titled:
+        numbering = numbered_level(title)
+        if numbering:
+            level = max(node.depth, base + numbering - 1, 1)
+            numbered = (level, numbering)
+        elif numbered[1] >= 2 and not _BACK_MATTER_RE.match(title):
+            level = max(node.depth, numbered[0] + 1)
+        else:
+            level = max(node.depth, 1)
         view = SectionView(
             node=node, title=title, level=level, block_end=node.block_end,
             short_id=short_id_of(node),
