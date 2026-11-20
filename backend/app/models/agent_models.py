@@ -384,8 +384,8 @@ class CreateSessionRequest(BaseModel):
     # Local papers to attach up front. A session may also start empty.
     paper_ids: list[str] = Field(default_factory=list)
     # The browser's per-device token. Only used to stamp mode reports so they
-    # show up in the compare matrix and the recent-runs list beside reports
-    # started from the classic upload page; it grants nothing.
+    # show up in the recent-runs list beside reports from before accounts; it
+    # grants nothing.
     owner_token: str = ""
     # Start the session inside one of the caller's projects.
     project_id: str = ""

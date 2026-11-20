@@ -433,11 +433,11 @@ async def is_admin(caller: Caller) -> bool:
 async def daily_usage(caller: Caller) -> QuotaUsage:
     """Runs and tokens since UTC midnight, against the caller's limits.
 
-    A run is an agent turn, a mode run started from the upload page, or a
-    library question. Turns and mode runs are counted from their own rows
-    rather than a counter table, so the count cannot drift from what actually
-    ran; a mode run made inside a turn carries `agent_run_id` and is that
-    turn, not a second run. The tokens of a turn still in flight are not in
+    A run is an agent turn or a library question. Turns are counted from their
+    own rows rather than a counter table, so the count cannot drift from what
+    actually ran. A mode run made inside a turn carries `agent_run_id` and is
+    that turn, not a second run; one without it came from the upload page,
+    which no longer exists (P16), and is still counted on the day it ran. The tokens of a turn still in flight are not in
     yet; the run count is what stops a burst.
     """
     settings = get_settings()

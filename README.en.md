@@ -35,7 +35,7 @@
 
 - 💬 **Unified Conversational Reading Agent (`/chat`)** — A single-loop LangGraph + Deep Agents workspace wielding **22 domain tools across 7 groups** to search literature, fetch PDFs, parse full text, read sections/equations/tables, compare multiple papers, and invoke whole-paper reports; backed by durable PostgreSQL checkpoints, worker lease recovery, graceful budget wrap-up, and resumable SSE streams.
 - 🔍 **Immutable Evidence & Passage-Level Citations** — Full-text excerpts and external facts are stored as immutable snapshots pinned to a parse version. Inside conversations, the model cites short per-session aliases (`[E12]`) rewritten live to canonical evidence IDs; click any badge to inspect the verbatim quote, switch papers, and jump straight to the source page.
-- 🎯 **Three Whole-Paper Modes + Triage Matrix** — **Insight Snap** (evidence-backed triage combining blind review with external signals), **Logic Lens** (deep formula, algorithm, and reproduction breakdown with optional user focus), and **Research Sphere** (reference networks, citation graphs, and research gaps). Run them as tools inside a conversation, or standalone via `/upload` and the `/compare` multi-paper matrix.
+- 🎯 **Three Whole-Paper Modes + Triage Matrix** — **Insight Snap** (evidence-backed triage combining blind review with external signals), **Logic Lens** (deep formula, algorithm, and reproduction breakdown with optional user focus), and **Research Sphere** (reference networks, citation graphs, and research gaps). Run them as tools inside a conversation (one click in the composer); every report has its own page and exports, and Snap reports line up in the `/library` comparison matrix.
 - 🗂️ **Research Projects & Cross-Session Recall (`/projects`)** — Group conversations, shared paper pools, and long-term memories (with confirmation guards against prompt injection) by research topic; search earlier answers across EN/ZH conversations and pull back their original supporting evidence.
 - 🌐 **7-Source Academic Search + Open-Web Verification** — Parallel federated search across Semantic Scholar, OpenAlex, arXiv, Crossref, IEEE Xplore, DBLP, and OpenReview, plus venue tier lookup (EasyScholar + web fallback keeping JCR, CAS, and CCF distinct) and rotating Tavily / Exa / Firecrawl key pools for code repositories, leaderboards, and project pages.
 - 📄 **High-Fidelity Layout Parsing** — MinerU-powered PDF parsing preserves section hierarchy, equations, wide tables, and figures; attaching a PDF starts background parsing immediately while you type.
@@ -48,7 +48,7 @@
 | Entry / Mode | Best for |
 |---|---|
 | **Reading Chat (`/chat`)** | Primary entry point: start from a blank research question to discover and fetch papers, or attach one/many PDFs for multi-turn deep reading, cross-paper comparison, web/review verification, and on-demand mode reports |
-| **Insight Snap** | 30-second evidence-based triage: structured contribution analysis + independent blind content review + external signals (venue rank, S2/OpenAlex citations & intents, OA/retraction status, code repos) → reading verdict; compare runs side-by-side on `/compare` |
+| **Insight Snap** | 30-second evidence-based triage: structured contribution analysis + independent blind content review + external signals (venue rank, S2/OpenAlex citations & intents, OA/retraction status, code repos) → reading verdict; compare reports side-by-side in `/library` |
 | **Logic Lens** | Deep method & reproduction breakdown: problem framing, pipeline, typeset formula cards, algorithm steps, experimental tables, and reproduction checklist; accepts a custom `focus` and toggles between structured cards and full Markdown |
 | **Research Sphere** | Field landscape: reference extraction + citation graph expansion → venue/citation scoring & LLM relevance gate → coupling clusters, multi-paper comparison, library matches, and research gaps |
 | **Projects (`/projects`)** | Topic-scoped workspaces grouping conversations, derived project papers, scoped memories, and cross-session evidence recall |
@@ -245,8 +245,9 @@ Conversational Primary Path (/chat)
       → Persist-then-publish SSE event stream (resumable by sequence ID)
       → 3-pane workspace: ChatNav (left) + Turn timeline & clickable citations (center) + ContextPanel for PDF/Papers/Sources/Reports (right)
 
-Classic Standalone Workflows (/upload · /compare · /library)
-  Upload PDF → MinerU → PaperIR → LangGraph (Snap / Lens / Sphere / QA) → Split-pane report view / Triage matrix / Zotero & Markdown export
+Reports & Library (/paper/.../run/... · /library)
+  Reports made in conversations → runs / run_outputs → Split-pane report page · /library papers & reports hub, Snap triage matrix · Zotero & Markdown export
+  Knowledge base (optional, enabled by DIFY_API_BASE): corpus search and multi-paper Q&A inside /library
 ```
 
 ## Tech Stack
@@ -276,7 +277,7 @@ scholar/
 │   └── pyproject.toml
 ├── frontend/                   # Next.js 15 + React 19 frontend
 │   ├── src/
-│   │   ├── app/                # Routes: /chat, /projects, /account, /upload, /compare, /library, /paper/.../run/...
+│   │   ├── app/                # Routes: /chat, /projects, /account, /library, /paper/.../run/... (/upload and /compare only redirect)
 │   │   ├── components/         # agent (3-pane shell/timeline/context panel), snap, lens, sphere, project, account & shared UI
 │   │   ├── hooks/              # SSE hooks (useAgentStream / useRunStream) & persistent UI state
 │   │   └── lib/                # Event reducer, turn grouping, safe URLs, evidence cache, API clients & EN/ZH i18n

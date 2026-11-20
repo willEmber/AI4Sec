@@ -200,7 +200,7 @@ class AgentContext:
     # the same one, so a report and the answer summarising it agree.
     llm_model: str = ""
     # The browser's per-device token, copied onto mode reports so they appear
-    # in the compare matrix next to reports made from the upload page. Grants
+    # in the recent-runs listing next to reports from before accounts. Grants
     # nothing; identity is `owner_id`.
     owner_token: str = ""
     # The session's research project ('' = none), read from the session row at

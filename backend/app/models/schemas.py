@@ -7,15 +7,6 @@ from pydantic import BaseModel, Field
 
 # --- Request models ---
 
-class RunCreate(BaseModel):
-    paper_id: str
-    mode: Literal["snap", "lens", "sphere", "auto"] = "snap"
-    llm_model: str = ""
-    language: str = "en"        # en | zh
-    question: str = ""          # required (non-empty) when mode == "auto"
-    owner_token: str = ""       # per-browser token; scopes which runs the client sees
-
-
 class TrafficVisitCreate(BaseModel):
     owner_token: str = Field(min_length=1, max_length=256)
     path: str = Field(default="/", min_length=1, max_length=512, pattern=r"^/")

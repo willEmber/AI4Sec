@@ -3,7 +3,6 @@ import type {
   PaperResponse,
   PaperUploadResponse,
   RecentRunResponse,
-  RunCreate,
   RunResponse,
   RunOutputResponse,
   LibraryDatasetsResponse,
@@ -52,14 +51,6 @@ export async function uploadPaper(file: File): Promise<PaperUploadResponse> {
 
 export async function getPaper(paperId: string): Promise<PaperResponse> {
   return request(`/papers/${paperId}`);
-}
-
-export async function createRun(body: RunCreate): Promise<RunResponse> {
-  return request("/runs", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ ...body, owner_token: getOwnerToken() }),
-  });
 }
 
 export async function getRun(runId: string): Promise<RunResponse> {

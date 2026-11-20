@@ -4,8 +4,6 @@ import asyncio
 import json
 import tempfile
 import unittest
-from pathlib import Path
-from unittest.mock import AsyncMock, patch
 
 from app.db import database as db
 from tests.pg_support import open_fresh_database
@@ -14,7 +12,6 @@ from app.services.mineru_adapter import (
     _poll_until_done_sync,
     _update_parse_poll_sync,
 )
-from app.workflows.main_graph import mineru_parse
 
 
 class _AlwaysRunningClient:
@@ -53,40 +50,7 @@ class MinerUPollTimeoutTests(unittest.TestCase):
         self.assertEqual(poll_events[0]["state_counts"], {"running": 1})
 
 
-class MinerUProgressEventTests(unittest.IsolatedAsyncioTestCase):
-    async def test_mineru_parse_emits_running_progress_before_remote_parse(self) -> None:
-        asyncio.get_running_loop().slow_callback_duration = 10.0
-        with tempfile.TemporaryDirectory() as tmp:
-            await open_fresh_database(self)
-            await db.execute(
-                "INSERT INTO papers (paper_id, file_path) VALUES (?, ?)",
-                ("paper", "papers/paper/original.pdf"),
-            )
-
-            from app.workflows import progress
-
-            queue = progress.subscribe("run-1")
-            self.addCleanup(progress.unsubscribe, "run-1", queue)
-            state = {
-                "paper_id": "paper",
-                "run_id": "run-1",
-                "progress": [],
-            }
-
-            async def fake_parse_pdf(paper_id: str, parse_id: str) -> Path:
-                event = await queue.get()
-                self.assertEqual(event["step"], "mineru_parse")
-                self.assertEqual(event["status"], "running")
-                raise RuntimeError("stop after progress")
-
-            with patch(
-                "app.workflows.main_graph.mineru_adapter.parse_pdf",
-                new=AsyncMock(side_effect=fake_parse_pdf),
-            ):
-                result = await mineru_parse(state)
-
-            self.assertIn("MinerU parse failed", result["error"])
-
+class MinerUPollMetadataTests(unittest.IsolatedAsyncioTestCase):
     async def test_poll_metadata_updates_parse_row_for_diagnostics(self) -> None:
         asyncio.get_running_loop().slow_callback_duration = 10.0
         with tempfile.TemporaryDirectory() as tmp:

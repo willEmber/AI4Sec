@@ -1,83 +1,35 @@
+"""Reading, exporting, stopping and deleting mode reports.
+
+A report is made inside a conversation (`agents/tools/modes.py`); there is no
+endpoint that starts one on its own any more (P16). Reading a run is open to
+anyone holding its id — that is how a report is shared — while stopping and
+deleting are the owner's.
+"""
+
 from __future__ import annotations
 
 import asyncio
 import json
-import logging
-import uuid
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import Response, StreamingResponse
 
-from app.api.deps import caller_or_new, optional_caller, require_quota
+from app.api.deps import optional_caller
 from app.config import get_settings
-from app.services.llm_gateway import get_registry
 from app.db import database as db
 from app.rate_limit import limiter
-from app.models.schemas import RecentRunResponse, RunCreate, RunOutputResponse, RunResponse
+from app.models.schemas import RecentRunResponse, RunOutputResponse, RunResponse
 from app.services import mode_runs, report_images, zotero_export
 from app.services.accounts import Caller
 
-logger = logging.getLogger("scholar.runs")
-
 router = APIRouter(tags=["runs"])
 
-_VALID_INPUT_MODES = {"snap", "lens", "sphere", "auto"}
-_MAX_QUESTION_LEN = 2000
 _MAX_OWNER_TOKEN_LEN = 100
 
 # Never surface runs older than this in the recent list — older history is not
 # useful for recovery and only clutters the UI.
 _RECENT_RUN_DAYS = 7
-
-
-@router.post("/runs", response_model=RunResponse)
-@limiter.limit("3/minute")
-async def create_run(
-    request: Request, req: RunCreate, caller: Caller = Depends(caller_or_new)
-):
-    # Verify paper exists
-    paper = await db.fetch_one("SELECT paper_id FROM papers WHERE paper_id = ?", (req.paper_id,))
-    if not paper:
-        raise HTTPException(status_code=404, detail="Paper not found")
-
-    mode = req.mode if req.mode in _VALID_INPUT_MODES else "snap"
-    language = req.language if req.language in ("en", "zh") else "en"
-    question = (req.question or "").strip()[:_MAX_QUESTION_LEN]
-    owner_token = (req.owner_token or "").strip()[:_MAX_OWNER_TOKEN_LEN]
-
-    # Only allow models the operator explicitly configured (the model registry).
-    # An unknown model name is dropped to the default rather than forwarded to
-    # the LLM backend, so a caller can't point a run at an arbitrary/unauthorised
-    # (e.g. far more expensive) model. When no list is configured we can't
-    # validate, so pass through unchanged.
-    allowed_models = get_registry().selectable_models()
-    llm_model = (req.llm_model or "").strip()
-    if llm_model and allowed_models and llm_model not in allowed_models:
-        logger.warning(f"[run] Rejected unknown llm_model={llm_model!r}; using default")
-        llm_model = ""
-
-    if mode == "auto" and not question:
-        raise HTTPException(status_code=400, detail="Smart Q&A mode requires a non-empty question")
-
-    # A mode run spends as much as an agent turn, so it counts as one.
-    await require_quota(caller)
-
-    run_id = uuid.uuid4().hex[:16]
-    await db.execute(
-        "INSERT INTO runs (run_id, paper_id, mode, llm_model, language, status, user_question, "
-        "owner_token, owner_id) VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?)",
-        (run_id, req.paper_id, mode, llm_model, language, question, owner_token, caller.principal_id),
-    )
-
-    logger.info(
-        f"[run:{run_id}] Created run paper={req.paper_id} mode={mode} model={llm_model or '(default)'} lang={language} q={'(yes)' if question else '(no)'}"
-    )
-
-    mode_runs.start(run_id)
-
-    row = await db.fetch_one("SELECT * FROM runs WHERE run_id = ?", (run_id,))
-    return RunResponse(**row)
 
 
 @router.get("/runs/recent", response_model=list[RecentRunResponse])

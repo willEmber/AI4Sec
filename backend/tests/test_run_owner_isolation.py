@@ -85,36 +85,34 @@ class RunOwnerIsolationTests(unittest.TestCase):
         self.assertEqual(self._recent_ids("B"), {"r_b"})
         self.assertEqual(self._recent_ids(""), {"r_legacy"})
 
-    def test_a_run_whose_worker_is_gone_is_run_again_up_to_a_limit(self) -> None:
-        from unittest import mock
-
+    def test_a_run_whose_worker_is_gone_is_closed(self) -> None:
         from app.services import mode_runs
 
         with psycopg.connect(self.db_url) as con:
             con.execute(
-                "UPDATE runs SET status = 'running', attempts = 3, "
-                "heartbeat_at = now() - interval '1 hour' WHERE run_id = 'r_b'"
-            )
-            con.execute(
                 "UPDATE runs SET status = 'running', agent_run_id = 'ar_1', "
                 "heartbeat_at = now() - interval '1 hour' WHERE run_id = 'r_legacy'"
             )
-        with mock.patch.object(mode_runs, "start") as start:
-            result = self.client.portal.call(mode_runs.recover_stale)
-        # r_old never reported at all; r_a was created a moment ago and is left alone.
-        self.assertEqual(result["mode_runs_resumed"], ["r_old"])
-        start.assert_called_once_with("r_old")
-        self.assertEqual(self._status("r_old"), "pending")
-        self.assertEqual(self._status("r_a"), "pending")
-        # Out of attempts, and a run whose conversation turn died with it: closed.
-        self.assertEqual(sorted(result["mode_runs_closed"]), ["r_b", "r_legacy"])
-        self.assertEqual(self._status("r_b"), "failed")
+            # A report whose tool is still beating is left alone.
+            con.execute(
+                "UPDATE runs SET status = 'running', agent_run_id = 'ar_2', "
+                "heartbeat_at = now() WHERE run_id = 'r_b'"
+            )
+        result = self.client.portal.call(mode_runs.recover_stale)
+        # r_old never reported at all — a run left waiting by the upload page —
+        # and r_legacy's turn died with its worker. r_a was created a moment ago.
+        self.assertEqual(result, {"mode_runs_closed": ["r_legacy", "r_old"]})
+        self.assertEqual(self._status("r_old"), "failed")
         self.assertEqual(self._status("r_legacy"), "failed")
+        self.assertEqual(self._status("r_a"), "pending")
+        self.assertEqual(self._status("r_b"), "running")
 
-        with mock.patch.object(mode_runs, "start") as start:
-            again = self.client.portal.call(mode_runs.recover_stale)
-        self.assertEqual(again, {"mode_runs_resumed": [], "mode_runs_closed": []})
-        start.assert_not_called()
+        again = self.client.portal.call(mode_runs.recover_stale)
+        self.assertEqual(again, {"mode_runs_closed": []})
+
+    def test_runs_are_no_longer_started_over_http(self) -> None:
+        resp = self.client.post("/api/runs", json={"paper_id": "paperX", "mode": "snap"})
+        self.assertIn(resp.status_code, (404, 405), resp.text)
 
     def test_dismiss_requires_ownership(self) -> None:
         # Wrong owner cannot dismiss (and cannot learn the run exists).
@@ -173,42 +171,37 @@ class RunProgressAndDismissTests(RunOwnerIsolationTests):
             ],
         )
 
-    def test_dismiss_stops_the_task_and_the_run_stays_closed(self) -> None:
+    def test_dismiss_stops_the_report_being_made(self) -> None:
         import asyncio
+        import time
         from unittest import mock
 
-        from app.workflows.main_graph import persist_output
+        from app.services import mode_runs
 
+        with psycopg.connect(self.db_url) as con:
+            con.execute("UPDATE runs SET status = 'running' WHERE run_id = 'r_a'")
         seen: dict[str, bool] = {}
 
-        async def _never_finishes(run_id: str, *args: object, **kwargs: object) -> None:
-            seen["started"] = True
+        async def make_report() -> None:
+            # What a mode tool does while it writes a report: beat, and be
+            # interrupted once the row is closed — on whichever replica.
             try:
-                await asyncio.Event().wait()
+                async with mode_runs.heartbeating("r_a"):
+                    seen["started"] = True
+                    await asyncio.Event().wait()
             except asyncio.CancelledError:
                 seen["cancelled"] = True
-                raise
 
-        with mock.patch("app.services.mode_runs._execute", new=_never_finishes):
-            created = self.client.post("/api/runs", json={"paper_id": "paperX", "mode": "snap"})
-            self.assertEqual(created.status_code, 200, created.text)
-            run_id = created.json()["run_id"]
-            # The cookie is Secure and this client speaks http, so the credential
-            # goes back the way pre-cookie clients sent it.
-            credential = created.headers["X-Agent-Token"]
-            dismissed = self.client.post(
-                f"/api/runs/{run_id}/dismiss", headers={"X-Agent-Token": credential}
-            )
+        with mock.patch.object(mode_runs, "HEARTBEAT_SECONDS", 0.05):
+            made = self.client.portal.start_task_soon(make_report)
+            deadline = time.monotonic() + 2
+            while not seen.get("started") and time.monotonic() < deadline:
+                time.sleep(0.01)
+            dismissed = self.client.post("/api/runs/r_a/dismiss", params={"owner_token": "A"})
             self.assertEqual(dismissed.status_code, 200, dismissed.text)
-            self.assertEqual(dismissed.json()["status"], "cancelled")
-            self.client.portal.call(asyncio.sleep, 0.05)
+            made.result(timeout=2)
         self.assertEqual(seen, {"started": True, "cancelled": True})
-
-        # A graph that reaches its last node anyway must not reopen the run.
-        self.client.portal.call(
-            persist_output, {"run_id": run_id, "paper_id": "paperX", "final_markdown": "# late"}
-        )
-        after = self.client.get(f"/api/runs/{run_id}").json()
+        after = self.client.get("/api/runs/r_a").json()
         self.assertEqual((after["status"], after["error_msg"]), ("cancelled", "Cancelled by user"))
 
     def test_the_stream_replays_recorded_steps_and_ends_with_the_run(self) -> None:
@@ -230,46 +223,3 @@ class RunProgressAndDismissTests(RunOwnerIsolationTests):
             ],
         )
         self.assertEqual(self.client.get("/api/runs/nope/stream").status_code, 404)
-
-    def test_the_executor_takes_a_pending_run_to_its_end(self) -> None:
-        import json
-        from unittest import mock
-
-        from app.services import mode_runs
-        from app.workflows.main_graph import persist_output
-
-        class _Graph:
-            async def astream(self, state):
-                yield {"ingest_pdf": {"progress": [{"step": "ingest_pdf", "status": "done"}]}}
-                await persist_output({**state, "final_markdown": "# report"})
-                yield {"persist_output": {"progress": [{"step": "persist_output", "status": "done"}]}}
-
-        class _Broken:
-            async def astream(self, state):
-                raise RuntimeError("model unavailable")
-                yield {}
-
-        with mock.patch.object(mode_runs, "_get_graph", return_value=_Graph()):
-            self.client.portal.call(mode_runs._execute, "r_a")
-        run = self.client.get("/api/runs/r_a").json()
-        self.assertEqual(run["status"], "done")
-        self.assertEqual(
-            [s["step"] for s in json.loads(run["progress_json"])], ["ingest_pdf", "persist_output"]
-        )
-        self.assertEqual(self.client.get("/api/runs/r_a/output").json()["markdown"], "# report")
-        with psycopg.connect(self.db_url) as con:
-            attempts, worker = con.execute(
-                "SELECT attempts, worker_id FROM runs WHERE run_id = 'r_a'"
-            ).fetchone()
-        self.assertEqual(attempts, 1)
-        self.assertEqual(worker, mode_runs.WORKER_ID)
-
-        with mock.patch.object(mode_runs, "_get_graph", return_value=_Broken()):
-            self.client.portal.call(mode_runs._execute, "r_b")
-        failed = self.client.get("/api/runs/r_b").json()
-        self.assertEqual((failed["status"], failed["error_msg"]), ("failed", "model unavailable"))
-
-        # A run that is no longer pending is not taken at all.
-        with mock.patch.object(mode_runs, "_get_graph", return_value=_Graph()):
-            self.client.portal.call(mode_runs._execute, "r_b")
-        self.assertEqual(self._status("r_b"), "failed")

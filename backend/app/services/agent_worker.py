@@ -278,6 +278,3 @@ async def stop() -> None:
     for task in list(_resumes):
         task.cancel()
     _resumes.clear()
-    from app.services import mode_runs
-
-    await mode_runs.stop()

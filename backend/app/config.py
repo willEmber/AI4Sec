@@ -33,10 +33,9 @@ class AppSettings(BaseSettings):
     thinking_model: str = Field(default="", alias="THINKING_MODELNAME")
     embed_model: str = Field(default="", alias="EMBED_MODELNAME")
     rerank_model: str = Field(default="", alias="RERANK_MODELNAME")
-    # Model for utility calls (intent classification, digest and evidence
-    # extraction, rank extraction, context summarisation). Always served by the
-    # gateway above and never offered to readers; empty falls back to the first
-    # THINKING_MODELNAME entry.
+    # Model for utility calls (digest and evidence extraction, rank extraction,
+    # context summarisation). Always served by the gateway above and never
+    # offered to readers; empty falls back to the first THINKING_MODELNAME entry.
     base_model: str = Field(default="", alias="BASE_MODELNAME")
 
     # Extension gateways and the chat models they add are declared in this
@@ -87,9 +86,6 @@ class AppSettings(BaseSettings):
     # the agent first asks for it, so the reader's typing time is parse time.
     # Off means a paper nobody asks about is never billed.
     parse_on_attach: bool = Field(default=True, alias="PARSE_ON_ATTACH")
-    # Mode runs from the upload page executing at once in one process; the
-    # rest wait their turn as `pending`.
-    mode_run_concurrency: int = Field(default=5, alias="MODE_RUN_CONCURRENCY")
 
     # --- Paper downloader (OA Resolver / Elsevier TDM / Wiley TDM) ---
     unpaywall_email: str = Field(default="", alias="UNPAYWALL_EMAIL")
@@ -126,7 +122,7 @@ class AppSettings(BaseSettings):
     # Sphere. One extra LLM call per run; off means markdown-only, as before.
     lens_digest_enabled: bool = Field(default=True, alias="LENS_DIGEST_ENABLED")
 
-    # --- Paper agent (Deep Agents Smart Q&A) ---
+    # --- Paper agent (Deep Agents conversation) ---
     # Model for the conversational agent. Empty falls back to the first entry of
     # THINKING_MODELNAME. The gateway serves /responses only (no
     # /chat/completions), which app/agents/model_factory.py accounts for.
@@ -300,8 +296,8 @@ class AppSettings(BaseSettings):
     # changing either value logs out every session it has.
     admin_username: str = Field(default="", alias="ADMIN_USERNAME")
     admin_password: str = Field(default="", alias="ADMIN_PASSWORD")
-    # Per-principal daily quotas (UTC day). A run is an agent turn, a mode run
-    # from the upload page or a library question; tokens are the agent turns'.
+    # Per-principal daily quotas (UTC day). A run is an agent turn or a library
+    # question; tokens are what both spent, mode reports made in a turn included.
     # 0 means unlimited; single_user mode and the admin are never limited.
     quota_anon_daily_runs: int = Field(default=10, alias="QUOTA_ANON_DAILY_RUNS")
     quota_anon_daily_tokens: int = Field(default=1_000_000, alias="QUOTA_ANON_DAILY_TOKENS")

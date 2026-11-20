@@ -1,14 +1,14 @@
 """The three reading modes, callable from inside a conversation.
 
 Insight Snap, Logic Lens and Research Sphere were built as branches of the
-upload pipeline. Here each becomes a tool, so the same analysis can be asked
-for mid-conversation — by the reader picking a mode in the composer, or by the
-agent deciding a question deserves the full treatment.
+upload pipeline, which is gone (P16). Here each is a tool, so the analysis is
+asked for mid-conversation — by the reader picking a mode in the composer, or
+by the agent deciding a question deserves the full treatment.
 
 Three things are deliberately kept from the pipeline rather than reinvented:
 
 *The report is a `runs` row.* A mode run made here writes the same `runs` and
-`run_outputs` rows the upload page writes, stamped with the session and the
+`run_outputs` rows the upload page wrote, stamped with the session and the
 turn. The report page, the compare matrix and both exports keep working on it
 without knowing where it came from.
 

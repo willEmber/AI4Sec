@@ -71,17 +71,6 @@ export interface SSEEvent {
   data: Record<string, unknown>;
 }
 
-export type ReadingMode = "snap" | "lens" | "sphere" | "auto";
-
-export interface RunCreate {
-  paper_id: string;
-  mode: ReadingMode;
-  llm_model: string;
-  language?: string;  // "en" | "zh"
-  question?: string;  // non-empty only when mode === "auto"
-  owner_token?: string;  // injected by the API client; scopes recent-runs visibility
-}
-
 // --- Knowledge base (Dify) ---
 
 export type SearchMethod = "semantic_search" | "full_text_search" | "hybrid_search";

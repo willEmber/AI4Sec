@@ -1,7 +1,7 @@
 """GROBID fallback for header metadata (DOI, title, authors, year, venue).
 
 The primary path scans the first few pages of the MinerU text for a DOI or arXiv
-id with a regex (``main_graph._extract_doi_from_ir``). That works on a
+id with a regex (``paper_metadata._extract_doi_from_ir``). That works on a
 well-typeset preprint and fails on plenty of real PDFs: scans, two-column layouts
 whose reading order interleaves the header, journals that print the DOI only in a
 running footer MinerU drops, and any paper where the identifier is split across

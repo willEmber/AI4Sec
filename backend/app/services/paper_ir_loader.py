@@ -1,21 +1,19 @@
 """Rebuild a parsed paper's `PaperIR` and bibliographic record from what is stored.
 
 The mode subgraphs (Snap / Lens / Sphere) were written for the upload pipeline,
-where `paper_ir_json` and `pub_rank_json` arrive in graph state fresh from the
-parse. Inside a conversation the paper was parsed earlier — by an upload run,
-by the agent's `ensure_paper_parsed`, or by a recovery sweep — so the same two
-inputs have to be recovered from storage instead.
+where `paper_ir_json` and `pub_rank_json` arrived in graph state fresh from the
+parse. Inside a conversation the paper was parsed earlier — by the agent's
+`ensure_paper_parsed`, by the parse started when it was attached, or by a
+recovery sweep — so the same two inputs are recovered from storage instead.
 
 `PaperIR` is rebuilt from MinerU's `content_list.json` rather than from the
-`blocks` table on purpose: that is exactly what the pipeline does, so a report
-made in a conversation is built on the same structure as one made from the
-upload page.
+`blocks` table on purpose: that is what the pipeline built it from, so reports
+made before and after the upload page went away rest on the same structure.
 """
 
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 from pathlib import Path
 from typing import Any
@@ -75,27 +73,23 @@ async def load_pub_rank(paper_id: str) -> dict[str, Any]:
 async def ensure_pub_rank(paper_id: str, paper_ir: PaperIR, pdf_path: Path | None) -> dict[str, Any]:
     """Return the paper's venue/rank record, looking it up once when missing.
 
-    Runs the pipeline's own `enrich_metadata` node so the conversation and the
-    upload page agree on where a venue came from. Any failure there is already
-    non-blocking; here it simply leaves the record as stored.
+    The lookup (`paper_metadata.enrich_metadata`) stores what it finds on the
+    paper's row and is already non-blocking; here a failure simply leaves the
+    record as stored.
     """
     stored = await load_pub_rank(paper_id)
     if stored.get("venue"):
         return stored
     try:
-        from app.workflows.main_graph import enrich_metadata
+        from app.services.paper_metadata import enrich_metadata
 
-        result = await enrich_metadata(
-            {
-                "paper_id": paper_id,
-                "paper_ir_json": paper_ir.model_dump_json(),
-                "pdf_path": str(pdf_path) if pdf_path else "",
-                "progress": [],
-            }
+        found = await enrich_metadata(
+            paper_id,
+            paper_ir_json=paper_ir.model_dump_json(),
+            pdf_path=str(pdf_path) if pdf_path else "",
         )
-        payload = result.get("pub_rank_json") or ""
-        if payload:
-            return json.loads(payload)
+        if found:
+            return found
     except Exception:  # noqa: BLE001 — metadata is a nicety, never a blocker
         logger.warning("enrich_metadata failed for %s; continuing without venue", paper_id)
     return stored

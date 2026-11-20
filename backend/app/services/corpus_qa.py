@@ -1,9 +1,9 @@
 """Corpus-wide RAG Q&A over the Dify knowledge base.
 
-Unlike single-paper Q&A (``workflows/qa_subgraph.py``), this retrieves passages
-across the whole library via the Dify proxy and asks the LLM to synthesise an
-answer. Because library documents are markdown (no page index), citations use a
-document-level ``[L#]`` scheme instead of ``[p.X]`` — each marker maps to one
+Unlike a conversation, which reads the papers attached to it, this retrieves
+passages across the whole library via the Dify proxy and asks the LLM to
+synthesise an answer. Because library documents are markdown (no page index),
+citations use a document-level ``[L#]`` scheme — each marker maps to one
 retrieved passage (``document_id`` + ``segment_id``) that the frontend links to
 the library document view.
 """

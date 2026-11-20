@@ -1,8 +1,8 @@
 """Model registry: one base gateway plus optional extension gateways.
 
 The base gateway (`LLM_BASEURL`, Alibaba Bailian) stays the only source of
-rerank, embeddings and every *utility* call — intent classification, digest and
-evidence extraction, rank extraction, context summarisation. Those outputs are
+rerank, embeddings and every *utility* call — digest and evidence extraction,
+rank extraction, context summarisation. Those outputs are
 consumed by code, their prompts and budgets were tuned against one model, and a
 failure there degrades silently, so they do not follow the reader's choice.
 

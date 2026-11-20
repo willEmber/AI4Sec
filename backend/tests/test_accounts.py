@@ -514,22 +514,6 @@ class QuotaTests(_AppTestCase):
         self.assertEqual(retry.status_code, 200)
         self.assertTrue(retry.json()["deduplicated"])
 
-    def test_a_mode_run_from_the_upload_page_counts_as_a_run(self) -> None:
-        from app.db import database as db
-
-        db.execute_sync("INSERT INTO papers (paper_id, file_path) VALUES ('p1', 'papers/p1/original.pdf')")
-        with mock.patch("app.services.mode_runs._execute", new=mock.AsyncMock()):
-            first = self.client.post("/api/runs", json={"paper_id": "p1", "mode": "snap"})
-            self.assertEqual(first.status_code, 200, first.text)
-            second = self.client.post("/api/runs", json={"paper_id": "p1", "mode": "snap"})
-        self.assertEqual(second.status_code, 429)
-        self.assertEqual(second.json()["detail"]["code"], "quota_exceeded")
-        self.assertEqual(self.client.get("/api/auth/me").json()["quota"]["runs"], 1)
-        # The same day's agent turn is refused too: one allowance, not one per door.
-        session_id = self.client.post("/api/agent/sessions", json={}).json()["session_id"]
-        turn = self.client.post(f"/api/agent/sessions/{session_id}/messages", json={"content": "one"})
-        self.assertEqual(turn.status_code, 429)
-
     def test_a_mode_run_made_inside_a_turn_is_not_counted_twice(self) -> None:
         from app.db import database as db
 
