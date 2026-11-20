@@ -124,17 +124,24 @@ interface Placement {
   bottom?: number;
 }
 
-function CitationBadge({
+/**
+ * A numbered citation that opens the passage it cites. `preset` is a passage
+ * already in hand — a shared report's frozen citation table — and is shown
+ * without asking the evidence API, which serves only the passage's owner.
+ */
+export function CitationBadge({
   evidenceId,
   number,
   onJumpToPage,
+  preset,
 }: {
   evidenceId: string;
   number: number;
   onJumpToPage?: (paperId: string, page: number) => void;
+  preset?: Evidence;
 }) {
   const { t } = useTranslation();
-  const [evidence, setEvidence] = useState<Evidence | null>(null);
+  const [evidence, setEvidence] = useState<Evidence | null>(preset ?? null);
   const [failed, setFailed] = useState(false);
   const [placement, setPlacement] = useState<Placement | null>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);

@@ -184,6 +184,8 @@ export function artifactFromEvent(event: AgentEvent): SessionArtifact | null {
     language: String(p.language || "en"),
     status: "done",
     created_at: event.timestamp,
+    answer: Boolean(p.answer),
+    stop_reason: String(p.stop_reason || ""),
   };
 }
 

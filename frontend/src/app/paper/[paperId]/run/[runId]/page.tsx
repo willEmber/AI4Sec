@@ -18,6 +18,8 @@ import { IconCards, IconCheck, IconDocument, IconDownload, IconSparkles, IconSto
 import { parseSphereData } from "@/lib/sphere";
 import { parseSnapData } from "@/lib/snap";
 import { defaultLensView, parseLensData } from "@/lib/lens";
+import { parseCitationTable } from "@/lib/reportCitations";
+import { useFrozenCitations } from "@/components/report/FrozenCitations";
 import type { RunResponse, PaperResponse, SSEEvent, ProgressEntry } from "@/lib/types";
 
 export default function RunPage() {
@@ -125,6 +127,15 @@ export default function RunPage() {
     setPdfCollapsed(false);
     setTargetPage(page);
   }, []);
+
+  // A report written as an answer (P16) cites passages from its frozen table.
+  // Only this paper's passages can jump: the viewer holds this paper's PDF.
+  const citations = useMemo(() => parseCitationTable(jsonData), [jsonData]);
+  const jumpToCited = useCallback(
+    (_citedPaper: string, page: number) => handleCitationClick(page),
+    [handleCitationClick],
+  );
+  const renderEvidence = useFrozenCitations(citations, jumpToCited, paperId);
 
   // Download via the backend so figures are rewritten to public object-storage
   // URLs (uploaded on demand) when R2 is configured; the browser handles the
@@ -381,7 +392,11 @@ export default function RunPage() {
             ) : markdown ? (
               <div className="px-6 py-8 sm:px-10">
                 <div className="mx-auto max-w-3xl">
-                  <MarkdownRenderer content={markdown} onCitationClick={handleCitationClick} />
+                  <MarkdownRenderer
+                    content={markdown}
+                    onCitationClick={handleCitationClick}
+                    renderEvidence={renderEvidence}
+                  />
                 </div>
               </div>
             ) : isCancelled ? (

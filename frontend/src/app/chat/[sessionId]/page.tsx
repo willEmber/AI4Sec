@@ -866,16 +866,30 @@ function ChatSession() {
                             initialTools={finishedTools.get(message.run_id)}
                           />
                         )}
-                        {(artifactsByRun.get(message.run_id) ?? []).map((artifact) => (
-                          <ArtifactCard
-                            key={`${artifact.agent_run_id}-${artifact.run_id}`}
-                            artifact={artifact}
-                            onOpen={openReport}
-                            active={artifact.run_id === openArtifactId}
-                          />
-                        ))}
+                        {/* A report tool's card comes where the tool ran; a report
+                            written as the answer (P16) follows that answer. */}
+                        {(artifactsByRun.get(message.run_id) ?? [])
+                          .filter((artifact) => !artifact.answer)
+                          .map((artifact) => (
+                            <ArtifactCard
+                              key={`${artifact.agent_run_id}-${artifact.run_id}`}
+                              artifact={artifact}
+                              onOpen={openReport}
+                              active={artifact.run_id === openArtifactId}
+                            />
+                          ))}
                         <ChatMessage role="assistant" content={message.content} onJumpToPage={jumpToPage} />
                         <SourceStrip content={message.content} onJumpToPage={jumpToPage} />
+                        {(artifactsByRun.get(message.run_id) ?? [])
+                          .filter((artifact) => artifact.answer)
+                          .map((artifact) => (
+                            <ArtifactCard
+                              key={`${artifact.agent_run_id}-${artifact.run_id}`}
+                              artifact={artifact}
+                              onOpen={openReport}
+                              active={artifact.run_id === openArtifactId}
+                            />
+                          ))}
                         <AnswerOutcome
                           message={message}
                           run={runsById.get(message.run_id)}

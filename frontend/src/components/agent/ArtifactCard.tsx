@@ -8,6 +8,8 @@ import { useTranslation } from "@/lib/i18n";
 import { defaultLensView, parseLensData } from "@/lib/lens";
 import { parseSnapData } from "@/lib/snap";
 import { parseSphereData } from "@/lib/sphere";
+import { parseCitationTable } from "@/lib/reportCitations";
+import { useFrozenCitations } from "@/components/report/FrozenCitations";
 import MarkdownRenderer from "@/components/MarkdownRenderer";
 import LensReport from "@/components/lens/LensReport";
 import SnapReport from "@/components/snap/SnapReport";
@@ -62,6 +64,12 @@ export default function ArtifactCard({
         <span className="block truncate text-xs text-muted-foreground">
           {artifact.paper_title || artifact.paper_id.slice(0, 12)}
         </span>
+        {/* Written while a budget closed the turn: it may stop short. */}
+        {artifact.stop_reason && (
+          <span className="mt-0.5 block truncate text-xs text-accent-foreground">
+            {t("chat.artifact.budget_note")}
+          </span>
+        )}
       </button>
       <a
         href={getMarkdownExportUrl(artifact.run_id)}
@@ -133,6 +141,8 @@ export function ArtifactView({
   const view = viewChoice ?? defaultLensView(lensData);
   const showStructured = structured !== null && view === "structured";
   const jump = (page: number) => onJumpToPage?.(artifact.paper_id, page);
+  const citations = useMemo(() => parseCitationTable(jsonData), [jsonData]);
+  const renderEvidence = useFrozenCitations(citations, onJumpToPage);
   const tool =
     "inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground";
 
@@ -220,7 +230,9 @@ export function ArtifactView({
         {showStructured && !sphereData && !snapData && lensData && (
           <LensReport data={lensData} markdown={markdown} onCitationClick={jump} />
         )}
-        {!showStructured && markdown && <MarkdownRenderer content={markdown} onCitationClick={jump} />}
+        {!showStructured && markdown && (
+          <MarkdownRenderer content={markdown} onCitationClick={jump} renderEvidence={renderEvidence} />
+        )}
       </div>
     </div>
   );

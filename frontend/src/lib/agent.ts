@@ -137,6 +137,10 @@ export interface SessionArtifact {
   language: string;
   status: string;
   created_at: string;
+  /** Written as the turn's answer (P16): its card sits under that answer. */
+  answer?: boolean;
+  /** The budget that closed the turn while the report was written, if any. */
+  stop_reason?: string;
 }
 
 export type MemoryKind = "preference" | "fact" | "project" | "instruction";
