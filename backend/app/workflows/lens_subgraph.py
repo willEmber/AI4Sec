@@ -3,7 +3,6 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import re
 import time
 from typing import Any
 
@@ -23,7 +22,9 @@ from app.services.ir_extract import (
     extract_equations as _extract_equations,
     extract_figures as _extract_figures,
     extract_tables as _extract_tables,
+    figure_embed_url,
     section_text,
+    select_framework_figures,
 )
 from app.services.lens_digest import generate_lens_digest
 from app.services.llm_gateway import get_registry
@@ -125,50 +126,6 @@ def _extract_framing_section(paper_ir: PaperIR) -> str:
 
 
 # Caption cues that a figure depicts the overall method rather than a result plot.
-_FRAMEWORK_FIG_KEYWORDS = (
-    "architecture", "framework", "overview", "pipeline", "structure",
-    "our method", "our approach", "our model", "proposed method",
-    "proposed framework", "proposed model", "overall", "workflow",
-    "schematic", "illustration of", "system",
-)
-
-
-def _figure_embed_url(paper_id: str, img_path: str) -> str:
-    """Relative URL the frontend resolves (via the Next.js /api rewrite) to the
-    backend image route. Empty when the figure has no extracted image file."""
-    name = img_path.rsplit("/", 1)[-1] if img_path else ""
-    return f"/api/papers/{paper_id}/images/{name}" if name else ""
-
-
-def _select_framework_figures(
-    figures: list[dict[str, Any]], max_n: int = 3
-) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    """Split figures into (architecture/framework candidates, the rest).
-
-    Candidates are ranked by caption cues and a bonus for "Figure 1" (commonly
-    the overview). Only figures that actually have an image file can be
-    embedded; if none score, the earliest embeddable figure is used as a
-    fallback so the report still shows the paper's lead diagram.
-    """
-    scored: list[tuple[int, int, dict[str, Any]]] = []
-    for i, fig in enumerate(figures):
-        cl = fig["text"].lower()
-        score = sum(2 for kw in _FRAMEWORK_FIG_KEYWORDS if kw in cl)
-        if re.search(r"\b(?:figure|fig\.?)\s*1\b", cl):
-            score += 3
-        scored.append((score, i, fig))
-
-    embeddable = [s for s in scored if s[2].get("img_path")]
-    candidates = sorted((s for s in embeddable if s[0] > 0), key=lambda s: (-s[0], s[1]))
-    key = [s[2] for s in candidates[:max_n]]
-    if not key and embeddable:
-        key = [min(embeddable, key=lambda s: s[1])[2]]
-
-    key_ids = {id(f) for f in key}
-    others = [f for f in figures if id(f) not in key_ids]
-    return key, others
-
-
 LENS_SYSTEM_PROMPT_EN = """You are an expert research-paper analyst. Produce a "Logic Lens": a deep, single-paper read-through that makes a researcher truly understand HOW the work operates and WHY it works — not a surface summary. Explain mechanisms, interpret results, and think critically.
 
 Organize the analysis into the four parts below. Keep the four top-level headings, but ADAPT the sub-points to THIS paper: expand what is central, condense what is auxiliary, and drop sub-points that do not apply rather than forcing them. A theory paper, an empirical study, and a systems paper should not read identically.
@@ -275,7 +232,7 @@ async def run_logic_lens(state: MainGraphState) -> dict[str, Any]:
     # Selected once: the prompt is told to embed these, and the structured view
     # renders the same ones — a figure card must show a URL we extracted, never
     # one the model wrote.
-    key_figs, other_figs = _select_framework_figures(figures) if figures else ([], [])
+    key_figs, other_figs = select_framework_figures(figures) if figures else ([], [])
     logger.info(
         f"[{paper_id}] lens: Extracted — framing={len(framing_text)} chars "
         f"equations={len(equations)} algorithms={len(algorithms)} tables={len(tables)} "
@@ -351,7 +308,7 @@ async def run_logic_lens(state: MainGraphState) -> dict[str, Any]:
             cap = f["text"]
             if len(cap) > 300:
                 cap = cap[:300] + "…"
-            url = _figure_embed_url(paper_id, f.get("img_path", ""))
+            url = figure_embed_url(paper_id, f.get("img_path", ""))
             alt = cap[:80]
             if url:
                 key_lines.append(f"- [p.{f['page']}] {cap}\n  embed: ![{alt}]({url})")
@@ -486,7 +443,7 @@ async def run_logic_lens(state: MainGraphState) -> dict[str, Any]:
                 LensFigure(
                     page=f["page"],
                     caption=f["text"][:300],
-                    url=_figure_embed_url(paper_id, f.get("img_path", "")),
+                    url=figure_embed_url(paper_id, f.get("img_path", "")),
                 ).model_dump(mode="json")
                 for f in key_figs
                 if f.get("img_path")

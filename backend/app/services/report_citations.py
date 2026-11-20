@@ -38,6 +38,7 @@ _ID_RE = re.compile(_ID)
 # typed by the model itself is kept as written.
 _GROUP_RE = re.compile(rf"[\[【]\s*{_ID}(?:\s*[,，、;；]\s*{_ID})*\s*[\]】]")
 _BRACKETED_RE = re.compile(rf"\[({_ID})\]")
+_REPEATED_PAGE_RE = re.compile(r"(\[p\.[^\]]+\])(?:\s*\1)+")
 
 
 def normalise(markdown: str) -> str:
@@ -127,6 +128,27 @@ def _reference(entry: dict[str, Any], *, paper_id: str, zh: bool) -> str:
     if url and level in ("metadata", "external_web", "abstract"):
         line += f" — {url}"
     return line
+
+
+def to_pages(markdown: str, citations: dict[str, dict[str, Any]], *, paper_id: str) -> str:
+    """The report with this paper's passages cited as `[p.X]` and the rest left out.
+
+    For what reads a report by its pages: the Lens digest copies `[p.X]` into
+    the cards, whose badges jump into the PDF. Repeats of one page in a row
+    collapse, as `[ev_a][ev_b]` on one page would otherwise read `[p.5][p.5]`.
+    """
+
+    def page(eid: str) -> str:
+        entry = citations.get(eid) or {}
+        label = entry.get("page_label")
+        if entry.get("paper_id") == paper_id and entry.get("source_level") == "fulltext" and label:
+            return f"[p.{label}]"
+        return ""
+
+    text = normalise(markdown)
+    text = _BRACKETED_RE.sub(lambda m: page(m.group(1)), text)
+    text = _ID_RE.sub(lambda m: page(m.group(0)), text)
+    return _REPEATED_PAGE_RE.sub(r"\1", text)
 
 
 def to_numbered(

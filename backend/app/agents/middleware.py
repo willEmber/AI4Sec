@@ -58,6 +58,7 @@ EVICTABLE_TOOLS = frozenset(
     {
         "read_paper_section",
         "search_paper_content",
+        "get_paper_elements",
         "run_insight_snap",
         "run_logic_lens",
         "run_research_sphere",

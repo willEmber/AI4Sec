@@ -23,7 +23,7 @@ import json
 import logging
 import re
 import uuid
-from collections.abc import Awaitable, Callable
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -53,16 +53,6 @@ class ReportTurn:
     # review, the literature map), keyed by what `json_data` calls them.
     parts: dict[str, Any] = field(default_factory=dict)
 
-
-# What a mode adds to `json_data` from the finished text and the parts: Lens
-# its digest, Snap its scorecard, Sphere its map. Registered by each mode;
-# best effort, since the report stands without its structured view.
-Builder = Callable[[ReportTurn, str, str], Awaitable[dict[str, Any]]]
-_BUILDERS: dict[str, Builder] = {}
-
-
-def register_builder(mode: str, builder: Builder) -> None:
-    _BUILDERS[mode] = builder
 
 
 async def open_run(
@@ -176,10 +166,15 @@ async def snapshot(
         "structure_ok": not missing,
         "missing_sections": missing,
     }
-    builder = _BUILDERS.get(report.mode)
+    # What a mode adds from the finished text (Lens its digest, Snap its
+    # scorecard, Sphere its map). Imported here: the views pull in the report
+    # modes' extraction, which the turn path needs only when a report is saved.
+    from app.services.report_views import BUILDERS
+
+    builder = BUILDERS.get(report.mode)
     if builder is not None:
         try:
-            data.update(await builder(report, text, language))
+            data.update(await builder(report, text, citations, language))
         except Exception:  # noqa: BLE001 — the report stands without its structured view
             logger.exception("[run:%s] %s structured view failed", report.run_id, report.mode)
 

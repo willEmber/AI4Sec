@@ -64,6 +64,7 @@ TOOL_SECONDS: dict[str, float | None] = {
     "get_paper_outline": LOCAL_TOOL_SECONDS,
     "search_paper_content": LOCAL_TOOL_SECONDS,
     "read_paper_section": LOCAL_TOOL_SECONDS,
+    "get_paper_elements": LOCAL_TOOL_SECONDS,
     "save_memory": LOCAL_TOOL_SECONDS,
     "list_memories": LOCAL_TOOL_SECONDS,
     "forget_memory": LOCAL_TOOL_SECONDS,

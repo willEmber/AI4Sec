@@ -1,7 +1,7 @@
 {
   "name": "chains_seed",
-  "version": "1",
-  "description": "Whole-paper reports and the chains around them: each of the three modes on request and unprompted, a question answered after a report (the step a folded-in report could drop), a report asked to weigh a specific concern, and a paper found and fetched before it is read. Same two papers as reading_seed. Costly: every attempt makes its reports anew, and the acquisition case downloads and parses a paper.",
+  "version": "2",
+  "description": "Whole-paper reports and the chains around them: each of the three modes on request and unprompted, a question answered after a report (the step a folded-in report could drop), a report asked to weigh a specific concern, and a paper found and fetched before it is read. Same two papers as reading_seed. Costly: every attempt makes its reports anew, and the acquisition case downloads and parses a paper. v2 (P16): a Lens case passes with the report written as the answer (begin_report) or made by the tool, its citations are scored, and the follow-up must not write it again.",
   "repeats": 3,
   "papers": {
     "sinsr": {
@@ -66,8 +66,8 @@
       "papers": ["sinsr"],
       "mode": "lens",
       "question": "详细讲讲这篇论文的方法。",
-      "cites": false,
-      "expect_tools": ["run_logic_lens"],
+      "cites": true,
+      "expect_any_tools": ["run_logic_lens", "begin_report"],
       "key_points": [
         "概括出方法核心：从 ResShift 推导出确定性采样，再把它蒸馏成单步学生模型"
       ],
@@ -85,8 +85,8 @@
       "papers": ["supermark"],
       "mode": "lens",
       "question": "用逻辑透镜分析这篇论文。我最想弄清楚推理步数和反演步数分别怎样影响保真度和鲁棒性。",
-      "cites": false,
-      "expect_tools": ["run_logic_lens"],
+      "cites": true,
+      "expect_any_tools": ["run_logic_lens", "begin_report"],
       "key_points": [
         "回答了推理步数与反演步数各自的影响：反演步数影响很小，推理步数越多保真度略降、鲁棒性明显提升"
       ],
@@ -104,7 +104,7 @@
       "setup": [{"question": "详细讲讲这篇论文的方法。", "mode": "lens"}],
       "question": "报告里提到单步模型在 ImageNet-Test 上的结果。请对照原文表格核实 SinSR 单步模型的 PSNR、LPIPS 和 MUSIQ 具体是多少。",
       "expect_any_tools": ["read_paper_section", "search_paper_content"],
-      "forbid_tools": ["run_logic_lens"],
+      "forbid_tools": ["run_logic_lens", "begin_report"],
       "key_points": [
         "SinSR-1 的 PSNR 为 24.56",
         "SinSR-1 的 LPIPS 为 0.221",

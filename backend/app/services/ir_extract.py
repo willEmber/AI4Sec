@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import html as _html
 import re
-from typing import Iterable
+from typing import Any, Iterable
 
 from app.models.paper_ir import Block, PaperIR, Section
 
@@ -173,6 +173,53 @@ def extract_figures(paper_ir: PaperIR) -> list[dict]:
         record["img_path"] = block.img_path
         figures.append(record)
     return figures
+
+
+# Figures the report can embed: the paper's architecture / framework diagrams
+# first. Shared by Logic Lens and the element tool, so both pick the same ones.
+
+_FRAMEWORK_FIG_KEYWORDS = (
+    "architecture", "framework", "overview", "pipeline", "structure",
+    "our method", "our approach", "our model", "proposed method",
+    "proposed framework", "proposed model", "overall", "workflow",
+    "schematic", "illustration of", "system",
+)
+
+
+def figure_embed_url(paper_id: str, img_path: str) -> str:
+    """Relative URL the frontend resolves (via the Next.js /api rewrite) to the
+    backend image route. Empty when the figure has no extracted image file."""
+    name = img_path.rsplit("/", 1)[-1] if img_path else ""
+    return f"/api/papers/{paper_id}/images/{name}" if name else ""
+
+
+def select_framework_figures(
+    figures: list[dict[str, Any]], max_n: int = 3
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Split figures into (architecture/framework candidates, the rest).
+
+    Candidates are ranked by caption cues and a bonus for "Figure 1" (commonly
+    the overview). Only figures that actually have an image file can be
+    embedded; if none score, the earliest embeddable figure is used as a
+    fallback so the report still shows the paper's lead diagram.
+    """
+    scored: list[tuple[int, int, dict[str, Any]]] = []
+    for i, fig in enumerate(figures):
+        cl = fig["text"].lower()
+        score = sum(2 for kw in _FRAMEWORK_FIG_KEYWORDS if kw in cl)
+        if re.search(r"\b(?:figure|fig\.?)\s*1\b", cl):
+            score += 3
+        scored.append((score, i, fig))
+
+    embeddable = [s for s in scored if s[2].get("img_path")]
+    candidates = sorted((s for s in embeddable if s[0] > 0), key=lambda s: (-s[0], s[1]))
+    key = [s[2] for s in candidates[:max_n]]
+    if not key and embeddable:
+        key = [min(embeddable, key=lambda s: s[1])[2]]
+
+    key_ids = {id(f) for f in key}
+    others = [f for f in figures if id(f) not in key_ids]
+    return key, others
 
 
 # ──────────────────────────────────────────────────────────────────────

@@ -23,12 +23,14 @@ MAX_PREVIEW_TEXT_CHARS = 180
 # The result lists a preview is taken from, first match wins.
 _LIST_KEYS = (
     "hits", "results", "papers", "blocks", "chunks", "sections", "turns",
-    "rankings", "reviews", "memories",
+    "rankings", "reviews", "memories", "elements",
 )
-_TITLE_KEYS = ("title", "paper_title", "heading", "section", "question", "name", "level", "session_title")
+_TITLE_KEYS = (
+    "title", "paper_title", "heading", "label", "section", "question", "name", "level", "session_title",
+)
 _TEXT_KEYS = (
     "abstract_excerpt", "snippet", "text", "quote", "answer_excerpt", "content",
-    "summary", "value",
+    "summary", "value", "caption", "latex", "table",
 )
 _META_KEYS = ("year", "venue", "source", "domain", "published_date")
 

@@ -30,6 +30,7 @@ from app.agents.tools.discovery import (
     search_paper_snippets,
     search_papers,
 )
+from app.agents.tools.elements import ELEMENT_TOOLS, get_paper_elements
 from app.agents.tools.memory import (
     MEMORY_TOOLS,
     forget_memory,
@@ -63,8 +64,12 @@ RESEARCH_TOOLS = [*DISCOVERY_TOOLS, *ACQUISITION_TOOLS, *READING_TOOLS]
 # Everything the unified agent sees (P5), plus the open web (P7) and projects (P8).
 ALL_AGENT_TOOLS = [*RESEARCH_TOOLS, *WEB_TOOLS, *MODE_TOOLS, *MEMORY_TOOLS, *PROJECT_TOOLS]
 
+# The tools a report written as the answer reads with, beyond the reading
+# tools every turn has (P16 §4.1), offered once that mode is switched on.
+MODE_READING_TOOLS = {"lens": ELEMENT_TOOLS}
+
 # Every tool any deployment may offer, for checking a dataset's tool names.
-EVERY_TOOL = [*ALL_AGENT_TOOLS, *REPORT_TOOLS]
+EVERY_TOOL = [*ALL_AGENT_TOOLS, *REPORT_TOOLS, *ELEMENT_TOOLS]
 
 _MODE_OF_TOOL = {"run_insight_snap": "snap", "run_logic_lens": "lens", "run_research_sphere": "sphere"}
 
@@ -83,12 +88,16 @@ def agent_tools(answer_modes: frozenset[str] | None = None) -> list:
     if not answer_modes:
         return ALL_AGENT_TOOLS
     legacy = [t for t in MODE_TOOLS if _MODE_OF_TOOL.get(t.name) not in answer_modes]
-    return [*RESEARCH_TOOLS, *WEB_TOOLS, *REPORT_TOOLS, *legacy, *MEMORY_TOOLS, *PROJECT_TOOLS]
+    extra = [t for mode in sorted(answer_modes) for t in MODE_READING_TOOLS.get(mode, [])]
+    return [
+        *RESEARCH_TOOLS, *extra, *WEB_TOOLS, *REPORT_TOOLS, *legacy, *MEMORY_TOOLS, *PROJECT_TOOLS
+    ]
 
 
 __all__ = [
     "ACQUISITION_TOOLS",
     "ALL_AGENT_TOOLS",
+    "ELEMENT_TOOLS",
     "EVERY_TOOL",
     "REPORT_TOOLS",
     "DISCOVERY_TOOLS",
@@ -103,6 +112,7 @@ __all__ = [
     "download_paper",
     "ensure_paper_parsed",
     "forget_memory",
+    "get_paper_elements",
     "get_paper_metadata",
     "get_paper_outline",
     "get_peer_reviews",

@@ -178,11 +178,12 @@ class DatasetTests(unittest.TestCase):
         self.assertTrue(all(not c.answerable for c in picked))
 
     def test_chain_dataset_is_valid_and_names_real_tools(self) -> None:
-        from app.agents.tools import ALL_AGENT_TOOLS
+        from app.agents.tools import EVERY_TOOL
 
         dataset = load_dataset("chains_seed")
         self.assertGreaterEqual(dataset.repeats, 2, "one attempt cannot tell flaky from broken")
-        self.assertEqual(dataset.unknown_tools({t.name for t in ALL_AGENT_TOOLS}), {})
+        # Names a deployment may offer: a report written as the answer opens with begin_report.
+        self.assertEqual(dataset.unknown_tools({t.name for t in EVERY_TOOL}), {})
         modes = {c.mode for c in dataset.cases} | {t.mode for c in dataset.cases for t in c.setup}
         self.assertLessEqual({"snap", "lens", "sphere"}, modes)
         self.assertLessEqual({"report", "follow_up", "acquisition"}, {c.category for c in dataset.cases})

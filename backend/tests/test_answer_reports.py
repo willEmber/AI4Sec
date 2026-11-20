@@ -13,6 +13,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from typing import Any
+from unittest import mock
 
 from langchain.tools import ToolRuntime, tool
 
@@ -58,6 +59,14 @@ class ReportCitationTests(unittest.TestCase):
         text = f"x [{A}, {B}] y 【{C}、{A}】 z [{D}]"
         self.assertEqual(normalise(text), f"x [{A}][{B}] y [{C}][{A}] z [{D}]")
         self.assertEqual(cited_ids(text), [A, B, C, D])
+
+    def test_page_form_keeps_this_papers_passages_only(self) -> None:
+        from app.services.report_citations import to_pages
+
+        table = _table()
+        table[D] = {**table[A], "n": 4, "page_label": 5}
+        text = f"Sparse [{A}][{D}], disputed [{B}], cited [{C}, {A}]."
+        self.assertEqual(to_pages(text, table, paper_id="p1"), "Sparse [p.5], disputed , cited [p.5].")
 
     def test_export_numbers_citations_and_lists_what_each_quotes(self) -> None:
         from app.services.report_citations import to_numbered
@@ -168,7 +177,12 @@ class ToolAndPromptTests(unittest.TestCase):
         self.assertIn("begin_report", names)
         self.assertNotIn("run_logic_lens", names)
         self.assertIn("run_insight_snap", names)
-        self.assertEqual(len(names), len(ALL_AGENT_TOOLS))
+        # A Lens written as the answer reads elements with their own tool.
+        self.assertIn("get_paper_elements", names)
+        self.assertNotIn("get_paper_elements", [t.name for t in ALL_AGENT_TOOLS])
+        self.assertEqual(len(names), len(ALL_AGENT_TOOLS) + 1)
+        snap_only = [t.name for t in agent_tools(frozenset({"snap"}))]
+        self.assertNotIn("get_paper_elements", snap_only)
         every = [t.name for t in agent_tools(frozenset({"lens", "snap", "sphere"}))]
         self.assertFalse({"run_insight_snap", "run_logic_lens", "run_research_sphere"} & set(every))
 
@@ -214,6 +228,19 @@ class AnswerReportTurnTests(SkillsDirMixin, GuardTestCase):
         from app.agents.tools import REPORT_TOOLS
 
         self.use_skills({"logic-lens.en.md": METHOD}, "lens")
+        # The structured view is tested on its own; here it only records
+        # what the snapshot hands it.
+        from app.services import report_views
+
+        self.view_calls: list[tuple] = []
+
+        async def fake_view(report, text, citations, language):
+            self.view_calls.append((report.mode, text, citations, language))
+            return {"num_equations": 7}
+
+        views = mock.patch.dict(report_views.BUILDERS, {"lens": fake_view}, clear=True)
+        views.start()
+        self.addCleanup(views.stop)
         extra = [passages_tool, dismiss_report_tool]
         self._saved_tools = self._runner.agent_tools
         self._runner.agent_tools = lambda _modes: [
@@ -272,6 +299,10 @@ class AnswerReportTurnTests(SkillsDirMixin, GuardTestCase):
         self.assertIn(f"[{first_id}]", row["markdown"])
         self.assertTrue(data["structure_ok"])
         self.assertEqual((data["written_as"], data["stop_reason"]), ("answer", ""))
+        # The mode's structured view saw the frozen text and its table.
+        self.assertEqual(data["num_equations"], 7)
+        [(view_mode, view_text, view_citations, _lang)] = self.view_calls
+        self.assertEqual((view_mode, view_text, view_citations), ("lens", row["markdown"], citations))
 
         answer = await self._answer(run)
         self.assertTrue(answer.content.startswith("Reading the method first."))
@@ -384,6 +415,51 @@ class AnswerReportTurnTests(SkillsDirMixin, GuardTestCase):
         from app.services import identity
 
         return await identity.create_principal()
+
+
+class LensViewTests(unittest.IsolatedAsyncioTestCase):
+    async def test_the_lens_cards_come_from_the_parse_and_the_report(self) -> None:
+        from app.models.lens_models import LensDigest
+        from app.models.paper_ir import Block, PaperIR
+        from app.services import report_views
+        from app.services.answer_reports import ReportTurn
+
+        paper_ir = PaperIR(
+            paper_id="p1", title="T", sections=[],
+            blocks=[
+                Block(type="equation", text="$$a=b\\tag{1}$$", page_idx=1, order_idx=1),
+                Block(type="table", text="<table><tr><td>x</td></tr></table>", page_idx=2, order_idx=2),
+                Block(type="image", text="Figure 1. Overall framework.", img_path="images/f.jpg",
+                      page_idx=1, order_idx=3),
+                Block(type="image", text="[image]", img_path="images/g.jpg", page_idx=1, order_idx=4),
+            ],
+        )
+        seen: dict[str, Any] = {}
+
+        async def fake_digest(_llm, *, markdown, model, log_label):
+            seen["markdown"] = markdown
+            return LensDigest(core_idea="Sparse routing.", available=True)
+
+        report = ReportTurn(run_id="r1", mode="lens", paper_id="p1")
+        with mock.patch.object(report_views, "load_paper_ir", return_value=paper_ir), \
+             mock.patch.object(report_views, "generate_lens_digest", side_effect=fake_digest), \
+             mock.patch.object(report_views, "get_llm_service", return_value=object()):
+            data = await report_views.lens_view(
+                report, f"# T\n## 1. Overview\nSparse [{A}], other [{B}].", _table(), "en"
+            )
+
+        self.assertEqual(
+            (data["num_equations"], data["num_algorithms"], data["num_tables"], data["num_figures"]),
+            (1, 0, 1, 1),
+        )
+        self.assertEqual(
+            data["key_figures"],
+            [{"page": 2, "caption": "Figure 1. Overall framework.", "url": "/api/papers/p1/images/f.jpg"}],
+        )
+        self.assertTrue(data["digest"]["available"])
+        # The digest copies page citations into the cards: it read this
+        # paper's passages by page and nothing of the other paper.
+        self.assertIn("Sparse [p.5], other .", seen["markdown"])
 
 
 
