@@ -1,7 +1,7 @@
 {
   "name": "chains_seed",
   "version": "2",
-  "description": "Whole-paper reports and the chains around them: each of the three modes on request and unprompted, a question answered after a report (the step a folded-in report could drop), a report asked to weigh a specific concern, and a paper found and fetched before it is read. Same two papers as reading_seed. Costly: every attempt makes its reports anew, and the acquisition case downloads and parses a paper. v2 (P16): a Lens case passes with the report written as the answer (begin_report) or made by the tool, its citations are scored, and the follow-up must not write it again.",
+  "description": "Whole-paper reports and the chains around them: each of the three modes on request and unprompted, a question answered after a report (the step a folded-in report could drop), a report asked to weigh a specific concern, and a paper found and fetched before it is read. Same two papers as reading_seed. Costly: every attempt makes its reports anew, and the acquisition case downloads and parses a paper. v2 (P16): a Lens or Snap case passes with the report written as the answer (begin_report) or made by the tool, its citations are scored, and the follow-up must not write it again (nor look the Snap signals up again).",
   "repeats": 3,
   "papers": {
     "sinsr": {
@@ -22,8 +22,8 @@
       "papers": ["sinsr"],
       "mode": "snap",
       "question": "帮我快速评估一下这篇论文值不值得读。",
-      "cites": false,
-      "expect_tools": ["run_insight_snap"],
+      "cites": true,
+      "expect_any_tools": ["run_insight_snap", "begin_report"],
       "key_points": [
         "指出论文的核心贡献是让基于扩散模型的超分辨率只用一步推理",
         "给出明确的阅读判断（例如值得精读、可以略读或不建议读）"
@@ -39,8 +39,8 @@
       "category": "report",
       "papers": ["supermark"],
       "question": "这篇值得我花时间精读吗？先给我一个快速判断。",
-      "cites": false,
-      "expect_tools": ["run_insight_snap"],
+      "cites": true,
+      "expect_any_tools": ["run_insight_snap", "begin_report"],
       "key_points": [
         "说明 SuperMark 是基于扩散超分辨率的免训练（training-free）图像水印方法",
         "给出明确的阅读判断（例如值得精读、可以略读或不建议读）"
@@ -53,7 +53,7 @@
       "setup": [{"question": "快速评估一下这篇论文值不值得读。", "mode": "snap"}],
       "question": "报告里的外部信号具体是什么？它发表在哪里，被引用了多少次？",
       "forbid_tools": [
-        "run_insight_snap", "get_paper_metadata", "query_publication_rank", "resolve_paper", "search_papers"
+        "run_insight_snap", "begin_report", "get_triage_signals", "get_paper_metadata", "query_publication_rank", "resolve_paper", "search_papers"
       ],
       "key_points": [
         "说明论文发表于 CVPR 2024",

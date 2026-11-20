@@ -1079,7 +1079,7 @@ def _summarise(data: dict[str, Any]) -> dict[str, Any]:
             summary[key] = data[key]
     for key in (
         "sections", "hits", "blocks", "results", "papers", "rankings", "unknown_year", "memories",
-        "chunks", "unknown_date", "turns", "elements",
+        "chunks", "unknown_date", "turns", "elements", "facts",
     ):
         if isinstance(data.get(key), list):
             summary[f"{key}_count"] = len(data[key])

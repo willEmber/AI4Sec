@@ -65,6 +65,10 @@ TOOL_SECONDS: dict[str, float | None] = {
     "search_paper_content": LOCAL_TOOL_SECONDS,
     "read_paper_section": LOCAL_TOOL_SECONDS,
     "get_paper_elements": LOCAL_TOOL_SECONDS,
+    # The signal lookup has its own 60s limit inside; the blind review is one
+    # long model call with its own request timeout.
+    "get_triage_signals": REMOTE_TOOL_SECONDS,
+    "review_paper_blind": None,
     "save_memory": LOCAL_TOOL_SECONDS,
     "list_memories": LOCAL_TOOL_SECONDS,
     "forget_memory": LOCAL_TOOL_SECONDS,

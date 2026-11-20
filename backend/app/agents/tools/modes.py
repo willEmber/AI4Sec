@@ -45,7 +45,7 @@ from app.config import get_settings
 from app.db import agent_repository as repo
 from app.db import database as db
 from app.models.agent_models import Availability, ErrorCode, EventType, ToolResult
-from app.services import agent_jobs, evidence_service, mode_runs, paper_catalog, parse_service
+from app.services import agent_jobs, mode_runs, paper_catalog, parse_service
 from app.services.paper_ir_loader import PaperNotParsed, ensure_pub_rank, load_paper_ir
 from app.workflows import progress
 
@@ -366,24 +366,17 @@ async def _snap_signals(
         signals = json.loads((row or {}).get("json_data") or "{}").get("signals") or {}
     except (TypeError, ValueError, AttributeError):
         signals = {}
-    facts = snap_signal_facts(signals, title) if isinstance(signals, dict) else []
-    if not facts:
+    if not isinstance(signals, dict) or not signals:
         return []
-    as_of = str((row or {}).get("finished_at") or "")[:10]
-    literature_id = await paper_catalog.ensure_literature_for_local_paper(paper_id)
-    out = []
-    for fact, source in facts:
-        quote = fact + (f" (source: {source}" if source else " (") + (f"; as of {as_of})" if as_of else ")")
-        quote = quote.replace(" (; ", " (").replace(" ()", "")
-        evidence = await evidence_service.record_metadata_evidence(
-            literature_id=literature_id,
-            quote=quote,
-            owner_id=ctx.owner_id,
-            session_id=ctx.session_id,
-            provider=source or "insight_snap",
-        )
-        out.append({"fact": quote, "evidence_id": evidence.evidence_id})
-    return out
+    from app.agents.tools.triage import register_signal_facts
+
+    return await register_signal_facts(
+        ctx,
+        paper_id=paper_id,
+        title=title,
+        signals=signals,
+        as_of=str((row or {}).get("finished_at") or "")[:10],
+    )
 
 
 async def _stored_report(run_id: str) -> dict[str, Any] | None:

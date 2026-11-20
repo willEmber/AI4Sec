@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING, Any
 
 from app.config import get_settings
 from app.models.lens_models import LensDigest, LensFigure
+from app.models.snap_models import SnapReport, TriageSignals
 from app.services import report_citations
 from app.services.ir_extract import (
     extract_algorithms,
@@ -32,6 +33,8 @@ from app.services.lens_digest import generate_lens_digest
 from app.services.llm_gateway import get_registry
 from app.services.llm_service import get_llm_service
 from app.services.paper_ir_loader import load_paper_ir
+from app.services.snap_digest import generate_snap_digest
+from app.services.triage_verdict import ContentReview, synthesize_verdict
 
 if TYPE_CHECKING:
     from app.services.answer_reports import ReportTurn
@@ -85,4 +88,37 @@ async def lens_view(
     return data
 
 
-BUILDERS: dict[str, Builder] = {"lens": lens_view}
+async def snap_view(
+    report: ReportTurn, text: str, citations: dict[str, dict[str, Any]], language: str
+) -> dict[str, Any]:
+    """The scorecard: the report's fields from the text, the rest from the tools.
+
+    Signals, blind review and verdict are what `get_triage_signals` and
+    `review_paper_blind` returned (`report.parts`), never the report's
+    retelling of them. Without a review the verdict rests on the signals
+    alone and says so (`content_available` false); without either there is no
+    verdict, and the page shows the report's text instead of the scorecard.
+    """
+    data: dict[str, Any] = {}
+    parts = report.parts
+    signals = parts.get("signals")
+    review = parts.get("content_review")
+    if signals:
+        data["signals"] = signals
+        data["content_review"] = review or ContentReview().model_dump(mode="json")
+        data["verdict"] = parts.get("verdict") or synthesize_verdict(
+            ContentReview.model_validate(review or {}), TriageSignals.model_validate(signals)
+        ).model_dump(mode="json")
+    if parts.get("context_stats"):
+        data["context_stats"] = parts["context_stats"]
+    digest: SnapReport = await generate_snap_digest(
+        get_llm_service(),
+        markdown=report_citations.to_pages(text, citations, paper_id=report.paper_id),
+        model=get_registry().utility_model,
+        log_label=f"[run:{report.run_id}] snap",
+    )
+    data["report"] = digest.model_dump(mode="json")
+    return data
+
+
+BUILDERS: dict[str, Builder] = {"lens": lens_view, "snap": snap_view}

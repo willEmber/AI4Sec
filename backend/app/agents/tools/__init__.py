@@ -55,6 +55,7 @@ from app.agents.tools.reading import (
     search_paper_content,
 )
 from app.agents.tools.report import REPORT_TOOLS, begin_report
+from app.agents.tools.triage import TRIAGE_TOOLS, get_triage_signals, review_paper_blind
 from app.agents.tools.web import WEB_TOOLS, read_web_page, web_search
 
 # The nine tools of the development plan's §4 contract, plus the P6 discovery
@@ -66,10 +67,10 @@ ALL_AGENT_TOOLS = [*RESEARCH_TOOLS, *WEB_TOOLS, *MODE_TOOLS, *MEMORY_TOOLS, *PRO
 
 # The tools a report written as the answer reads with, beyond the reading
 # tools every turn has (P16 §4.1), offered once that mode is switched on.
-MODE_READING_TOOLS = {"lens": ELEMENT_TOOLS}
+MODE_READING_TOOLS = {"lens": ELEMENT_TOOLS, "snap": TRIAGE_TOOLS}
 
 # Every tool any deployment may offer, for checking a dataset's tool names.
-EVERY_TOOL = [*ALL_AGENT_TOOLS, *REPORT_TOOLS, *ELEMENT_TOOLS]
+EVERY_TOOL = [*ALL_AGENT_TOOLS, *REPORT_TOOLS, *ELEMENT_TOOLS, *TRIAGE_TOOLS]
 
 _MODE_OF_TOOL = {"run_insight_snap": "snap", "run_logic_lens": "lens", "run_research_sphere": "sphere"}
 
@@ -100,6 +101,7 @@ __all__ = [
     "ELEMENT_TOOLS",
     "EVERY_TOOL",
     "REPORT_TOOLS",
+    "TRIAGE_TOOLS",
     "DISCOVERY_TOOLS",
     "MEMORY_TOOLS",
     "MODE_TOOLS",
@@ -113,6 +115,7 @@ __all__ = [
     "ensure_paper_parsed",
     "forget_memory",
     "get_paper_elements",
+    "get_triage_signals",
     "get_paper_metadata",
     "get_paper_outline",
     "get_peer_reviews",
@@ -122,6 +125,7 @@ __all__ = [
     "read_web_page",
     "query_publication_rank",
     "read_paper_section",
+    "review_paper_blind",
     "recall_conversations",
     "resolve_paper",
     "run_insight_snap",

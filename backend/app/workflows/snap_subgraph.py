@@ -107,7 +107,7 @@ async def _generate_report(
     return SnapReport(degraded=True, raw_markdown=raw)
 
 
-async def _run_content_review(
+async def run_content_review(
     llm: Any,
     *,
     context: str,
@@ -153,7 +153,7 @@ async def _run_content_review(
     return review
 
 
-async def _collect_signals_safe(
+async def collect_signals_safe(
     paper_ir: PaperIR,
     *,
     paper_id: str,
@@ -263,7 +263,7 @@ async def run_insight_snap(state: MainGraphState) -> dict[str, Any]:
             model=model,
             log_label=f"[{paper_id}] snap",
         ),
-        _run_content_review(
+        run_content_review(
             llm,
             context=key_content,
             question=question,
@@ -271,7 +271,7 @@ async def run_insight_snap(state: MainGraphState) -> dict[str, Any]:
             model=model,
             log_label=f"[{paper_id}] snap",
         ),
-        _collect_signals_safe(
+        collect_signals_safe(
             paper_ir, paper_id=paper_id, pub_rank=pub_rank, log_label=f"[{paper_id}] snap"
         ),
     )

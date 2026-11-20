@@ -183,6 +183,8 @@ class ToolAndPromptTests(unittest.TestCase):
         self.assertEqual(len(names), len(ALL_AGENT_TOOLS) + 1)
         snap_only = [t.name for t in agent_tools(frozenset({"snap"}))]
         self.assertNotIn("get_paper_elements", snap_only)
+        self.assertLessEqual({"get_triage_signals", "review_paper_blind"}, set(snap_only))
+        self.assertNotIn("get_triage_signals", [t.name for t in ALL_AGENT_TOOLS])
         every = [t.name for t in agent_tools(frozenset({"lens", "snap", "sphere"}))]
         self.assertFalse({"run_insight_snap", "run_logic_lens", "run_research_sphere"} & set(every))
 
@@ -461,6 +463,45 @@ class LensViewTests(unittest.IsolatedAsyncioTestCase):
         # paper's passages by page and nothing of the other paper.
         self.assertIn("Sparse [p.5], other .", seen["markdown"])
 
+
+
+class SnapViewTests(unittest.IsolatedAsyncioTestCase):
+    async def _view(self, parts: dict[str, Any]):
+        from app.models.snap_models import SnapClaim, SnapReport
+        from app.services import report_views
+        from app.services.answer_reports import ReportTurn
+
+        seen: dict[str, Any] = {}
+
+        async def fake_digest(_llm, *, markdown, model, log_label):
+            seen["markdown"] = markdown
+            return SnapReport(one_liner="Single-step SR.", contributions=[SnapClaim(text="Distils.", page=5)])
+
+        report = ReportTurn(run_id="r1", mode="snap", paper_id="p1", parts=parts)
+        with mock.patch.object(report_views, "generate_snap_digest", side_effect=fake_digest), \
+             mock.patch.object(report_views, "get_llm_service", return_value=object()):
+            data = await report_views.snap_view(report, f"# T\n## One-line verdict\nFast [{A}].", _table(), "en")
+        return data, seen
+
+    async def test_the_scorecard_takes_the_tools_results_and_the_texts_fields(self) -> None:
+        signals = {"venue": "CVPR", "ccf_rank": "A", "external_score": 0.8, "resolved": True}
+        review = {"novelty": 3, "available": True}
+        verdict = {"tier": "must_read", "combined_score": 0.7}
+        data, seen = await self._view({"signals": signals, "content_review": review, "verdict": verdict})
+        self.assertEqual((data["signals"], data["content_review"], data["verdict"]), (signals, review, verdict))
+        self.assertEqual(data["report"]["one_liner"], "Single-step SR.")
+        self.assertFalse(data["report"]["degraded"])
+        self.assertIn("Fast [p.5].", seen["markdown"])
+
+    async def test_without_a_review_the_verdict_rests_on_the_signals(self) -> None:
+        data, _ = await self._view({"signals": {"external_score": 0.9, "resolved": True}})
+        self.assertFalse(data["verdict"]["content_available"])
+        self.assertFalse(data["content_review"]["available"])
+
+    async def test_without_signals_there_is_no_scorecard_verdict(self) -> None:
+        data, _ = await self._view({})
+        self.assertNotIn("verdict", data)
+        self.assertIn("report", data)
 
 
 if __name__ == "__main__":
