@@ -184,11 +184,15 @@ class GuardTestCase(AgentP2TestCase):
         self._runner = agent_runner
         self._saved = (
             agent_runner.build_chat_model,
-            agent_runner.ALL_AGENT_TOOLS,
+            agent_runner.agent_tools,
             agent_runner._fallback_model,
             dict(guard.TOOL_SECONDS),
         )
-        agent_runner.ALL_AGENT_TOOLS = [*agent_runner.ALL_AGENT_TOOLS, *TEST_TOOLS]
+        # Beside whatever the switched-on report modes offer; a subclass adds
+        # its own tools to `extra_tools`.
+        self.extra_tools = list(TEST_TOOLS)
+        offered = agent_runner.agent_tools
+        agent_runner.agent_tools = lambda modes=None: [*offered(modes), *self.extra_tools]
         agent_runner._fallback_model = lambda _name: (None, "")
         guard.TOOL_SECONDS.update(
             {"note_tool": 5.0, "boom_tool": 5.0, "slow_tool": None, "ids_tool": 5.0}
@@ -200,7 +204,7 @@ class GuardTestCase(AgentP2TestCase):
 
         (
             self._runner.build_chat_model,
-            self._runner.ALL_AGENT_TOOLS,
+            self._runner.agent_tools,
             self._runner._fallback_model,
             seconds,
         ) = self._saved

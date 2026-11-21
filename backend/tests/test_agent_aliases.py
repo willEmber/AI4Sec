@@ -196,7 +196,7 @@ class ChunkedStepModel(StepModel):
 class AliasTableTests(GuardTestCase):
     async def asyncSetUp(self) -> None:
         await super().asyncSetUp()
-        self._runner.ALL_AGENT_TOOLS = [*self._runner.ALL_AGENT_TOOLS, passages_tool]
+        self.extra_tools.append(passages_tool)
 
     async def test_numbers_are_stable_and_follow_the_order_given(self) -> None:
         from app.db import agent_repository as repo

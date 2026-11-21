@@ -290,8 +290,9 @@ class AnswerReportTurnTests(SkillsDirMixin, GuardTestCase):
         self.addCleanup(views.stop)
         extra = [passages_tool, dismiss_report_tool]
         self._saved_tools = self._runner.agent_tools
+        # Every turn's tools and the guard tests' (switched off), with these.
         self._runner.agent_tools = lambda _modes: [
-            *self._runner.ALL_AGENT_TOOLS, *extra, *REPORT_TOOLS
+            *self._saved_tools(frozenset()), *extra, *REPORT_TOOLS
         ]
         guard.TOOL_SECONDS.update({"passages_tool": 5.0, "dismiss_report_tool": 5.0})
 

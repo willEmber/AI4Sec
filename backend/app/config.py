@@ -156,8 +156,10 @@ class AppSettings(BaseSettings):
     # The report modes written as the turn's own answer (P16): comma-separated
     # `snap`, `lens`, `sphere`. A mode listed here is started with
     # `begin_report` and written by the conversation; the others keep their
-    # report tool. Switched on one mode at a time, after its evaluation passes.
-    agent_answer_report_modes: str = Field(default="", alias="AGENT_ANSWER_REPORT_MODES")
+    # report tool. Switched on one mode at a time, after its evaluation passes
+    # (DEV_DOC/P16 §9.3): Lens and Sphere have; Snap passed all but its cost.
+    # Empty keeps every report tool.
+    agent_answer_report_modes: str = Field(default="lens,sphere", alias="AGENT_ANSWER_REPORT_MODES")
     # Output ceiling of every model call in a report turn. Reasoning is billed
     # against it too, so it has to hold a full trace plus a long report; the
     # gateway default is sized for a chat answer.

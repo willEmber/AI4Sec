@@ -49,7 +49,7 @@ from app.agents.middleware import build_agent_middleware
 from app.agents.model_factory import build_chat_model, fallback_model_name
 from app.agents.prompts import PROMPT_VERSION, build_system_prompt, mode_instruction
 from app.agents.tool_events import ToolCallTracker, preview_of, summarise_input
-from app.agents.tools import ALL_AGENT_TOOLS, agent_tools
+from app.agents.tools import agent_tools
 from app.agents.tools.report import composer_note, start_report
 from app.config import get_settings
 from app.db import agent_repository as repo
@@ -686,7 +686,7 @@ async def _execute_turn(
         # included.
         agent = await asyncio.to_thread(
             create_paper_agent,
-            tools=agent_tools(answer_modes) if answer_modes else ALL_AGENT_TOOLS,
+            tools=agent_tools(answer_modes),
             system_prompt=build_system_prompt(
                 language=session.language,
                 papers=papers,
