@@ -8,7 +8,6 @@ composer, one opened by the model, and the ways a report does not get saved.
 from __future__ import annotations
 
 import json
-import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -152,9 +151,9 @@ class ReportBodyTests(unittest.TestCase):
 class SkillsDirMixin:
     """Points the method loader at a temporary directory holding a Lens method."""
 
-    def use_skills(self, files: dict[str, str], modes: str) -> None:
+    def use_skills(self, files: dict[str, str]) -> None:
+        """Methods from `files` only: the modes offered are those they cover."""
         from app.agents import skills
-        from app.config import get_settings
 
         self._skills_dir = tempfile.TemporaryDirectory()
         for name, text in files.items():
@@ -162,20 +161,15 @@ class SkillsDirMixin:
         self._saved_dir = skills.SKILLS_DIR
         skills.SKILLS_DIR = Path(self._skills_dir.name)
         skills._load.cache_clear()
-        os.environ["AGENT_ANSWER_REPORT_MODES"] = modes
-        get_settings.cache_clear()
 
     def drop_skills(self) -> None:
         from app.agents import skills
-        from app.config import get_settings
 
         if not hasattr(self, "_saved_dir"):
             return
         skills.SKILLS_DIR = self._saved_dir
         skills._load.cache_clear()
         self._skills_dir.cleanup()
-        os.environ.pop("AGENT_ANSWER_REPORT_MODES", None)
-        get_settings.cache_clear()
 
 
 class SkillTests(SkillsDirMixin, unittest.TestCase):
@@ -185,22 +179,18 @@ class SkillTests(SkillsDirMixin, unittest.TestCase):
     def test_a_method_is_read_with_its_header(self) -> None:
         from app.agents import skills
 
-        self.use_skills({"logic-lens.en.md": METHOD}, "lens")
+        self.use_skills({"logic-lens.en.md": METHOD})
         found = skills.method("lens", "zh")  # no Chinese file: English
         self.assertEqual((found.language, found.version, found.required), ("en", "3", ("Core idea", "Method")))
         self.assertTrue(found.text.startswith("Read the method section whole"))
         self.assertEqual(skills.version_tag(frozenset({"lens"})), "lens3")
 
-    def test_a_mode_needs_both_the_switch_and_a_method(self) -> None:
+    def test_a_mode_is_offered_only_with_a_method(self) -> None:
         from app.agents import skills
 
-        self.use_skills({"logic-lens.en.md": METHOD}, "lens, snap,bogus")
+        self.assertEqual(skills.enabled_modes(), frozenset({"lens", "snap", "sphere"}))
+        self.use_skills({"logic-lens.en.md": METHOD})
         self.assertEqual(skills.enabled_modes(), frozenset({"lens"}))
-        os.environ["AGENT_ANSWER_REPORT_MODES"] = ""
-        from app.config import get_settings
-
-        get_settings.cache_clear()
-        self.assertEqual(skills.enabled_modes(), frozenset())
 
     def test_the_shipped_methods_parse(self) -> None:
         from app.agents import skills
@@ -212,42 +202,43 @@ class SkillTests(SkillsDirMixin, unittest.TestCase):
 
 
 class ToolAndPromptTests(unittest.TestCase):
-    def test_a_mode_written_as_an_answer_trades_its_tool_for_begin_report(self) -> None:
+    def test_each_mode_adds_begin_report_and_its_reading_tools(self) -> None:
         from app.agents.tools import ALL_AGENT_TOOLS, agent_tools
 
         self.assertIs(agent_tools(frozenset()), ALL_AGENT_TOOLS)
+        self.assertNotIn("begin_report", [t.name for t in ALL_AGENT_TOOLS])
         names = [t.name for t in agent_tools(frozenset({"lens"}))]
         self.assertIn("begin_report", names)
-        self.assertNotIn("run_logic_lens", names)
-        self.assertIn("run_insight_snap", names)
         # A Lens written as the answer reads elements with their own tool.
         self.assertIn("get_paper_elements", names)
         self.assertNotIn("get_paper_elements", [t.name for t in ALL_AGENT_TOOLS])
-        self.assertEqual(len(names), len(ALL_AGENT_TOOLS) + 1)
+        self.assertEqual(len(names), len(ALL_AGENT_TOOLS) + 2)
         snap_only = [t.name for t in agent_tools(frozenset({"snap"}))]
         self.assertNotIn("get_paper_elements", snap_only)
         self.assertLessEqual({"get_triage_signals", "review_paper_blind"}, set(snap_only))
         self.assertNotIn("get_triage_signals", [t.name for t in ALL_AGENT_TOOLS])
         every = [t.name for t in agent_tools(frozenset({"lens", "snap", "sphere"}))]
-        self.assertFalse({"run_insight_snap", "run_logic_lens", "run_research_sphere"} & set(every))
+        self.assertFalse([n for n in every if n.startswith("run_")])  # the old report tools
         self.assertIn("build_literature_map", every)
         self.assertNotIn("build_literature_map", snap_only)
 
-    def test_the_prompt_is_unchanged_until_a_mode_is_switched_on(self) -> None:
-        from app.agents.prompts import _EN, _ZH, build_system_prompt, current_prompt_version
+    def test_the_prompt_lists_the_report_modes_offered(self) -> None:
+        from app.agents.prompts import build_system_prompt, current_prompt_version
 
-        self.assertTrue(build_system_prompt(language="zh").startswith(_ZH))
-        self.assertTrue(build_system_prompt(language="en").startswith(_EN))
+        none = build_system_prompt(language="zh")
+        self.assertNotIn("## 三种整篇报告模式", none)
+        self.assertIn("相反结论。\n\n## 长期记忆", none)
         self.assertEqual(current_prompt_version(frozenset()), "p15-aliases-1")
 
         lens = build_system_prompt(language="en", answer_modes=frozenset({"lens"}))
         self.assertIn('`begin_report(mode="lens")`', lens)
-        self.assertNotIn("run_logic_lens", lens)
-        self.assertIn("`run_insight_snap`, `run_research_sphere`: never run the same mode twice", lens)
+        self.assertNotIn('begin_report(mode="snap")', lens)
         self.assertIn("\n\n## Long-term memory", lens)
 
         every = build_system_prompt(language="zh", answer_modes=frozenset({"lens", "snap", "sphere"}))
-        self.assertNotIn("run_", every.split("## 长期记忆")[0].split("## 三种整篇报告模式")[1])
+        section = every.split("## 长期记忆")[0].split("## 三种整篇报告模式")[1]
+        self.assertNotIn("run_", section)
+        self.assertEqual(section.count("begin_report(mode="), 3)
 
 
 class RecordingStepModel(StepModel):
@@ -274,7 +265,7 @@ class AnswerReportTurnTests(SkillsDirMixin, GuardTestCase):
         from app.agents import guard
         from app.agents.tools import REPORT_TOOLS
 
-        self.use_skills({"logic-lens.en.md": METHOD}, "lens")
+        self.use_skills({"logic-lens.en.md": METHOD})
         # The structured view is tested on its own; here it only records
         # what the snapshot hands it.
         from app.services import report_views

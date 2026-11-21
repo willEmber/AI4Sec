@@ -151,7 +151,7 @@ class SectionViewTests(unittest.TestCase):
 
 class SnapSignalFactTests(unittest.TestCase):
     def test_each_signal_is_one_sourced_fact(self) -> None:
-        from app.agents.tools.modes import snap_signal_facts
+        from app.agents.tools.triage import snap_signal_facts
 
         signals = {
             "venue": "Neural Information Processing Systems", "venue_normalized": "NeurIPS",
@@ -177,7 +177,7 @@ class SnapSignalFactTests(unittest.TestCase):
 
     def test_each_index_s_count_is_its_own_fact(self) -> None:
         # Keeping only the larger made a follow-up look the other one up again.
-        from app.agents.tools.modes import snap_signal_facts
+        from app.agents.tools.triage import snap_signal_facts
 
         facts = dict(snap_signal_facts(
             {"cited_by_count": 481, "citations_per_year": 160.3,
@@ -191,7 +191,7 @@ class SnapSignalFactTests(unittest.TestCase):
         })
 
     def test_an_influential_count_s2_did_not_make_is_no_fact(self) -> None:
-        from app.agents.tools.modes import snap_signal_facts
+        from app.agents.tools.triage import snap_signal_facts
 
         facts = snap_signal_facts(
             {"cited_by_count": 481, "influential_citation_count": 0, "provenance": {"citations": "OpenAlex"}},
@@ -200,7 +200,7 @@ class SnapSignalFactTests(unittest.TestCase):
         self.assertEqual(facts, [("P — cited by 481", "OpenAlex")])
 
     def test_citation_intents_are_a_fact_only_when_labelled(self) -> None:
-        from app.agents.tools.modes import snap_signal_facts
+        from app.agents.tools.triage import snap_signal_facts
 
         def intents_fact(intents: dict) -> list[str]:
             facts = snap_signal_facts({"intents": intents, "provenance": {"intents": "Semantic Scholar"}}, "P")
@@ -215,7 +215,7 @@ class SnapSignalFactTests(unittest.TestCase):
         )
 
     def test_what_the_report_could_not_obtain_is_left_out(self) -> None:
-        from app.agents.tools.modes import snap_signal_facts
+        from app.agents.tools.triage import snap_signal_facts
 
         facts = snap_signal_facts(
             {"cited_by_count": 5, "is_retracted": None, "unavailable": ["citations"]}, "P"

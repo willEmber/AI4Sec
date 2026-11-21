@@ -166,6 +166,27 @@ class LiteratureMapToolTests(AgentP2TestCase):
         await self._call(build_literature_map)
         self.assertEqual(self.ctx.report.parts, {})
 
+    async def test_the_funnels_steps_become_tool_progress_events(self) -> None:
+        from app.agents.tools import build_literature_map
+        from app.db import agent_repository as repo
+        from app.workflows.progress import emit_progress
+
+        async def stepping_build(state, run_id=""):
+            await emit_progress(run_id, "sphere_expand", "running")
+            await emit_progress(run_id, "sphere_expand", "done")
+            return self.next_map
+
+        with mock.patch("app.workflows.sphere_subgraph.build_literature_map", side_effect=stepping_build):
+            result = await self._call(build_literature_map)
+
+        self.assertEqual(result["status"], "ok")
+        events = await repo.list_events(self.session.session_id)
+        progress = [e.payload for e in events if e.type.value == "tool.progress"]
+        self.assertEqual([(p["tool"], p["step"], p["status"]) for p in progress], [
+            ("build_literature_map", "sphere_expand", "running"),
+            ("build_literature_map", "sphere_expand", "done"),
+        ])
+
     async def test_an_empty_core_set_is_not_kept(self) -> None:
         from app.agents.tools import build_literature_map
 

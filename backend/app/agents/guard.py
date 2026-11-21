@@ -78,10 +78,7 @@ TOOL_SECONDS: dict[str, float | None] = {
     "open_project_paper": LOCAL_TOOL_SECONDS,
     "download_paper": 180.0,
     "ensure_paper_parsed": None,
-    "run_insight_snap": None,
-    "run_logic_lens": None,
-    "run_research_sphere": None,
-    # Opens a report; waits for the paper's parse like the report tools do.
+    # Opens a report; waits for the paper's parse.
     "begin_report": None,
 }
 

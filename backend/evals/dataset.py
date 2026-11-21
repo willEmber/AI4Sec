@@ -19,13 +19,10 @@ Category = Literal[
 ]
 Mode = Literal["auto", "snap", "lens", "sphere"]
 
-# The tools that make a report: the three report tools, and `begin_report`,
-# which opens a report written as the answer (P16; both while modes switch
-# over). A turn that runs one makes a report, which an eval must not take from
-# a cache: the second attempt would measure a lookup.
-MODE_TOOLS = frozenset(
-    {"run_insight_snap", "run_logic_lens", "run_research_sphere", "begin_report"}
-)
+# The tool that makes a report: `begin_report` opens one, written as the
+# turn's answer (P16). A turn that runs it makes a report, which an eval must
+# not take from a cache: the second attempt would measure a lookup.
+MODE_TOOLS = frozenset({"begin_report"})
 
 _PAPER_ID_RE = re.compile(r"^[0-9a-f]{40}$")
 

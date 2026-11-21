@@ -324,13 +324,8 @@ class AgentEvent(BaseModel):
 # ── Modes, artifacts, memory ────────────────────────────────────────────────
 
 # What the reader can ask for in the composer. `auto` leaves the decision to
-# the agent; the other three make it call the matching mode tool.
+# the agent; the other three open that report before the first model call.
 AgentMode = Literal["auto", "snap", "lens", "sphere"]
-MODE_TOOL_NAMES: dict[str, str] = {
-    "snap": "run_insight_snap",
-    "lens": "run_logic_lens",
-    "sphere": "run_research_sphere",
-}
 
 
 class SessionArtifact(BaseModel):

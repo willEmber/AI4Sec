@@ -60,6 +60,8 @@ EVICTABLE_TOOLS = frozenset(
         "search_paper_content",
         "get_paper_elements",
         "build_literature_map",
+        # The report tools of before P16: gone, but their results are still
+        # in the conversations that called them.
         "run_insight_snap",
         "run_logic_lens",
         "run_research_sphere",

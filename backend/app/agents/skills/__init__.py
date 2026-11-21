@@ -17,9 +17,8 @@ short header:
 them (`structure_ok`). `version` is part of the prompt version a run records,
 so an edited method is told apart from the one a baseline measured.
 
-A mode is written as an answer only when it is switched on
-(`AGENT_ANSWER_REPORT_MODES`) *and* its method exists; a switch naming a mode
-without one leaves that mode on its report tool.
+A mode is offered only when its method exists. All three ship with one; the
+report tools that made them before P16 are gone.
 """
 
 from __future__ import annotations
@@ -28,8 +27,6 @@ import functools
 import logging
 from dataclasses import dataclass
 from pathlib import Path
-
-from app.config import get_settings
 
 logger = logging.getLogger("scholar.agents.skills")
 
@@ -93,12 +90,11 @@ def method(mode: str, language: str) -> Method | None:
 
 
 def enabled_modes() -> frozenset[str]:
-    """The modes this deployment writes as answers: switched on and with a method."""
-    switched = get_settings().answer_report_modes
-    ready = frozenset(m for m in switched if method(m, "en") is not None)
-    for missing in sorted(switched - ready - _warned):
+    """The report modes a turn offers: those with a method."""
+    ready = frozenset(m for m in SKILL_NAMES if method(m, "en") is not None)
+    for missing in sorted(set(SKILL_NAMES) - ready - _warned):
         _warned.add(missing)
-        logger.warning("AGENT_ANSWER_REPORT_MODES names %s, which has no method; ignored", missing)
+        logger.warning("the %s report has no method file; it is not offered", missing)
     return ready
 
 

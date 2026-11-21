@@ -12,13 +12,11 @@ import json
 import os
 import tempfile
 import unittest
-from typing import Any
 from unittest import mock
 
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
 from tests.test_agent_p2 import AgentP2TestCase
-
 
 # ── Memory ──────────────────────────────────────────────────────────────────
 
@@ -52,7 +50,6 @@ class MemoryRepositoryTests(AgentP2TestCase):
         self.assertIsNone(await repo.get_memory(mine.memory_id, owner_id=self.owner))
 
     async def test_two_saves_arriving_together_keep_one_row(self) -> None:
-        import asyncio
 
         from app.db import agent_repository as repo
 
@@ -324,284 +321,6 @@ class MemoryToolTests(AgentP2TestCase):
 # ── Modes ───────────────────────────────────────────────────────────────────
 
 
-class ModeToolTests(AgentP2TestCase):
-    """The mode tools produce a legacy run, an artifact event and a small result."""
-
-    def _fake_ir(self) -> Any:
-        from app.models.paper_ir import PaperIR
-
-        return PaperIR(paper_id="paper1", title="SparseMoE Routing", sections=[], blocks=[])
-
-    async def _run_snap(self, calls: list[dict[str, Any]], **kwargs: Any) -> dict[str, Any]:
-        from app.agents.tools import modes, run_insight_snap
-
-        async def fake_subgraph(mode: str, state: dict[str, Any]) -> dict[str, Any]:
-            calls.append({"mode": mode, "state": dict(state)})
-            state["final_markdown"] = "# Snap\n\nVerdict: read it. " + "x" * 50
-            state["final_json"] = json.dumps({"mode": "snap", "verdict": "read"})
-            return state
-
-        async def fake_pub_rank(*_a: Any, **_k: Any) -> dict[str, Any]:
-            return {"venue": "ICLR", "year": 2024}
-
-        with mock.patch.object(modes, "load_paper_ir", return_value=self._fake_ir()), \
-             mock.patch.object(modes, "_run_subgraph", side_effect=fake_subgraph), \
-             mock.patch.object(modes, "ensure_pub_rank", side_effect=fake_pub_rank):
-            return await self._call(run_insight_snap, **kwargs)
-
-    @staticmethod
-    async def _async(value: Any) -> Any:
-        return value
-
-    async def test_a_report_over_the_ceiling_is_cut_at_a_line_end_and_says_so(self) -> None:
-        from app.agents.tools import modes
-
-        with mock.patch.object(modes, "REPORT_MAX_CHARS", 40):
-            result = await self._run_snap([])
-
-        data = result["data"]
-        self.assertTrue(data["report_truncated"])
-        self.assertEqual(data["report"], "# Snap\n")
-        self.assertIn("Only the first", result["note"])
-
-    async def test_snap_signals_become_citable_metadata_evidence(self) -> None:
-        from app.agents.tools import modes, run_insight_snap
-        from app.services import evidence_service
-
-        signals = {
-            "venue": "ICLR", "year": 2024, "ccf_rank": "A", "cited_by_count": 42,
-            "is_retracted": False, "provenance": {"citations": "Semantic Scholar"},
-        }
-
-        async def fake_subgraph(mode: str, state: dict[str, Any]) -> dict[str, Any]:
-            state["final_markdown"] = "# Snap\n\nVerdict: read it."
-            state["final_json"] = json.dumps({"mode": "snap", "signals": signals})
-            return state
-
-        async def fake_pub_rank(*_a: Any, **_k: Any) -> dict[str, Any]:
-            return {}
-
-        with mock.patch.object(modes, "load_paper_ir", return_value=self._fake_ir()), \
-             mock.patch.object(modes, "_run_subgraph", side_effect=fake_subgraph), \
-             mock.patch.object(modes, "ensure_pub_rank", side_effect=fake_pub_rank):
-            result = await self._call(run_insight_snap)
-
-        listed = result["data"]["signals"]
-        self.assertEqual(result["evidence_ids"], [s["evidence_id"] for s in listed])
-        cited = next(s for s in listed if "cited by 42" in s["fact"])
-        self.assertIn("Semantic Scholar", cited["fact"])
-        evidence = await evidence_service.resolve(cited["evidence_id"], owner_id=self.owner)
-        self.assertEqual(evidence.source_level.value, "metadata")
-        self.assertEqual(evidence.session_id, self.session.session_id)
-        self.assertIn("cite its evidence_id", result["note"])
-
-    async def test_snap_writes_a_legacy_run_and_announces_the_artifact(self) -> None:
-        from app.db import agent_repository as repo
-        from app.db import database as db
-
-        calls: list[dict[str, Any]] = []
-        self.ctx.llm_model = "test-model"
-        self.ctx.owner_token = "browser-1"
-        self.ctx.language = "en"
-        result = await self._run_snap(calls, focus="Is the routing loss novel?")
-
-        self.assertEqual(result["status"], "ok", result)
-        data = result["data"]
-        self.assertEqual(data["mode"], "snap")
-        self.assertFalse(data["reused"])
-        self.assertIn("Verdict: read it", data["report"])
-        self.assertEqual(data["report_url"], f"/paper/paper1/run/{data['run_id']}")
-        # The report is on screen; the model is told to summarise, not cite.
-        self.assertIn("do not reproduce", result["note"])
-
-        run = await db.fetch_one("SELECT * FROM runs WHERE run_id = ?", (data["run_id"],))
-        self.assertEqual(run["status"], "done")
-        self.assertEqual(run["mode"], "snap")
-        self.assertEqual(run["agent_session_id"], self.session.session_id)
-        self.assertEqual(run["agent_run_id"], self.ctx.run_id)
-        self.assertEqual(run["owner_token"], "browser-1")
-        self.assertEqual(run["llm_model"], "test-model")
-        self.assertEqual(run["user_question"], "Is the routing loss novel?")
-        output = await db.fetch_one("SELECT * FROM run_outputs WHERE run_id = ?", (data["run_id"],))
-        self.assertIn("Verdict", output["markdown"])
-
-        # The subgraph got the pipeline's inputs.
-        self.assertEqual(len(calls), 1)
-        state = calls[0]["state"]
-        self.assertEqual(state["paper_id"], "paper1")
-        self.assertEqual(state["language"], "en")
-        self.assertIn("paper_ir_json", state)
-        self.assertEqual(json.loads(state["pub_rank_json"])["venue"], "ICLR")
-
-        events = await repo.list_events(self.session.session_id)
-        artifact = [e for e in events if e.type.value == "artifact.created"]
-        self.assertEqual(len(artifact), 1)
-        self.assertEqual(artifact[0].payload["run_id"], data["run_id"])
-        self.assertEqual(artifact[0].payload["mode"], "snap")
-
-        listed = await repo.list_session_artifacts(self.session.session_id)
-        self.assertEqual([a.run_id for a in listed], [data["run_id"]])
-        self.assertEqual(listed[0].paper_title, "SparseMoE Routing")
-
-    async def test_asking_again_reuses_the_report(self) -> None:
-        calls: list[dict[str, Any]] = []
-        first = await self._run_snap(calls)
-        second = await self._run_snap(calls)
-        self.assertEqual(len(calls), 1, "the analysis ran twice for the same paper and mode")
-        self.assertTrue(second["data"]["reused"])
-        self.assertEqual(second["data"]["run_id"], first["data"]["run_id"])
-        self.assertIn("already existed", second["note"])
-
-    async def test_a_reused_report_is_listed_in_the_session_that_asked_again(self) -> None:
-        from app.db import agent_repository as repo
-
-        calls: list[dict[str, Any]] = []
-        first = await self._run_snap(calls)
-        other = await repo.create_session(owner_id=self.owner, language="en")
-        await self._attach("paper1", other.session_id)
-        self.ctx.session_id = other.session_id
-        self.ctx.run_id = "run-other"
-        second = await self._run_snap(calls)
-
-        self.assertTrue(second["data"]["reused"])
-        listed_other = await repo.list_session_artifacts(other.session_id)
-        self.assertEqual([a.run_id for a in listed_other], [first["data"]["run_id"]])
-        self.assertEqual(listed_other[0].agent_run_id, "run-other")
-        listed_orig = await repo.list_session_artifacts(self.session.session_id)
-        self.assertEqual([a.run_id for a in listed_orig], [first["data"]["run_id"]])
-        self.assertEqual(listed_orig[0].agent_run_id, "run1")
-
-    async def test_a_failing_analysis_closes_the_run_as_failed(self) -> None:
-        from app.agents.tools import modes, run_logic_lens
-        from app.db import database as db
-
-        async def boom(mode: str, state: dict[str, Any]) -> dict[str, Any]:
-            raise RuntimeError("lens exploded")
-
-        with mock.patch.object(modes, "load_paper_ir", return_value=self._fake_ir()), \
-             mock.patch.object(modes, "_run_subgraph", side_effect=boom), \
-             mock.patch.object(modes, "ensure_pub_rank", return_value={}):
-            result = await self._call(run_logic_lens)
-
-        self.assertEqual(result["status"], "error")
-        self.assertIn("lens exploded", result["error"]["message"])
-        run = await db.fetch_one(
-            "SELECT status, error_msg FROM runs WHERE agent_session_id = ?",
-            (self.session.session_id,),
-        )
-        self.assertEqual(run["status"], "failed")
-        self.assertIn("lens exploded", run["error_msg"])
-
-    async def test_a_reports_model_calls_count_against_the_turn_and_its_run(self) -> None:
-        # The turn's meter is what `_execute_turn` opens around the stream; a
-        # report's utility passes and its writing call all reach it.
-        from app.agents.tools import modes, run_logic_lens
-        from app.db import database as db
-        from app.services import llm_usage
-
-        async def utility_pass() -> None:
-            await asyncio.sleep(0)
-            llm_usage.record(1_000, 500)
-
-        async def fake_subgraph(mode: str, state: dict[str, Any]) -> dict[str, Any]:
-            llm_usage.record(30_000, 9_000)
-            # Concurrent passes, as Lens runs its digest and evidence pool.
-            await asyncio.gather(utility_pass(), utility_pass())
-            state["final_markdown"] = "# Lens\n\nHow it works."
-            state["final_json"] = "{}"
-            return state
-
-        def _add(spent: int) -> None:
-            self.ctx.usage.tokens = (self.ctx.usage.tokens or 0) + spent
-
-        with mock.patch.object(modes, "load_paper_ir", return_value=self._fake_ir()), \
-             mock.patch.object(modes, "_run_subgraph", side_effect=fake_subgraph), \
-             mock.patch.object(modes, "ensure_pub_rank", return_value={}):
-            async with llm_usage.metering(sink=_add):
-                result = await self._call(run_logic_lens)
-
-        self.assertEqual(result["status"], "ok", result)
-        self.assertEqual(self.ctx.usage.tokens, 42_000)
-        run = await db.fetch_one("SELECT tokens FROM runs WHERE run_id = ?", (result["data"]["run_id"],))
-        self.assertEqual(run["tokens"], 42_000)
-
-    async def test_a_failed_report_records_what_it_spent(self) -> None:
-        from app.agents.tools import modes, run_logic_lens
-        from app.db import database as db
-        from app.services import llm_usage
-
-        async def boom(mode: str, state: dict[str, Any]) -> dict[str, Any]:
-            llm_usage.record(5_000, 1_000)
-            raise RuntimeError("lens exploded")
-
-        with mock.patch.object(modes, "load_paper_ir", return_value=self._fake_ir()), \
-             mock.patch.object(modes, "_run_subgraph", side_effect=boom), \
-             mock.patch.object(modes, "ensure_pub_rank", return_value={}):
-            with llm_usage.metering() as turn:
-                await self._call(run_logic_lens)
-
-        self.assertEqual(turn.total, 6_000)
-        run = await db.fetch_one(
-            "SELECT status, tokens FROM runs WHERE agent_session_id = ?", (self.session.session_id,)
-        )
-        self.assertEqual((run["status"], run["tokens"]), ("failed", 6_000))
-
-    async def test_a_new_focus_makes_a_new_report_and_the_same_one_reuses_it(self) -> None:
-        from app.agents.tools import modes, run_logic_lens
-
-        focuses: list[str] = []
-
-        async def fake_subgraph(mode: str, state: dict[str, Any]) -> dict[str, Any]:
-            focuses.append(state["user_question"])
-            state["final_markdown"] = f"# Lens\n\nOn {state['user_question'] or 'everything'}."
-            state["final_json"] = "{}"
-            return state
-
-        with mock.patch.object(modes, "load_paper_ir", return_value=self._fake_ir()), \
-             mock.patch.object(modes, "_run_subgraph", side_effect=fake_subgraph), \
-             mock.patch.object(modes, "ensure_pub_rank", return_value={}):
-            plain = await self._call(run_logic_lens)
-            steps = await self._call(run_logic_lens, focus="inversion steps")
-            again = await self._call(run_logic_lens, focus="Inversion  steps")
-
-        self.assertEqual(focuses, ["", "inversion steps"])
-        self.assertNotEqual(steps["data"]["run_id"], plain["data"]["run_id"])
-        self.assertIn("On inversion steps", steps["data"]["report"])
-        self.assertTrue(again["data"]["reused"])
-        self.assertEqual(again["data"]["run_id"], steps["data"]["run_id"])
-
-    async def test_a_paper_outside_the_session_cannot_be_analysed(self) -> None:
-        from app.agents.tools import run_research_sphere
-
-        result = await self._call(run_research_sphere, paper_id="someone-elses")
-        self.assertEqual(result["status"], "unavailable")
-        self.assertEqual(result["error"]["code"], "paper_not_found")
-
-    async def test_progress_from_the_pipeline_becomes_tool_progress_events(self) -> None:
-        from app.agents.tools import modes, run_insight_snap
-        from app.db import agent_repository as repo
-        from app.workflows.progress import emit_progress
-
-        async def fake_subgraph(mode: str, state: dict[str, Any]) -> dict[str, Any]:
-            await emit_progress(state["run_id"], "sphere_init_from_pdf", "running")
-            await emit_progress(state["run_id"], "sphere_init_from_pdf", "done")
-            state["final_markdown"] = "# Report\n\n" + "y" * 40
-            state["final_json"] = "{}"
-            return state
-
-        with mock.patch.object(modes, "load_paper_ir", return_value=self._fake_ir()), \
-             mock.patch.object(modes, "_run_subgraph", side_effect=fake_subgraph), \
-             mock.patch.object(modes, "ensure_pub_rank", return_value={}):
-            result = await self._call(run_insight_snap)
-
-        self.assertEqual(result["status"], "ok")
-        events = await repo.list_events(self.session.session_id)
-        progress = [e.payload for e in events if e.type.value == "tool.progress"]
-        self.assertEqual([p["step"] for p in progress], ["sphere_init_from_pdf", "sphere_init_from_pdf"])
-        self.assertEqual(progress[0]["tool"], "run_insight_snap")
-        self.assertEqual(progress[1]["status"], "done")
-
-
 # ── Context management ──────────────────────────────────────────────────────
 
 
@@ -770,7 +489,10 @@ class MiddlewareAssemblyTests(unittest.TestCase):
         get_settings.cache_clear()
 
     def test_summarization_replaces_the_default_by_name(self) -> None:
-        from app.agents.middleware import ScholarSummarizationMiddleware, build_agent_middleware
+        from app.agents.middleware import (
+            ScholarSummarizationMiddleware,
+            build_agent_middleware,
+        )
         from tests.test_agent_p2 import ScriptedModel
 
         stack = build_agent_middleware(ScriptedModel())
@@ -790,31 +512,19 @@ class MiddlewareAssemblyTests(unittest.TestCase):
             ["ToolResultEvictionMiddleware", "EvidenceAliasMiddleware", "TurnGuardMiddleware"],
         )
 
-    def test_the_agent_offers_the_mode_and_memory_tools(self) -> None:
+    def test_the_agent_offers_the_report_and_memory_tools(self) -> None:
         from app.agents.harness import model_visible_tool_names
-        from app.agents.tools import ALL_AGENT_TOOLS
+        from app.agents.tools import agent_tools
 
-        names = set(model_visible_tool_names(ALL_AGENT_TOOLS))
+        names = set(model_visible_tool_names(agent_tools()))
         for expected in (
-            "run_insight_snap", "run_logic_lens", "run_research_sphere",
+            "begin_report", "get_paper_elements", "get_triage_signals", "build_literature_map",
             "save_memory", "list_memories", "forget_memory",
             "search_paper_content", "download_paper",
         ):
             self.assertIn(expected, names)
         self.assertNotIn("write_file", names)
         self.assertNotIn("task", names)
-
-
-class ModeInstructionTests(unittest.TestCase):
-    def test_mode_note_travels_with_the_turn_only(self) -> None:
-        from app.agents.prompts import mode_instruction
-        from app.services.agent_runner import _model_input
-
-        self.assertEqual(mode_instruction("auto", "zh"), "")
-        self.assertIn("run_insight_snap", mode_instruction("snap", "zh"))
-        self.assertIn("run_research_sphere", mode_instruction("sphere", "en"))
-        self.assertEqual(_model_input("hi", "auto", "zh"), "hi")
-        self.assertTrue(_model_input("hi", "lens", "en").startswith("hi\n\n"))
 
 
 # ── API ─────────────────────────────────────────────────────────────────────

@@ -33,7 +33,7 @@ from app.agents.tools.reading import _authorize
 from app.config import get_settings
 from app.models.agent_models import ErrorCode, ToolResult
 from app.models.paper_ir import PaperIR
-from app.models.snap_models import TriageSignals
+from app.models.snap_models import CitationIntents, TriageSignals
 from app.services import agent_jobs, evidence_service, paper_catalog
 from app.services.paper_ir_loader import PaperNotParsed, ensure_pub_rank, load_paper_ir
 from app.services.snap_context import build_triage_context
@@ -97,12 +97,87 @@ async def signals_for(paper_id: str, paper_ir: PaperIR) -> TriageSignals:
     return await asyncio.shield(task)
 
 
+def snap_signal_facts(signals: dict[str, Any], title: str) -> list[tuple[str, str]]:
+    """The external signals of a Snap report as `(fact, source)` sentences.
+
+    One fact per signal, each with the index that counted it, so a follow-up
+    can cite exactly the one it states — "cited 196,706 times" as Semantic
+    Scholar's count, the CCF tier as EasyScholar's — and none is merged with
+    another system's. Signals the report could not obtain are left out.
+    """
+    provenance = signals.get("provenance") or {}
+    missing = set(signals.get("unavailable") or [])
+    name = title or "This paper"
+    facts: list[tuple[str, str]] = []
+
+    venue = str(signals.get("venue") or "").strip()
+    short = str(signals.get("venue_normalized") or "").strip()
+    if venue and "venue" not in missing:
+        where = venue + (f" ({short})" if short and short.lower() != venue.lower() else "")
+        year = signals.get("year")
+        facts.append((
+            f"{name} — published at {where}" + (f", {year}" if year else ""),
+            str(provenance.get("venue") or ""),
+        ))
+    label = short or venue or "Its venue"
+    if signals.get("ccf_rank") and "ccf_rank" not in missing:
+        facts.append((f"{label} — CCF {signals['ccf_rank']}", str(provenance.get("ccf_rank") or "")))
+    if signals.get("sci_rank") and "sci_rank" not in missing:
+        facts.append((f"{label} — JCR {signals['sci_rank']}", str(provenance.get("sci_rank") or "")))
+    counts = signals.get("citation_counts") or {}
+    if "citations" not in missing and (counts or signals.get("cited_by_count") is not None):
+        # One fact per index: they count differently. Signals cached before
+        # the counts were kept apart hold only the larger, under its source.
+        source = str(provenance.get("citations") or "")
+        for index, cited in (counts or {source: signals["cited_by_count"]}).items():
+            parts = [f"cited by {int(cited):,} ({index})" if counts else f"cited by {int(cited):,}"]
+            # The per-year rate is computed from the larger count.
+            if index == source and signals.get("citations_per_year"):
+                parts.append(f"{float(signals['citations_per_year']):,.1f} per year")
+            facts.append((f"{name} — " + ", ".join(parts), index))
+    # Semantic Scholar's count even when OpenAlex gave the citations: in the
+    # same sentence it was sourced to OpenAlex. Without a provenance S2 did
+    # not count it, and the 0 it defaults to is not a count.
+    if provenance.get("influential_citations") and signals.get("influential_citation_count") is not None:
+        facts.append((
+            f"{name} — {int(signals['influential_citation_count']):,} influential citations",
+            str(provenance["influential_citations"]),
+        ))
+    intents = CitationIntents.model_validate(signals.get("intents") or {})
+    # A sample without a single label is no measurement (`available`).
+    if intents.available and "intents" not in missing:
+        sample = f"a sample of {intents.sampled:,} citing papers"
+        if intents.labelled:
+            sample += f", {intents.labelled:,} of them labelled"
+        facts.append((
+            (f"{name} — citation intents in {sample}: background {intents.background:,}, "
+             f"methodology {intents.methodology:,}, result {intents.result:,}"),
+            str(provenance.get("intents") or ""),
+        ))
+    if signals.get("is_open_access") is not None and "open_access" not in missing:
+        if signals["is_open_access"]:
+            url = signals.get("oa_url") or ""
+            fact = f"{name} — open access" + (f" at {url}" if url else "")
+        else:
+            fact = f"{name} — no open-access copy found"
+        facts.append((fact, str(provenance.get("open_access") or "")))
+    if signals.get("is_retracted") is not None and "retraction" not in missing:
+        fact = f"{name} — " + ("marked as retracted" if signals["is_retracted"] else "not marked as retracted")
+        facts.append((fact, str(provenance.get("retraction") or "OpenAlex")))
+    if "repos" in signals and "repos" not in missing:
+        repos = [str(r.get("url") if isinstance(r, dict) else r) for r in signals.get("repos") or []]
+        fact = (
+            f"{name} — code repositories linked in the paper: {', '.join(repos[:5])}"
+            if repos else f"{name} — no code repository link found in the paper"
+        )
+        facts.append((fact, str(provenance.get("repos") or "PDF")))
+    return facts
+
+
 async def register_signal_facts(
     ctx: AgentContext, *, paper_id: str, title: str, signals: dict[str, Any], as_of: str
 ) -> list[dict[str, Any]]:
     """Each signal as one `metadata` evidence row: `[{fact, evidence_id}]`."""
-    from app.agents.tools.modes import snap_signal_facts
-
     facts = snap_signal_facts(signals, title)
     if not facts:
         return []

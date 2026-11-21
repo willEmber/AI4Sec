@@ -144,7 +144,7 @@ class WaitingTests(unittest.IsolatedAsyncioTestCase):
         with patch("app.services.agent_runner.emit", AsyncMock()), \
              patch.object(parse_service.db, "fetch_one", AsyncMock(return_value=None)), \
              patch.object(agent_jobs, "run_once", AsyncMock(side_effect=timeout)) as run:
-            for tool in ["ensure_paper_parsed", "run_insight_snap"]:
+            for tool in ["ensure_paper_parsed", "begin_report"]:
                 with self.assertRaises(agent_jobs.JobFailed):
                     await parse_service.run_agent_parse(ctx, "paper", tool_name=tool)
             self.assertEqual(run.await_count, 1)
@@ -154,7 +154,7 @@ class WaitingTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(run.await_count, 2)
 
     async def test_mode_timeout_returns_partial_instead_of_a_fulltext_report(self):
-        from app.agents.tools import modes
+        from app.agents.tools import report as modes
 
         ctx = AgentContext(owner_id="owner", session_id="session")
         with tempfile.TemporaryDirectory() as tmp:
@@ -164,7 +164,7 @@ class WaitingTests(unittest.IsolatedAsyncioTestCase):
             with patch.object(modes, "get_settings", return_value=SimpleNamespace(data_dir=Path(tmp))), \
                  patch.object(modes, "_parsed_already", AsyncMock(return_value=False)), \
                  patch.object(parse_service, "run_agent_parse", AsyncMock(side_effect=agent_jobs.JobFailed(ErrorCode.TIMEOUT, "queued"))):
-                result = await modes._ensure_parsed(ctx, "paper", tool_name="run_insight_snap")
+                result = await modes._ensure_parsed(ctx, "paper", tool_name="begin_report")
             self.assertEqual(result.status.value, "partial")
             self.assertIn("do not retry", result.note)
 

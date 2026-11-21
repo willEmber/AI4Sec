@@ -25,13 +25,18 @@ from langchain.tools import ToolRuntime, tool
 
 from app.agents import skills
 from app.agents.context import AgentContext
-from app.agents.tools.modes import MODE_LABELS, _ensure_parsed
+from app.agents.tools.acquisition import _budget_stop, _parsed_already
 from app.agents.tools.reading import _authorize
-from app.models.agent_models import ErrorCode, ToolResult, ToolStatus
-from app.services import answer_reports
+from app.config import get_settings
+from app.db import agent_repository as repo
+from app.models.agent_models import Availability, ErrorCode, ToolResult, ToolStatus
+from app.services import agent_jobs, answer_reports, paper_catalog, parse_service
 
-# The report tool a mode keeps while it is not written as an answer.
-LEGACY_TOOLS = {"snap": "run_insight_snap", "lens": "run_logic_lens", "sphere": "run_research_sphere"}
+MODE_LABELS = {
+    "snap": {"zh": "快速洞察 (Insight Snap)", "en": "Insight Snap"},
+    "lens": {"zh": "逻辑透镜 (Logic Lens)", "en": "Logic Lens"},
+    "sphere": {"zh": "研究全景 (Research Sphere)", "en": "Research Sphere"},
+}
 
 _NOTE = (
     "This turn's final answer IS the {label} report: read with the tools the method "
@@ -42,18 +47,66 @@ _NOTE = (
 )
 
 
+async def _ensure_parsed(ctx: AgentContext, paper_id: str, *, tool_name: str) -> ToolResult | None:
+    """Parse the paper if it is not parsed yet. Returns a denial, or None on success.
+
+    Counts against the run's parse budget like `ensure_paper_parsed` does — a
+    mode is not a way around the ceiling.
+    """
+    if await _parsed_already(paper_id):
+        return None
+
+    pdf_path = get_settings().data_dir / "papers" / paper_id / "original.pdf"
+    if not pdf_path.exists():
+        return ToolResult.unavailable(
+            ErrorCode.FULLTEXT_UNAVAILABLE,
+            f"No PDF is stored for {paper_id}; download it first.",
+        )
+    stop = _budget_stop(ctx, "parse")
+    if stop is not None:
+        return stop
+
+    try:
+        handle = await parse_service.run_agent_parse(
+            ctx, paper_id, tool_name=tool_name,
+        )
+    except agent_jobs.JobFailed as exc:
+        if exc.code == ErrorCode.TIMEOUT:
+            return ToolResult.partial(
+                {"paper_id": paper_id},
+                note="MinerU has not finished within the waiting limit. The submitted batch "
+                "is retained for a later turn; do not retry parsing or generate a full-text "
+                "report in this turn. Explain the wait and use available information.",
+            )
+        return ToolResult.unavailable(
+            ErrorCode.PARSE_FAILED, f"Parsing failed: {exc.message}"[:400]
+        )
+    if handle.status == "running":
+        return ToolResult.partial(
+            {"paper_id": paper_id, "job_id": handle.job_id},
+            note="This paper is still being parsed by another turn. Answer from what "
+            "you have and say the report will be possible once parsing finishes.",
+        )
+    if not handle.reused:
+        ctx.usage.parses += 1
+
+    literature_id = await paper_catalog.literature_for_paper(paper_id)
+    if literature_id:
+        await repo.set_session_paper_availability(
+            session_id=ctx.session_id,
+            literature_id=literature_id,
+            availability=Availability.PARSED,
+        )
+    return None
+
+
 async def start_report(
     ctx: AgentContext, *, mode: str, paper_id: str = "", focus: str = ""
 ) -> ToolResult:
     """Open the report this turn writes. The tool and the composer path share it."""
-    enabled = skills.enabled_modes()
-    if mode not in enabled:
-        legacy = LEGACY_TOOLS.get(mode)
+    if mode not in skills.enabled_modes():
         return ToolResult.failed(
-            ErrorCode.INVALID_ARGUMENT,
-            f"{mode} reports are not written as answers here"
-            + (f"; call `{legacy}` instead." if legacy else "."),
-            retryable=False,
+            ErrorCode.INVALID_ARGUMENT, f"There is no {mode} report here.", retryable=False
         )
     if ctx.report is not None:
         return ToolResult.failed(

@@ -47,7 +47,7 @@ from app.agents.errors import EmptyModelResponse, classify_error, error_summary
 from app.agents.harness import create_paper_agent
 from app.agents.middleware import build_agent_middleware
 from app.agents.model_factory import build_chat_model, fallback_model_name
-from app.agents.prompts import PROMPT_VERSION, build_system_prompt, mode_instruction
+from app.agents.prompts import PROMPT_VERSION, build_system_prompt
 from app.agents.tool_events import ToolCallTracker, preview_of, summarise_input
 from app.agents.tools import agent_tools
 from app.agents.tools.report import composer_note, start_report
@@ -517,17 +517,6 @@ async def _record_unsaved_text(
         logger.exception("Could not record interrupted text for run %s", context.run_id)
 
 
-def _model_input(question: str, mode: str, language: str) -> str:
-    """The user turn as the model sees it: the question plus the chosen mode.
-
-    The persisted user message stays the reader's own words; the mode note is
-    an instruction about *this* turn, so it travels with the turn and never
-    lands in the transcript the reader scrolls back through.
-    """
-    note = mode_instruction(mode, language)
-    return f"{question}\n\n{note}" if note else question
-
-
 # The call id the composer's report opening is announced under; it was not a
 # model call, so it has no id of its own.
 COMPOSER_REPORT_CALL_ID = "composer-begin-report"
@@ -726,11 +715,12 @@ async def _execute_turn(
         async with asyncio.timeout(
             max(1, budget.max_wall_seconds) + max(0, settings.agent_wrapup_seconds)
         ), llm_usage.metering(sink=_tool_tokens):
+            # A mode picked in the composer opens its report before the first
+            # model call; the method follows the reader's words.
+            model_input = question
             if mode in answer_modes:
                 note = await _open_composer_report(context, stream, mode)
                 model_input = f"{question}\n\n{note}"
-            else:
-                model_input = _model_input(question, mode, session.language)
             async for stream_mode, chunk in agent.astream(
                 {"messages": [{"role": "user", "content": model_input}]},
                 config=context.config(),

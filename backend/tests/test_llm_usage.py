@@ -131,20 +131,6 @@ class HardCeilingTests(unittest.TestCase):
         self.assertEqual(usage.hard_exceeded(RunBudget(max_tokens=10)), "")
 
 
-class ModeJobKeyTests(unittest.TestCase):
-    def test_a_focus_asks_for_a_different_report(self) -> None:
-        from app.agents.tools.modes import mode_job_key
-
-        plain = mode_job_key(paper_id="p", mode="lens", language="zh", model="m")
-        self.assertEqual(plain, "mode:p:lens:zh:m", "reports made before focus was keyed still count")
-        a = mode_job_key(paper_id="p", mode="lens", language="zh", model="m", focus="inversion steps")
-        b = mode_job_key(paper_id="p", mode="lens", language="zh", model="m", focus="training cost")
-        self.assertNotEqual(a, plain)
-        self.assertNotEqual(a, b)
-        same = mode_job_key(paper_id="p", mode="lens", language="zh", model="m", focus="  Inversion   STEPS ")
-        self.assertEqual(a, same, "spacing and case do not make a new report")
-
-
 def _paper() -> PaperIR:
     def block(order: int, text: str, section: str, page: int = 1, kind: str = "text") -> Block:
         return Block(type=kind, page_idx=page, order_idx=order, text=text, section_path=section)

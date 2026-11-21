@@ -38,7 +38,7 @@ from app.agents.context import AgentContext
 from app.agents.tools.triage import _paper
 from app.config import get_settings
 from app.db import agent_repository as repo
-from app.models.agent_models import ErrorCode, ToolResult
+from app.models.agent_models import ErrorCode, EventType, ToolResult
 from app.models.sphere_models import SphereNode, SphereState
 from app.services import agent_jobs, evidence_service, paper_catalog
 from app.services.sphere_scorer import normalize_venue
@@ -46,6 +46,27 @@ from app.workflows import progress
 from app.workflows.sphere_subgraph import map_papers
 
 logger = logging.getLogger("scholar.agents.tools.literature_map")
+
+
+async def _emit(ctx: AgentContext, type: EventType, payload: dict[str, Any]) -> None:
+    """Publish an event for this turn. Lazy import: the runner imports the tools."""
+    from app.services import agent_runner
+
+    with contextlib.suppress(Exception):
+        await agent_runner.emit(
+            session_id=ctx.session_id, run_id=ctx.run_id, type=type, payload=payload
+        )
+
+
+async def _forward_progress(
+    ctx: AgentContext, tool_name: str, queue: asyncio.Queue[Any]
+) -> None:
+    """Turn the run's step progress into `tool.progress` events."""
+    while True:
+        item = await queue.get()
+        if item is None:
+            return
+        await _emit(ctx, EventType.TOOL_PROGRESS, {"tool": tool_name, **item})
 
 _TEXT_LIMIT = 240
 _ABSTRACT_EXCERPT = 400
@@ -215,8 +236,6 @@ async def build_literature_map(runtime: ToolRuntime[AgentContext], paper_id: str
             "num_nodes": len(sphere.nodes),
             "num_edges": len(sphere.edges),
         }
-
-    from app.agents.tools.modes import _forward_progress
 
     queue = progress.subscribe(progress_id)
     forwarder = asyncio.create_task(
