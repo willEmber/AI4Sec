@@ -113,13 +113,24 @@ def _merge_into(primary: Paper, incoming: Paper) -> None:
     for attr in (
         "url", "doi", "authors", "arxiv_id", "s2_paper_id", "openalex_id", "dblp_key",
         "openreview_id", "oa_pdf_url", "publication_date", "tldr", "acceptance",
+        "openalex_source_id", "crossref_event",
     ):
         if not getattr(primary, attr) and getattr(incoming, attr):
             setattr(primary, attr, getattr(incoming, attr))
     if not primary.year and incoming.year:
         primary.year = incoming.year
-    if incoming.venue and (not primary.venue or _PREPRINT_VENUE_RE.search(primary.venue)):
-        if not _PREPRINT_VENUE_RE.search(incoming.venue) or not primary.venue:
+    from app.services.publication_rank.normalizer import is_umbrella_series
+
+    primary_is_shell = (
+        not primary.venue
+        or bool(_PREPRINT_VENUE_RE.search(primary.venue))
+        or is_umbrella_series(primary.venue)
+    )
+    incoming_is_shell = bool(_PREPRINT_VENUE_RE.search(incoming.venue)) or is_umbrella_series(incoming.venue)
+    if incoming.venue and primary_is_shell:
+        if not incoming_is_shell or not primary.venue:
+            if primary.venue and primary.venue not in primary.venue_aliases:
+                primary.venue_aliases.append(primary.venue)
             primary.venue = incoming.venue
             if incoming.venue_type:
                 primary.venue_type = incoming.venue_type
@@ -138,7 +149,7 @@ def _merge_into(primary: Paper, incoming: Paper) -> None:
         primary.is_open_access = bool(primary.is_open_access) or incoming.is_open_access
     if incoming.is_retracted is not None:
         primary.is_retracted = bool(primary.is_retracted) or incoming.is_retracted
-    for attr in ("fields_of_study", "publication_types", "venue_aliases"):
+    for attr in ("fields_of_study", "publication_types", "venue_aliases", "issns"):
         merged = list(getattr(primary, attr))
         for value in getattr(incoming, attr):
             if value not in merged:

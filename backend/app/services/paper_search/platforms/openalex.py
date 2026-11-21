@@ -113,6 +113,27 @@ def _is_published_outlet(name: str, stype: str) -> bool:
     return not PREPRINT_RE.search(name)
 
 
+def _extract_source_ids(work: dict[str, Any]) -> tuple[list[str], str]:
+    """Extract `(issns, openalex_source_id)` from the best non-repository location."""
+    from app.services.publication_rank.normalizer import extract_issns
+
+    for loc in [work.get("primary_location"), *(work.get("locations") or [])]:
+        source = (loc or {}).get("source") or {}
+        name = normalize_whitespace(source.get("display_name", "") or "")
+        stype = (source.get("type") or "").strip().lower()
+        if not _is_published_outlet(name, stype):
+            continue
+        raw_issns: list[str] = []
+        if source.get("issn_l"):
+            raw_issns.append(str(source["issn_l"]))
+        for x in source.get("issn") or []:
+            if isinstance(x, str):
+                raw_issns.append(x)
+        oa_sid = (source.get("id") or "").replace("https://openalex.org/", "").strip()
+        return extract_issns(raw_issns), oa_sid
+    return [], ""
+
+
 def work_to_paper(item: dict[str, Any]) -> Paper:
     doi = normalize_doi(item.get("doi") or "")
     primary = item.get("primary_location") or {}
@@ -140,6 +161,7 @@ def work_to_paper(item: dict[str, Any]) -> Paper:
     is_oa = oa.get("is_oa")
     retracted = item.get("is_retracted")
     work_type = (item.get("type") or "").lower()
+    issns, oa_source_id = _extract_source_ids(item)
 
     return Paper(
         title=normalize_whitespace(item.get("title") or ""),
@@ -156,6 +178,8 @@ def work_to_paper(item: dict[str, Any]) -> Paper:
         publication_date=normalize_whitespace(item.get("publication_date") or ""),
         venue_type=extract_venue_type(item),
         publication_types=["review"] if work_type == "review" else [],
+        issns=issns,
+        openalex_source_id=oa_source_id,
         citation_counts=citation_counts,
         is_open_access=bool(is_oa) if is_oa is not None else None,
         is_retracted=bool(retracted) if retracted is not None else None,

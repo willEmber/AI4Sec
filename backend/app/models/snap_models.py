@@ -102,9 +102,12 @@ class TriageSignals(BaseModel):
     # --- publication venue ---
     venue: str = ""
     venue_normalized: str = ""    # conference proceedings → canonical acronym
+    venue_subtrack: str = "main"  # main | findings | workshop | companion | preprint
     year: int = 0
-    sci_rank: str = ""            # Q1..Q4 (EasyScholar)
-    ccf_rank: str = ""            # A/B/C  (EasyScholar)
+    sci_rank: str = ""            # Q1..Q4
+    ccf_rank: str = ""            # A/B/C
+    venue_ranks: dict[str, str] = Field(default_factory=dict)
+    venue_verification: str = ""  # verified | unverified | ""
     is_preprint: bool = False
     is_survey: bool = False
     publication_types: list[str] = Field(default_factory=list)
@@ -129,6 +132,7 @@ class TriageSignals(BaseModel):
 
     # --- red flags ---
     is_retracted: bool = False
+    cas_warning: str = ""
 
     # --- derived scores, all in [0,1] ---
     venue_score: float = 0.0

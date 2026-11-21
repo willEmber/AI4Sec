@@ -124,6 +124,17 @@ def snap_signal_facts(signals: dict[str, Any], title: str) -> list[tuple[str, st
         facts.append((f"{label} — CCF {signals['ccf_rank']}", str(provenance.get("ccf_rank") or "")))
     if signals.get("sci_rank") and "sci_rank" not in missing:
         facts.append((f"{label} — JCR {signals['sci_rank']}", str(provenance.get("sci_rank") or "")))
+    extra_ranks = signals.get("venue_ranks") or {}
+    if isinstance(extra_ranks, dict):
+        rank_prov = str(provenance.get("venue_ranks") or provenance.get("ccf_rank") or provenance.get("sci_rank") or "")
+        for sys_key in ("CORE", "CAS", "TH_CPL", "CAAI", "CCF_CN"):
+            if extra_ranks.get(sys_key):
+                facts.append((f"{label} — {sys_key} {extra_ranks[sys_key]}", rank_prov))
+    if signals.get("cas_warning"):
+        facts.append((
+            f"{label} — CAS International Journal Early Warning: {signals['cas_warning']}",
+            str(provenance.get("cas_warning") or "CAS Early Warning List"),
+        ))
     counts = signals.get("citation_counts") or {}
     if "citations" not in missing and (counts or signals.get("cited_by_count") is not None):
         # One fact per index: they count differently. Signals cached before

@@ -118,6 +118,9 @@ class Paper:
     venue_type: str = ""  # one of PUBLICATION_TYPES, or "" when unknown
     publication_types: list[str] = field(default_factory=list)
     venue_aliases: list[str] = field(default_factory=list)
+    issns: list[str] = field(default_factory=list)
+    openalex_source_id: str = ""
+    crossref_event: str = ""
     fields_of_study: list[str] = field(default_factory=list)
 
     # Citation counts per source. Sources disagree — OpenAlex often splits a

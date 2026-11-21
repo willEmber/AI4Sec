@@ -55,19 +55,43 @@ async def load_paper_ir(paper_id: str) -> PaperIR:
 
 async def load_pub_rank(paper_id: str) -> dict[str, Any]:
     """The `pub_rank_json` payload, from what `enrich_metadata` last stored."""
-    row = await db.fetch_one(
-        "SELECT doi, venue, year, sci_rank, ccf_rank FROM papers WHERE paper_id = ?",
-        (paper_id,),
-    )
+    import json
+
+    try:
+        row = await db.fetch_one(
+            "SELECT doi, venue, year, sci_rank, ccf_rank, venue_ranks_json FROM papers WHERE paper_id = ?",
+            (paper_id,),
+        )
+    except Exception:
+        row = await db.fetch_one(
+            "SELECT doi, venue, year, sci_rank, ccf_rank FROM papers WHERE paper_id = ?",
+            (paper_id,),
+        )
     if row is None:
         return {}
-    return {
+    extra: dict[str, Any] = {}
+    try:
+        extra = json.loads(row.get("venue_ranks_json") or "{}")
+    except Exception:
+        extra = {}
+    out: dict[str, Any] = {
         "venue": row.get("venue") or "",
         "year": row.get("year") or 0,
         "sci": row.get("sci_rank") or "",
         "ccf": row.get("ccf_rank") or "",
         "doi": row.get("doi") or "",
     }
+    if extra.get("ranks"):
+        out["ranks"] = extra["ranks"]
+    if extra.get("subtrack"):
+        out["subtrack"] = extra["subtrack"]
+    if extra.get("cas_warning"):
+        out["cas_warning"] = extra["cas_warning"]
+    if extra.get("source"):
+        out["source"] = extra["source"]
+    if extra.get("verification_status"):
+        out["verification_status"] = extra["verification_status"]
+    return out
 
 
 async def ensure_pub_rank(paper_id: str, paper_ir: PaperIR, pdf_path: Path | None) -> dict[str, Any]:

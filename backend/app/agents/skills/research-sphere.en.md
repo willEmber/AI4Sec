@@ -42,7 +42,7 @@ Fill a cell only from what an abstract, the metadata or this paper's text says; 
 Three to five gaps: what the landscape leaves open, why it matters, which papers show it — concrete enough to start work on.
 
 ## 7. Reading Paths
-Three numbered lists: **Fast** (3–5 papers to grasp the area), **Deep** (8–12 for a thorough understanding, in reading order) and **Frontier** (5–8 recent ones). Each entry: title, year, and one clause on why.
+Three numbered lists: **Fast** (3–5 papers to grasp the area), **Deep** (8–12 for a thorough understanding, in reading order) and **Frontier** (5–8 recent ones). Each entry: title, year, and one clause on why (noting venue tier or preprint status where informative).
 
 ## Rules
 

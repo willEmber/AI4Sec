@@ -19,19 +19,23 @@ if TYPE_CHECKING:
 # to DistilBERT this way). At 200, mid-range papers still differentiate.
 _CITATION_SATURATION_CPY = 200.0
 
-# Venue rank → score. SCI quartiles and CCF tiers from EasyScholar.
+# Venue rank → score. Multi-system ratings (JCR, CCF, CORE, TH-CPL, CAAI, CCF-CN, CAS).
 _SCI_RANK_SCORES = {"Q1": 1.0, "Q2": 0.75, "Q3": 0.5, "Q4": 0.35}
 _CCF_RANK_SCORES = {"A": 1.0, "B": 0.75, "C": 0.5}
+_CORE_RANK_SCORES = {"A*": 1.0, "A": 0.85, "B": 0.65, "C": 0.45}
+_THCPL_RANK_SCORES = {"A": 1.0, "B": 0.75}
+_CCFCN_RANK_SCORES = {"T1": 0.85, "T2": 0.65, "T3": 0.45}
 
-# Keyword fallback when no EasyScholar rank is available
-_TOP_VENUES = {
-    "nature", "science", "cell", "lancet", "nejm", "bmj",
-    "neurips", "nips", "icml", "iclr", "cvpr", "iccv", "eccv",
-    "aaai", "ijcai", "acl", "emnlp", "naacl",
-    "sigmod", "vldb", "kdd", "www", "sigir",
-    "ieee transactions", "acm transactions",
-    "pnas", "physical review", "jama",
-}
+# Keyword fallback when no catalog/EasyScholar rank is available (strict word-boundary match!)
+_TOP_VENUE_RE = re.compile(
+    r"\b(?:nature|science|cell|lancet|nejm|bmj|"
+    r"neurips|nips|icml|iclr|cvpr|iccv|eccv|"
+    r"aaai|ijcai|acl|emnlp|naacl|"
+    r"sigmod|vldb|kdd|www|sigir|"
+    r"ieee\s+transactions|acm\s+transactions|"
+    r"pnas|physical\s+review|jama)\b",
+    re.IGNORECASE,
+)
 
 _PREPRINT_VENUE_RE = re.compile(
     r"arxiv|preprint|biorxiv|medrxiv|ssrn|research square|repec", re.IGNORECASE
@@ -89,10 +93,15 @@ def normalize_venue(venue: str) -> str:
     """Map long conference-proceeding names to canonical acronyms.
 
     Journals and unrecognized names pass through unchanged. Workshop
-    proceedings are never mapped to the main conference's acronym.
+    proceedings and Findings tracks are never mapped to the main conference's acronym.
     """
+    from app.services.publication_rank.normalizer import normalize_venue_display
+
     if not venue:
         return ""
+    res = normalize_venue_display(venue)
+    if res:
+        return res
     v = venue.strip()
     low = v.lower()
     if "workshop" in low:
@@ -101,6 +110,26 @@ def normalize_venue(venue: str) -> str:
         if re.search(pattern, low):
             return acronym
     return v
+
+
+def _extra_rank_scores(venue_ranks: dict[str, str] | None) -> list[float]:
+    if not venue_ranks:
+        return []
+    out: list[float] = []
+    for sys_name, label in venue_ranks.items():
+        head = label.split("(", 1)[0].strip().upper()
+        if sys_name == "CORE" and head in _CORE_RANK_SCORES:
+            out.append(_CORE_RANK_SCORES[head])
+        elif sys_name in {"TH_CPL", "CAAI"} and head in _THCPL_RANK_SCORES:
+            out.append(_THCPL_RANK_SCORES[head])
+        elif sys_name == "CCF_CN" and head in _CCFCN_RANK_SCORES:
+            out.append(_CCFCN_RANK_SCORES[head])
+        elif sys_name == "CAS":
+            m = re.search(r"([1-4])\s*区", label)
+            if m:
+                cas_map = {"1": 1.0, "2": 0.8, "3": 0.55, "4": 0.35}
+                out.append(cas_map[m.group(1)])
+    return out
 
 
 def compute_citation_component(cited_by_count: int, year: int, current_year: int) -> float:
@@ -112,13 +141,43 @@ def compute_citation_component(cited_by_count: int, year: int, current_year: int
     return min(1.0, math.log1p(cpy) / math.log1p(_CITATION_SATURATION_CPY))
 
 
-def compute_venue_component(venue: str, sci_rank: str = "", ccf_rank: str = "") -> float:
-    """Venue quality in [0,1]. EasyScholar ranks win; keyword heuristic as fallback."""
-    scores = []
+def compute_venue_component(
+    venue: str,
+    sci_rank: str = "",
+    ccf_rank: str = "",
+    *,
+    venue_ranks: dict[str, str] | None = None,
+    cas_warning: str = "",
+) -> float:
+    """Venue quality in [0,1]. Authoritative ranks win; CAS warning penalizes; keyword heuristic as fallback."""
+    if cas_warning:
+        return 0.1
+
+    # When explicit ranks were not pre-populated (e.g. Research Sphere neighbor nodes),
+    # resolve deterministically in <0.05ms against the in-process 23.9k-venue catalog!
+    if venue and not (sci_rank or ccf_rank or venue_ranks):
+        from app.services.publication_rank import get_venue_catalog
+
+        prof = get_venue_catalog().resolve(venue)
+        if prof.warning:
+            return 0.1
+        if prof.subtrack in {"workshop", "companion"}:
+            return 0.2
+        if prof.subtrack == "findings":
+            return 0.65
+        if prof.subtrack == "preprint" and not prof.rankings:
+            return 0.2
+        if prof.rankings:
+            sci_rank = prof.sci_rank
+            ccf_rank = prof.ccf_rank
+            venue_ranks = prof.compact_ranks()
+
+    scores: list[float] = []
     if sci_rank:
         scores.append(_SCI_RANK_SCORES.get(sci_rank.strip().upper(), 0.3))
     if ccf_rank:
         scores.append(_CCF_RANK_SCORES.get(ccf_rank.strip().upper(), 0.3))
+    scores.extend(_extra_rank_scores(venue_ranks))
     if scores:
         return max(scores)
 
@@ -127,9 +186,8 @@ def compute_venue_component(venue: str, sci_rank: str = "", ccf_rank: str = "") 
     v = normalize_venue(venue).lower()
     if is_preprint_venue(v) or "workshop" in v:
         return 0.2
-    for tv in _TOP_VENUES:
-        if tv in v:
-            return 0.9
+    if _TOP_VENUE_RE.search(v):
+        return 0.9
     if any(kw in v for kw in ("conference", "symposium", "journal", "transactions", "review")):
         return 0.5
     return 0.3

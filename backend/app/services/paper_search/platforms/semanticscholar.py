@@ -100,6 +100,10 @@ def paper_from_s2(item: dict[str, Any], *, source: str = "SemanticScholar") -> P
     aliases = [normalize_whitespace(n) for n in (pub_venue.get("alternate_names") or []) if n]
     if pub_venue.get("name"):
         aliases.insert(0, normalize_whitespace(pub_venue["name"]))
+    from app.services.publication_rank.normalizer import extract_issns
+
+    raw_issn = pub_venue.get("issn")
+    issns = extract_issns(raw_issn if isinstance(raw_issn, (list, str)) else None)
 
     types = [_S2_TO_TYPE[t] for t in (item.get("publicationTypes") or []) if t in _S2_TO_TYPE]
     arxiv_id = normalize_whitespace(external_ids.get("ArXiv") or "")
@@ -132,6 +136,7 @@ def paper_from_s2(item: dict[str, Any], *, source: str = "SemanticScholar") -> P
         venue_type=venue_type,
         publication_types=types,
         venue_aliases=aliases,
+        issns=issns,
         fields_of_study=[f for f in (item.get("fieldsOfStudy") or []) if isinstance(f, str)],
         citation_counts=citation_counts,
         influential_citation_count=int(influential) if isinstance(influential, int) else None,

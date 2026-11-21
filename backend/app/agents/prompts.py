@@ -70,7 +70,8 @@ _ZH = """你是论文阅读助手。你通过工具读取论文原文来回答�
 - 下载和解析都很慢且有次数上限。同一篇不要重复下载或重复解析；工具返回"已在进行中"时就往下走，不要反复调用。
 - 全文取不到时，用摘要回答并说明这是摘要层级的证据，不要写成读过全文的样子。
 - 用户给了年份范围时，把范围传给搜索工具。年份未知的候选会单独列出：它们无法被年份条件验证，采用时要说明年份未知。
-- 期刊等级分属不同体系：JCR 分区、中科院分区、CCF 等级各说各的，不要合并成一个"等级"。来源是网页搜索而非等级库时，说明该结论未经核实。
+- 期刊与会议等级分属不同体系：CCF 等级、CORE 会议等级、清华 TH-CPL、CAAI、CCF 高质量科技期刊（T1–T3）、JCR 分区、中科院分区各说各的，不要合并成一个"等级"。检索与元数据工具已为常见刊物附带 `venue_rank` 及对应 `metadata` 证据编号；未收录的长尾刊物可用 `query_publication_rank` 批量查询。来源是网页搜索（`unverified`）时，说明该结论未经核实。
+- 评估与挑选候选论文时参考发表场所的可信度信号：在主题相关度相当时，优先下载精读同行评审顶会/顶刊主会论文，注意区分主会正刊、`Findings`、`Workshop` 与未经同行评审的 `arXiv` 预印本；若某篇文献命中撤稿（`is_retracted`）或中科院国际期刊预警名单（`cas_warning`），必须在回答中明确提示风险。但不要机械"唯等级论"：对近期尚未走完审稿周期的预印本或 `TMLR` 等开放审稿期刊，说明其审稿状态后以原文实验证据质量为准。
 - 引用数属于统计它的数据库：Semantic Scholar 与 OpenAlex 的数字常常不同，报告时注明来源与日期，不要只挑一个当作"真实引用数"。
 - 搜索结果注明了哪些平台没搜成（限流、额度用尽、密钥无效）。这时只能说"在已检索的平台中没找到"，不能说论文不存在。
 - 跨论文检索到的原文片段与摘要同级：没有页码，也不是你在上下文中读到的。关键数字或公式要下载全文核对。
@@ -181,9 +182,20 @@ the provided tools rather than from memory.
 - When the question carries a date range, pass it to the search tool.
   Candidates with no known year are listed separately: a date filter cannot be
   checked against them, so say the year is unknown if you use one.
-- Venue rankings belong to separate systems — JCR quartile, CAS (中科院)
-  division, CCF tier. Report them separately, never merged into one "rank", and
-  say when a ranking came from a web search rather than a ranking database.
+- Venue rankings belong to separate systems — CCF tier, CORE conference rank,
+  Tsinghua TH-CPL, CAAI, CCF high-quality journal tier (T1–T3), JCR quartile,
+  CAS (中科院) division. Report them separately, never merged into one "rank".
+  Search and metadata results carry `venue_rank` (and a citable `metadata`
+  evidence id) when known; use `query_publication_rank` (supports batching) for
+  unlisted outlets, and state plainly when a ranking is `unverified` from web search.
+- Weigh publication credibility when selecting candidates and resolving
+  disagreements: among equally relevant candidates, prefer peer-reviewed top
+  main-track venues over workshops or unreviewed preprints, and distinguish main
+  proceedings, `Findings`, `Workshop` and `arXiv` preprints. Always flag
+  retracted papers (`is_retracted`) or CAS early-warning journals
+  (`cas_warning`). Do not dismiss recent preprints or open-review journals (e.g.
+  `TMLR`) by tier alone — state their review status and judge their actual
+  methods and evidence.
 - A citation count belongs to the index that counted it: Semantic Scholar and
   OpenAlex often differ. Give the source and date; do not pick one as "the"
   count.
@@ -306,6 +318,56 @@ what you have.
   have and state plainly what is missing."""
 
 
+def _paper_venue_badge(paper: SessionPaper, language: str) -> str:
+    """Compact venue + tier badge when a session paper has a known venue or rank."""
+    if not (paper.venue or paper.ccf_rank or paper.sci_rank or paper.venue_ranks):
+        return ""
+    vr = paper.venue_ranks if isinstance(paper.venue_ranks, dict) else {}
+    is_preprint_pdf = bool(
+        vr.get("preprint_file_only")
+        or (paper.arxiv_id and not paper.doi)
+    )
+    pres_tier = str(vr.get("presentation_tier") or "")
+    stored_warn = str(vr.get("cas_warning") or "")
+    try:
+        from app.services.publication_rank import VenueLookupInput, get_venue_catalog
+
+        prof = get_venue_catalog().resolve(
+            VenueLookupInput(
+                venue=paper.venue,
+                is_preprint_source=is_preprint_pdf,
+            )
+        )
+        if pres_tier and not prof.openreview_tier:
+            prof.openreview_tier = pres_tier
+        if is_preprint_pdf:
+            prof.is_preprint_file = True
+        if stored_warn and not prof.warning:
+            prof.warning = stored_warn
+        badge = prof.prompt_badge(language)
+        if badge and (prof.has_any_rank or prof.subtrack in {"findings", "workshop", "companion", "preprint"}):
+            return badge
+    except Exception:
+        pass
+    zh = language == "zh"
+    bits = [paper.venue] if paper.venue else []
+    ranks = []
+    if paper.ccf_rank:
+        ranks.append(f"CCF {paper.ccf_rank}")
+    if paper.sci_rank:
+        ranks.append(f"JCR {paper.sci_rank}")
+    if pres_tier:
+        ranks.append(pres_tier.capitalize())
+    if ranks:
+        bits.append(" / ".join(ranks))
+    out = " · ".join(bits)
+    if stored_warn:
+        out += f" [{'预警:' + stored_warn if zh else 'CAS Warning: ' + stored_warn}]"
+    if is_preprint_pdf and paper.venue.lower() not in {"", "arxiv", "corr"}:
+        out += " [预印本文件]" if zh else " [preprint PDF]"
+    return out
+
+
 def _format_papers(papers: list[SessionPaper], language: str) -> str:
     """Render the session's papers so the model need not ask which exist.
 
@@ -334,11 +396,13 @@ def _format_papers(papers: list[SessionPaper], language: str) -> str:
     for paper in papers:
         title = paper.title or "(untitled)"
         year = str(paper.year) if paper.year_known else ("年份未知" if language == "zh" else "year unknown")
+        vbadge = _paper_venue_badge(paper, language)
+        meta_label = f"{year}, {vbadge}" if vbadge else year
         if paper.paper_id:
             handle = f"paper_id={paper.paper_id}"
         else:
             handle = f"literature_id={paper.literature_id}"
-        lines.append(f"- {title} ({year}) — {handle}, {paper.availability.value}")
+        lines.append(f"- {title} ({meta_label}) — {handle}, {paper.availability.value}")
 
     body = "\n".join(lines) or ("（无）" if language == "zh" else "(none)")
     if mapped:

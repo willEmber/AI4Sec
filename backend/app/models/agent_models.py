@@ -256,6 +256,9 @@ class SessionPaper(BaseModel):
     year: int = 0
     year_known: bool = False
     venue: str = ""
+    sci_rank: str = ""
+    ccf_rank: str = ""
+    venue_ranks: dict[str, Any] = Field(default_factory=dict)
     doi: str = ""
     arxiv_id: str = ""
     updated_at: str = ""

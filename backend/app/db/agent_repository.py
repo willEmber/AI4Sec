@@ -1317,11 +1317,18 @@ async def mark_paper_parsed(paper_id: str) -> None:
 
 
 async def list_session_papers(session_id: str) -> list[SessionPaper]:
-    """Session papers joined with their bibliographic record."""
+    """Session papers joined with their bibliographic record and resolved venue ranks."""
     rows = await db.fetch_all(
-        """SELECT sp.*, li.title, li.year, li.year_known, li.venue, li.doi, li.arxiv_id
+        """SELECT sp.*, li.title, li.year, li.year_known,
+                  COALESCE(NULLIF(p.venue, ''), li.venue) AS venue,
+                  COALESCE(p.sci_rank, '') AS sci_rank,
+                  COALESCE(p.ccf_rank, '') AS ccf_rank,
+                  COALESCE(NULLIF(p.venue_ranks_json, '{}'), li.venue_ranks_json, '{}') AS venue_ranks_json,
+                  COALESCE(NULLIF(p.doi, ''), li.doi) AS doi,
+                  li.arxiv_id
              FROM session_papers sp
              JOIN literature_items li ON li.literature_id = sp.literature_id
+             LEFT JOIN papers p ON p.paper_id = sp.paper_id AND sp.paper_id <> ''
             WHERE sp.session_id = ?
             ORDER BY sp.created_at""",
         (session_id,),
@@ -1340,7 +1347,10 @@ def _row_to_session_paper(r: dict[str, Any]) -> SessionPaper:
         title=r["title"],
         year=r["year"],
         year_known=bool(r["year_known"]),
-        venue=r["venue"],
+        venue=r["venue"] or "",
+        sci_rank=r.get("sci_rank") or "",
+        ccf_rank=r.get("ccf_rank") or "",
+        venue_ranks=_json_loads(r.get("venue_ranks_json"), {}),
         doi=r["doi"],
         arxiv_id=r["arxiv_id"],
         updated_at=r["updated_at"],

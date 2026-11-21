@@ -57,7 +57,12 @@ from app.services.paper_search.platforms.semanticscholar import (
     s2_get,
 )
 from app.services.paper_search.ratelimit import OPENALEX_BUDGET
-from app.services.publication_rank import query_publication_rank as lookup_rank
+from app.services.publication_rank import (
+    VenueLookupInput,
+    VenueProfile,
+    query_publication_rank as lookup_rank,
+    resolve_venue_profiles_batch,
+)
 from app.services.search_settings import backend_search_settings
 
 logger = logging.getLogger("scholar.agents.tools.discovery")
@@ -220,14 +225,43 @@ def _citation_line(counts: dict[str, int], *, as_of: str) -> str:
     return f"cited by {', '.join(parts)} as of {as_of}" if parts else ""
 
 
+def _paper_lookup_input(paper: Paper) -> VenueLookupInput:
+    return VenueLookupInput(
+        venue=paper.venue or "",
+        venue_aliases=list(paper.venue_aliases or []),
+        issns=list(getattr(paper, "issns", None) or []),
+        dblp_key=paper.dblp_key or "",
+        openalex_source_id=getattr(paper, "openalex_source_id", "") or "",
+        crossref_event=getattr(paper, "crossref_event", "") or "",
+        openreview_status=paper.acceptance or "",
+        venue_type_hint=paper.venue_type or "",
+        is_preprint_source=bool(paper.arxiv_id and (not paper.venue or paper.venue.lower() in {"arxiv", "corr"})),
+    )
+
+
+def _meta_lookup_input(meta: PaperMetadata, item: dict[str, Any] | None = None) -> VenueLookupInput:
+    venue = meta.venue or ((item or {}).get("venue") or "")
+    arxiv_id = meta.arxiv_id or ((item or {}).get("arxiv_id") or "")
+    return VenueLookupInput(
+        venue=venue,
+        is_preprint_source=bool(arxiv_id and (not venue or venue.lower() in {"arxiv", "corr"})),
+    )
+
+
 async def _record_bibliographic_facts(
-    literature_id: str, paper: Paper, ctx: AgentContext, *, as_of: str
+    literature_id: str,
+    paper: Paper,
+    ctx: AgentContext,
+    *,
+    as_of: str,
+    venue_profile: VenueProfile | None = None,
 ) -> str:
     """Metadata evidence for what a search says *about* a paper.
 
-    Citation counts and an OpenReview decision are claims about the paper, not
-    from it; citing them against the abstract evidence would attribute them to
-    the authors. Returns "" when there is nothing beyond the abstract.
+    Citation counts, verified venue tiers and an OpenReview decision are claims
+    about the paper, not from it; citing them against the abstract evidence
+    would attribute them to the authors. Returns "" when there is nothing beyond
+    the abstract.
     """
     facts: list[str] = []
     line = _citation_line(paper.citation_counts, as_of=as_of)
@@ -237,6 +271,8 @@ async def _record_bibliographic_facts(
         facts.append(f"{paper.influential_citation_count} influential citations (Semantic Scholar)")
     if paper.acceptance:
         facts.append(f"OpenReview: {paper.acceptance}")
+    if venue_profile is not None:
+        facts.extend(venue_profile.verified_fact_clauses())
     if paper.is_retracted:
         facts.append("marked as retracted (OpenAlex)")
     if not facts:
@@ -252,17 +288,21 @@ async def _record_bibliographic_facts(
     return evidence.evidence_id
 
 
-def _search_extras(paper: Paper) -> dict[str, Any]:
+def _search_extras(paper: Paper, venue_profile: VenueProfile | None = None) -> dict[str, Any]:
     """Fields a search adds beyond the catalog record, kept compact."""
     extras: dict[str, Any] = {
         "citation_count": paper.citation_count,
         "citation_counts": dict(paper.citation_counts),
         "publication_date": paper.publication_date or None,
-        "venue_type": paper.venue_type or None,
+        "venue_type": (venue_profile.venue_type if venue_profile and venue_profile.venue_type else paper.venue_type) or None,
         "is_open_access": paper.is_open_access,
         "full_text_route": bool(paper.arxiv_id or paper.oa_pdf_url or paper.openreview_id),
         "sources": list(paper.sources or [paper.source_platform]),
     }
+    if venue_profile is not None:
+        summary = venue_profile.agent_summary()
+        if summary:
+            extras["venue_rank"] = summary
     if paper.influential_citation_count is not None:
         extras["influential_citation_count"] = paper.influential_citation_count
     if paper.tldr:
@@ -455,6 +495,9 @@ async def search_papers(
     excluded = dict(outcome.excluded)
     filtered_out = excluded.pop("year", 0)
 
+    selected_items: list[tuple[Paper, bool]] = []
+    matched_count = 0
+    undated_count = 0
     for paper in outcome.papers:
         if not paper.title.strip():
             continue
@@ -465,11 +508,25 @@ async def search_papers(
             filtered_out += 1
             continue
         undated_bucket = not known and bool(year_from or year_to)
-        if undated_bucket and len(unknown_year) >= 3:
+        if undated_bucket and undated_count >= 3:
             continue
-        if not undated_bucket and len(matched) >= limit:
+        if not undated_bucket and matched_count >= limit:
             continue
+        selected_items.append((paper, undated_bucket))
+        if undated_bucket:
+            undated_count += 1
+        else:
+            matched_count += 1
 
+    venue_profiles = await resolve_venue_profiles_batch(
+        [_paper_lookup_input(p) for p, _ in selected_items],
+        allow_network=False,
+    )
+
+    for (paper, undated_bucket), vprof in zip(selected_items, venue_profiles):
+        # Promote formally accepted conference/journal venue when primary record was a preprint/LNCS shell
+        if vprof.has_any_rank and vprof.display_venue and (not paper.venue or paper.venue.lower() in {"arxiv", "corr"}):
+            paper.venue = vprof.display_venue
         literature_id = await _register_candidate(paper, source="search")
         payload, evidence_id = await _candidate_payload(
             literature_id,
@@ -477,9 +534,13 @@ async def search_papers(
             provider=paper.source_platform or "search",
             source_url=paper.url,
         )
-        payload.update(_search_extras(paper))
+        if vprof.has_any_rank and vprof.display_venue and (not payload["venue"] or payload["venue"].lower() in {"arxiv", "corr"}):
+            payload["venue"] = vprof.display_venue
+        payload.update(_search_extras(paper, vprof))
         evidence_ids.append(evidence_id)
-        facts_id = await _record_bibliographic_facts(literature_id, paper, ctx, as_of=as_of)
+        facts_id = await _record_bibliographic_facts(
+            literature_id, paper, ctx, as_of=as_of, venue_profile=vprof
+        )
         if facts_id:
             payload["metadata_evidence_id"] = facts_id
             evidence_ids.append(facts_id)
@@ -665,6 +726,21 @@ async def resolve_paper(
     payload, evidence_id = await _candidate_payload(
         literature_id, ctx, provider=provider
     )
+    evidence_ids = [evidence_id]
+    vprof = (await resolve_venue_profiles_batch([_meta_lookup_input(meta, payload)], allow_network=False))[0]
+    if vprof.agent_summary():
+        payload["venue_rank"] = vprof.agent_summary()
+    vclauses = vprof.verified_fact_clauses()
+    if vclauses:
+        vev = await evidence_service.record_metadata_evidence(
+            literature_id=literature_id,
+            quote=f"{payload['title'] or literature_id} — " + "; ".join(vclauses),
+            owner_id=ctx.owner_id,
+            session_id=ctx.session_id,
+            provider=vprof.source or provider,
+        )
+        payload["metadata_evidence_id"] = vev.evidence_id
+        evidence_ids.append(vev.evidence_id)
     payload["cited_by_count"] = meta.cited_by_count
     payload["citation_source"] = meta.citation_source or provider
     payload["provider"] = provider
@@ -681,9 +757,9 @@ async def resolve_paper(
     if gaps:
         return ToolResult.partial(
             payload, note=f"Incomplete record: {'; '.join(gaps)}.",
-            evidence_ids=[evidence_id],
+            evidence_ids=evidence_ids,
         ).to_json()
-    return ToolResult.ok(payload, evidence_ids=[evidence_id]).to_json()
+    return ToolResult.ok(payload, evidence_ids=evidence_ids).to_json()
 
 
 @tool(parse_docstring=False)
@@ -778,16 +854,31 @@ async def get_related_papers(
             data={"literature_id": literature_id, "relation": relation, "papers": []},
         ).to_json()
 
+    kept_neighbours = [m for m in neighbours[:limit] if (m.title or "").strip()]
+    neighbour_profiles = await resolve_venue_profiles_batch(
+        [_meta_lookup_input(m) for m in kept_neighbours], allow_network=False
+    )
     papers: list[dict[str, Any]] = []
     evidence_ids: list[str] = []
-    for meta in neighbours[:limit]:
-        if not (meta.title or "").strip():
-            continue
+    for meta, vprof in zip(kept_neighbours, neighbour_profiles):
         neighbour_id = await _register_candidate(meta, source=provider)
         payload, evidence_id = await _candidate_payload(
             neighbour_id, ctx, provider=provider
         )
         payload["cited_by_count"] = meta.cited_by_count
+        if vprof.agent_summary():
+            payload["venue_rank"] = vprof.agent_summary()
+        vclauses = vprof.verified_fact_clauses()
+        if vclauses:
+            vev = await evidence_service.record_metadata_evidence(
+                literature_id=neighbour_id,
+                quote=f"{payload['title'] or neighbour_id} — " + "; ".join(vclauses),
+                owner_id=ctx.owner_id,
+                session_id=ctx.session_id,
+                provider=vprof.source or provider,
+            )
+            payload["metadata_evidence_id"] = vev.evidence_id
+            evidence_ids.append(vev.evidence_id)
         papers.append(payload)
         evidence_ids.append(evidence_id)
 
@@ -810,15 +901,32 @@ _CAS_KEYS = ("sciUpSmall", "sciUp", "sciBase")
 def _ranking_entries(result: Any) -> list[dict[str, Any]]:
     """Split one lookup into the separate systems it actually spans.
 
-    JCR quartiles, CAS divisions and CCF tiers are different classifications
-    with different editions and different meanings. Reporting them as one
-    "rank" field is the mistake this exists to prevent.
+    JCR quartiles, CAS divisions, CCF tiers, CORE conference ranks, TH-CPL,
+    CAAI and CCF-CN high-quality journal tiers are distinct classifications
+    with their own editions and meanings — never collapse them into one "rank".
     """
     extra = getattr(result, "extra", None) or {}
-    entries: list[dict[str, Any]] = []
+    if isinstance(extra.get("_rankings"), list) and extra["_rankings"]:
+        entries: list[dict[str, Any]] = []
+        for raw in extra["_rankings"]:
+            if not isinstance(raw, dict):
+                continue
+            item: dict[str, Any] = {
+                "ranking_system": raw.get("ranking_system", ""),
+                "rank": raw.get("rank", ""),
+                "category": raw.get("category") or "all",
+                "edition_year": raw.get("edition_year") or "",
+            }
+            if raw.get("ranking_system") == "CAS":
+                item["top"] = bool(raw.get("top"))
+            if raw.get("impact_factor"):
+                item["impact_factor"] = raw["impact_factor"]
+            entries.append(item)
+        return entries
 
+    entries = []
     if result.sci:
-        entry = {
+        entry: dict[str, Any] = {
             "ranking_system": "JCR",
             "rank": result.sci,
             "category": "all",
@@ -841,6 +949,16 @@ def _ranking_entries(result: Any) -> list[dict[str, Any]]:
                 }
             )
             break
+    if extra.get("cas") and not any(e["ranking_system"] == "CAS" for e in entries):
+        entries.append(
+            {
+                "ranking_system": "CAS",
+                "rank": str(extra["cas"]),
+                "category": "broad",
+                "edition_year": "",
+                "top": bool(extra.get("sciUpTop")),
+            }
+        )
 
     if result.ccf:
         entries.append(
@@ -851,80 +969,194 @@ def _ranking_entries(result: Any) -> list[dict[str, Any]]:
                 "edition_year": "",
             }
         )
+    for sys_key, label in (("core", "CORE"), ("th_cpl", "TH_CPL"), ("caai", "CAAI"), ("ccf_cn", "CCF_CN")):
+        if extra.get(sys_key):
+            entries.append(
+                {
+                    "ranking_system": label,
+                    "rank": str(extra[sys_key]),
+                    "category": "all",
+                    "edition_year": "",
+                }
+            )
     return entries
 
 
-@tool(parse_docstring=False)
-async def query_publication_rank(venue: str, runtime: ToolRuntime[AgentContext]) -> str:
-    """Look up a journal's or conference's rank.
+def _shape_single_rank_data(query_venue: str, result: Any, retrieved_at: str) -> tuple[dict[str, Any], str, list[dict[str, Any]]]:
+    source = getattr(result, "source", "") or "unknown"
+    verification_status = "verified" if source in {"easyscholar", "local_catalog"} else "unverified"
+    extra = getattr(result, "extra", None) or {}
+    entries = _ranking_entries(result) if getattr(result, "success", False) else []
+    data: dict[str, Any] = {
+        "venue": getattr(result, "name", "") or query_venue,
+        "rankings": entries,
+        "source": source,
+        "verification_status": verification_status if getattr(result, "success", False) else "unknown",
+        "retrieved_at": retrieved_at,
+    }
+    if extra.get("subtrack") and extra["subtrack"] != "main":
+        data["subtrack"] = extra["subtrack"]
+    if extra.get("cas_warning"):
+        data["cas_warning"] = extra["cas_warning"]
+    if extra.get("note"):
+        data["note"] = extra["note"]
+    if isinstance(extra.get("metrics"), dict) and extra["metrics"]:
+        data["metrics"] = extra["metrics"]
+    return data, verification_status, entries
 
-    Returns each ranking system separately — JCR quartile, 中科院 (CAS) division,
-    CCF tier — with the source it came from and whether that source is a ranking
-    database or a web search. Never merge these into a single "rank"; a CCF A
-    conference and a JCR Q1 journal are different claims.
+
+def _rank_evidence_quote(venue_name: str, data: dict[str, Any], entries: list[dict[str, Any]]) -> str:
+    parts = [
+        f"{e['ranking_system']} {e['rank']}" + (f" ({e['edition_year']})" if e.get("edition_year") else "")
+        for e in entries
+    ]
+    if data.get("cas_warning"):
+        parts.append(f"CAS International Journal Early Warning: {data['cas_warning']}")
+    if data.get("note"):
+        parts.append(str(data["note"]))
+    if data.get("subtrack") == "findings" and not parts:
+        parts.append("peer-reviewed Findings track (distinct from main conference)")
+    body = "; ".join(parts)
+    return f"{venue_name} — {body}" if venue_name else body
+
+
+@tool(parse_docstring=False)
+async def query_publication_rank(
+    runtime: ToolRuntime[AgentContext],
+    venue: str = "",
+    venues: list[str] | None = None,
+    issn: str = "",
+) -> str:
+    """Look up one or several journals' or conferences' ranks (up to 20 at once).
+
+    Returns each ranking system separately — CCF tier, CORE conference rank,
+    Tsinghua TH-CPL, CAAI, CCF high-quality journal tier (T1–T3), JCR quartile
+    (with impact factor), 中科院 (CAS) division, and CAS early-warning red flags —
+    with the edition year, source, and whether it came from an authoritative
+    ranking catalog/database (`verified`) or a web search (`unverified`).
+    Pass `venue` (and optional `issn`) for one outlet, or `venues` to check
+    several in one step. Never merge different systems into a single "rank".
     """
     ctx = runtime.context
-    venue = (venue or "").strip()
-    if not venue:
+    single = (venue or "").strip()
+    batch_list = list(dict.fromkeys(_clean_list(venues)))
+    if single and single not in batch_list:
+        batch_list.insert(0, single)
+    if not batch_list:
         return ToolResult.failed(
-            ErrorCode.INVALID_ARGUMENT, "venue must not be empty.", retryable=False
+            ErrorCode.INVALID_ARGUMENT, "Pass venue or venues.", retryable=False
+        ).to_json()
+    if len(batch_list) > 20:
+        return ToolResult.failed(
+            ErrorCode.INVALID_ARGUMENT, "At most 20 venues per call.", retryable=False
         ).to_json()
 
+    retrieved_at = datetime.now(timezone.utc).isoformat()
+
+    # Single-venue shape preserved for callers and existing contracts.
+    if len(batch_list) == 1 and not venues:
+        target_venue = batch_list[0]
+        try:
+            if issn.strip():
+                result = await lookup_rank(target_venue, issns=[issn.strip()])
+            else:
+                result = await lookup_rank(target_venue)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("query_publication_rank failed for %r: %s", target_venue, exc)
+            return ToolResult.failed(
+                ErrorCode.UPSTREAM_ERROR, f"Rank lookup failed: {exc}"[:300]
+            ).to_json()
+
+        if not result.success:
+            return ToolResult.unavailable(
+                ErrorCode.METADATA_INCOMPLETE,
+                f"No ranking found for {target_venue!r}: {result.error or 'not indexed'}",
+                data={"venue": target_venue, "rankings": [], "verification_status": "unknown"},
+            ).to_json()
+
+        data, verification_status, entries = _shape_single_rank_data(target_venue, result, retrieved_at)
+        has_signal = bool(entries or data.get("cas_warning") or data.get("note") or data.get("metrics"))
+        if not has_signal:
+            return ToolResult.unavailable(
+                ErrorCode.METADATA_INCOMPLETE,
+                f"{target_venue!r} is not listed in CCF, CORE, JCR or the CAS divisions.",
+                data=data,
+            ).to_json()
+
+        quote = _rank_evidence_quote(data["venue"] if (data.get("cas_warning") or data.get("note")) else "", data, entries)
+        evidence = await evidence_service.record_metadata_evidence(
+            literature_id="",
+            quote=quote,
+            owner_id=ctx.owner_id,
+            session_id=ctx.session_id,
+            provider=data["source"],
+        )
+        if verification_status == "unverified":
+            return ToolResult.partial(
+                data,
+                note="This ranking came from a web search, not a ranking database. State that it is unverified.",
+                evidence_ids=[evidence.evidence_id],
+            ).to_json()
+        return ToolResult.ok(data, evidence_ids=[evidence.evidence_id]).to_json()
+
+    # Batch mode: resolve multiple venues concurrently
+    import asyncio
+
+    async def _one(v: str) -> tuple[str, Any]:
+        return v, await lookup_rank(v)
+
     try:
-        result = await lookup_rank(venue)
+        pairs = await asyncio.gather(*[_one(v) for v in batch_list])
     except Exception as exc:  # noqa: BLE001
-        logger.warning("query_publication_rank failed for %r: %s", venue, exc)
+        logger.warning("query_publication_rank batch failed: %s", exc)
         return ToolResult.failed(
             ErrorCode.UPSTREAM_ERROR, f"Rank lookup failed: {exc}"[:300]
         ).to_json()
 
-    source = getattr(result, "source", "") or "unknown"
-    # A ranking database is authoritative; an LLM reading web-search results is
-    # a lead, and the answer must say which one it had.
-    verification_status = "verified" if source == "easyscholar" else "unverified"
+    items_out: list[dict[str, Any]] = []
+    evidence_ids: list[str] = []
+    has_unverified = False
+    has_missing = False
+    for qv, res in pairs:
+        if not res.success:
+            has_missing = True
+            items_out.append({"query": qv, "venue": qv, "rankings": [], "verification_status": "unknown", "error": res.error})
+            continue
+        item_data, ver, entries = _shape_single_rank_data(qv, res, retrieved_at)
+        item_data["query"] = qv
+        if not (entries or item_data.get("cas_warning") or item_data.get("note") or item_data.get("metrics")):
+            has_missing = True
+            item_data["verification_status"] = "unknown"
+            items_out.append(item_data)
+            continue
+        if ver == "unverified":
+            has_unverified = True
+        ev = await evidence_service.record_metadata_evidence(
+            literature_id="",
+            quote=_rank_evidence_quote(item_data["venue"], item_data, entries),
+            owner_id=ctx.owner_id,
+            session_id=ctx.session_id,
+            provider=item_data["source"],
+        )
+        item_data["evidence_id"] = ev.evidence_id
+        evidence_ids.append(ev.evidence_id)
+        items_out.append(item_data)
 
-    if not result.success:
+    batch_payload = {"venues": items_out, "retrieved_at": retrieved_at}
+    if not evidence_ids:
         return ToolResult.unavailable(
             ErrorCode.METADATA_INCOMPLETE,
-            f"No ranking found for {venue!r}: {result.error or 'not indexed'}",
-            data={"venue": venue, "rankings": [], "verification_status": "unknown"},
+            "None of the requested venues had a recorded ranking.",
+            data=batch_payload,
         ).to_json()
-
-    entries = _ranking_entries(result)
-    retrieved_at = datetime.now(timezone.utc).isoformat()
-    data = {
-        "venue": result.name or venue,
-        "rankings": entries,
-        "source": source,
-        "verification_status": verification_status,
-        "retrieved_at": retrieved_at,
-    }
-
-    if not entries:
-        return ToolResult.unavailable(
-            ErrorCode.METADATA_INCOMPLETE,
-            f"{venue!r} is not listed in JCR, the CAS divisions or CCF.",
-            data=data,
-        ).to_json()
-
-    evidence = await evidence_service.record_metadata_evidence(
-        literature_id="",
-        quote="; ".join(
-            f"{e['ranking_system']} {e['rank']}" for e in entries
-        ),
-        owner_id=ctx.owner_id,
-        session_id=ctx.session_id,
-        provider=source,
-    )
-
-    if verification_status == "unverified":
-        return ToolResult.partial(
-            data,
-            note="This ranking came from a web search, not a ranking database. "
-            "State that it is unverified.",
-            evidence_ids=[evidence.evidence_id],
-        ).to_json()
-    return ToolResult.ok(data, evidence_ids=[evidence.evidence_id]).to_json()
+    notes: list[str] = []
+    if has_unverified:
+        notes.append("Entries marked verification_status='unverified' came from web search; state that they are unverified.")
+    if has_missing:
+        notes.append("Some venues were not listed in any ranking directory.")
+    if notes:
+        return ToolResult.partial(batch_payload, note=" ".join(notes), evidence_ids=evidence_ids).to_json()
+    return ToolResult.ok(batch_payload, evidence_ids=evidence_ids).to_json()
 
 
 # ── Bibliographic facts in bulk ─────────────────────────────────────────────
@@ -1114,10 +1346,19 @@ async def get_paper_metadata(
         item = await paper_catalog.get_literature_item(literature_id) or {}
 
         is_retracted = oa.is_retracted if oa is not None else None
+        v_lookup = (
+            _paper_lookup_input(paper)
+            if paper is not None
+            else _meta_lookup_input(oa, item) if oa is not None else VenueLookupInput(venue=item.get("venue") or "")
+        )
+        if not v_lookup.venue and item.get("venue"):
+            v_lookup.venue = item["venue"]
+        vprof = (await resolve_venue_profiles_batch([v_lookup], allow_network=False))[0]
         facts = [
             _citation_line({("SemanticScholar" if k == "semanticscholar" else "OpenAlex"): v for k, v in citations.items()}, as_of=as_of),
             f"published {paper.publication_date or paper.year}" if paper and (paper.publication_date or paper.year) else "",
             f"venue {item.get('venue')}" if item.get("venue") else "",
+            *vprof.verified_fact_clauses(),
             "retracted (OpenAlex)" if is_retracted else "",
         ]
         evidence = await evidence_service.record_metadata_evidence(
@@ -1129,34 +1370,35 @@ async def get_paper_metadata(
             provider="semanticscholar+openalex" if (paper and oa) else ("semanticscholar" if paper else "openalex"),
         )
         evidence_ids.append(evidence.evidence_id)
-        results.append(
-            {
-                "literature_id": literature_id,
-                "title": item.get("title") or "",
-                "year": item.get("year") if item.get("year_known") else None,
-                "publication_date": (paper.publication_date if paper else "") or (oa.publication_date if oa else "") or None,
-                "venue": item.get("venue") or "",
-                "venue_type": (paper.venue_type if paper else "") or None,
-                "venue_aliases": (paper.venue_aliases[:5] if paper else []),
-                "citations": citations,
-                "influential_citation_count": paper.influential_citation_count if paper else None,
-                "reference_count": record.get("referenceCount"),
-                "is_open_access": paper.is_open_access if paper else None,
-                "oa_pdf_url": item.get("oa_pdf_url") or "",
-                "is_retracted": is_retracted,
-                "fields_of_study": paper.fields_of_study if paper else [],
-                "publication_types": paper.publication_types if paper else [],
-                "tldr": paper.tldr if paper else "",
-                "ids": {
-                    "doi": item.get("doi") or "",
-                    "arxiv_id": item.get("arxiv_id") or "",
-                    "s2_paper_id": item.get("s2_paper_id") or "",
-                    "openalex_id": item.get("openalex_id") or "",
-                    "dblp_key": paper.dblp_key if paper else "",
-                },
-                "evidence_id": evidence.evidence_id,
-            }
-        )
+        entry_payload: dict[str, Any] = {
+            "literature_id": literature_id,
+            "title": item.get("title") or "",
+            "year": item.get("year") if item.get("year_known") else None,
+            "publication_date": (paper.publication_date if paper else "") or (oa.publication_date if oa else "") or None,
+            "venue": item.get("venue") or "",
+            "venue_type": (vprof.venue_type or (paper.venue_type if paper else "")) or None,
+            "venue_aliases": (paper.venue_aliases[:5] if paper else []),
+            "citations": citations,
+            "influential_citation_count": paper.influential_citation_count if paper else None,
+            "reference_count": record.get("referenceCount"),
+            "is_open_access": paper.is_open_access if paper else None,
+            "oa_pdf_url": item.get("oa_pdf_url") or "",
+            "is_retracted": is_retracted,
+            "fields_of_study": paper.fields_of_study if paper else [],
+            "publication_types": paper.publication_types if paper else [],
+            "tldr": paper.tldr if paper else "",
+            "ids": {
+                "doi": item.get("doi") or "",
+                "arxiv_id": item.get("arxiv_id") or "",
+                "s2_paper_id": item.get("s2_paper_id") or "",
+                "openalex_id": item.get("openalex_id") or "",
+                "dblp_key": paper.dblp_key if paper else "",
+            },
+            "evidence_id": evidence.evidence_id,
+        }
+        if vprof.agent_summary():
+            entry_payload["venue_rank"] = vprof.agent_summary()
+        results.append(entry_payload)
 
     data = {"papers": results, "not_found": not_found, "retrieved_at": as_of}
     notes = [n for n in (openalex_note, s2_error and f"{s2_error}; only OpenAlex was consulted.") if n]
@@ -1269,6 +1511,12 @@ async def search_paper_snippets(
     except Exception as exc:  # noqa: BLE001 — fall back to the snippet's own title
         logger.info("snippet identity batch failed: %s", exc)
 
+    identity_cids = list(identities.keys())
+    identity_profiles = await resolve_venue_profiles_batch(
+        [_paper_lookup_input(identities[c]) for c in identity_cids], allow_network=False
+    ) if identity_cids else []
+    vprof_by_cid = dict(zip(identity_cids, identity_profiles))
+
     snippets: list[dict[str, Any]] = []
     evidence_ids: list[str] = []
     lit_by_corpus: dict[str, str] = {}
@@ -1277,6 +1525,7 @@ async def search_paper_snippets(
         snippet = hit.get("snippet") or {}
         cid = str(paper_info.get("corpusId") or "")
         identity = identities.get(cid)
+        vprof = vprof_by_cid.get(cid)
         if cid not in lit_by_corpus:
             if identity is not None:
                 lit_by_corpus[cid] = await _register_candidate(identity, source="semanticscholar")
@@ -1301,21 +1550,22 @@ async def search_paper_snippets(
             section_path=section,
         )
         evidence_ids.append(evidence.evidence_id)
-        snippets.append(
-            {
-                "literature_id": literature_id,
-                "title": (identity.title if identity else "") or paper_info.get("title") or "",
-                "year": (identity.year if identity and identity.year else None),
-                "venue": identity.venue if identity else "",
-                "arxiv_id": identity.arxiv_id if identity else "",
-                "section": section,
-                "kind": snippet.get("snippetKind") or "",
-                "text": text[:SNIPPET_EXCERPT_CHARS],
-                "score": round(float(hit.get("score") or 0.0), 3),
-                "evidence_id": evidence.evidence_id,
-                "evidence_level": evidence.source_level.value,
-            }
-        )
+        snip_entry: dict[str, Any] = {
+            "literature_id": literature_id,
+            "title": (identity.title if identity else "") or paper_info.get("title") or "",
+            "year": (identity.year if identity and identity.year else None),
+            "venue": identity.venue if identity else "",
+            "arxiv_id": identity.arxiv_id if identity else "",
+            "section": section,
+            "kind": snippet.get("snippetKind") or "",
+            "text": text[:SNIPPET_EXCERPT_CHARS],
+            "score": round(float(hit.get("score") or 0.0), 3),
+            "evidence_id": evidence.evidence_id,
+            "evidence_level": evidence.source_level.value,
+        }
+        if vprof is not None and vprof.agent_summary():
+            snip_entry["venue_rank"] = vprof.agent_summary()
+        snippets.append(snip_entry)
 
     return ToolResult.ok(
         {"query": query, "scoped_to": list(scope.values()) or None, "snippets": snippets},

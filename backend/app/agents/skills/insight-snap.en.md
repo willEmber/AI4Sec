@@ -34,7 +34,7 @@ One short paragraph: which readers, for what purpose.
 Two to four bullets: assumptions, missing comparisons, threats to the conclusions — from the paper, and the blind review's red flags (attributed).
 
 ## External signals & blind review
-- The signals as facts, each cited with its evidence number: venue and tier, citations (name the index — counts differ between indexes), open access, retraction, code. Say what is unknown rather than guessing.
+- The signals as facts, each cited with its evidence number: venue and its separate system tiers (CCF / CORE / JCR / CAS — distinguish main track, `Findings`, `Workshop` and preprints), citations (name the index — counts differ between indexes), open access, retraction or CAS early-warning red flags, code. Say what is unknown rather than guessing.
 - The blind review's scores in one line (contribution / evidence / novelty / reproducibility out of 3, limitation severity) and its main reasons, attributed to the review.
 
 ## Reading advice

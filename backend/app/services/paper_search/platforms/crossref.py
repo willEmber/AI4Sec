@@ -90,11 +90,16 @@ async def search_crossref(
                 except (IndexError, ValueError, TypeError):
                     continue
 
-        # venue: container-title (journal/conference name)
+        # venue: container-title (journal/conference name), HTML-unescaped
+        from app.services.publication_rank.normalizer import clean_venue_text, extract_issns
+
         venue = ""
         container = item.get("container-title") or []
         if container and isinstance(container, list):
-            venue = normalize_whitespace(container[0] or "")
+            venue = clean_venue_text(container[0] or "")
+        event_obj = item.get("event") or {}
+        crossref_event = clean_venue_text(event_obj.get("acronym") or event_obj.get("name") or "") if isinstance(event_obj, dict) else ""
+        issns = extract_issns(item.get("ISSN") if isinstance(item.get("ISSN"), (list, str)) else None)
 
         citation_counts: dict[str, int] = {}
         if isinstance(item.get("is-referenced-by-count"), int):
@@ -113,6 +118,8 @@ async def search_crossref(
                 venue=venue,
                 publication_date=publication_date if len(publication_date) >= 7 else "",
                 venue_type=venue_type,
+                issns=issns,
+                crossref_event=crossref_event,
                 citation_counts=citation_counts,
             )
         )
