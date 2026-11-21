@@ -36,7 +36,6 @@ from langchain.tools import ToolRuntime, tool
 
 from app.agents.context import AgentContext
 from app.agents.tools.triage import _paper
-from app.config import get_settings
 from app.db import agent_repository as repo
 from app.models.agent_models import ErrorCode, EventType, ToolResult
 from app.models.sphere_models import SphereNode, SphereState
@@ -214,17 +213,11 @@ async def build_literature_map(runtime: ToolRuntime[AgentContext], paper_id: str
         from app.workflows.sphere_subgraph import build_literature_map as build
         from app.workflows.sphere_subgraph import trim_to_map
 
-        pdf_path = get_settings().data_dir / "papers" / paper_id / "original.pdf"
         state: dict[str, Any] = {
             "paper_id": paper_id,
-            "run_id": progress_id,
-            "mode": "sphere",
             "llm_model": ctx.llm_model,
             "language": language,
-            "user_question": "",
-            "pdf_path": str(pdf_path),
             "paper_ir_json": paper_ir.model_dump_json(),
-            "progress": [],
             "persist_sphere": in_report,
         }
         sphere = await build(state, progress_id)

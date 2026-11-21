@@ -10,7 +10,6 @@ from typing import Any
 from unittest.mock import patch
 
 from app.agents.context import AgentContext, BudgetUsage, RunBudget
-from app.models.paper_ir import Block, PaperIR
 from app.services import llm_service, llm_usage
 from app.services.llm_service import LLMEmptyResponseError, LLMService
 
@@ -129,98 +128,6 @@ class HardCeilingTests(unittest.TestCase):
     def test_usage_without_any_report_has_no_hard_stop(self) -> None:
         usage = BudgetUsage()
         self.assertEqual(usage.hard_exceeded(RunBudget(max_tokens=10)), "")
-
-
-def _paper() -> PaperIR:
-    def block(order: int, text: str, section: str, page: int = 1, kind: str = "text") -> Block:
-        return Block(type=kind, page_idx=page, order_idx=order, text=text, section_path=section)
-
-    return PaperIR(
-        paper_id="p" * 40,
-        title="Watermarks",
-        blocks=[
-            block(0, "Abstract. We embed a watermark with a super-resolution model.", "Abstract", 0),
-            block(1, "3 Method", "3 Method", 2, "title"),
-            block(2, "The encoder adds the message to the initial noise.", "3 Method", 2),
-            block(3, "5 Ablation", "5 Ablation", 7, "title"),
-            block(4, "Fewer inversion steps lower bit accuracy under JPEG.", "5 Ablation", 7),
-            block(5, "Table 6 lists accuracy for 1 to 50 inversion steps.", "5 Ablation", 7),
-            block(6, "6 Conclusion", "6 Conclusion", 8, "title"),
-        ],
-    )
-
-
-class FocusPassageTests(unittest.TestCase):
-    def test_only_passages_the_focus_matches_are_returned(self) -> None:
-        from app.services.qa_retrieval import focus_passages
-
-        text = focus_passages(_paper(), "effect of inversion steps", 2000)
-        self.assertIn("Fewer inversion steps", text)
-        self.assertIn("Table 6", text)
-        self.assertNotIn("initial noise", text, "no opening anchors and no fallback")
-        self.assertLess(text.index("Fewer inversion"), text.index("Table 6"), "reading order")
-
-    def test_a_focus_that_matches_nothing_adds_nothing(self) -> None:
-        from app.services.qa_retrieval import focus_passages
-
-        self.assertEqual(focus_passages(_paper(), "quantum annealing", 2000), "")
-        self.assertEqual(focus_passages(_paper(), "", 2000), "")
-
-
-class LensFocusTests(unittest.IsolatedAsyncioTestCase):
-    async def _run(self, focus: str, language: str = "en") -> list[dict[str, str]]:
-        from app.models.lens_models import LensDigest
-        from app.workflows import lens_subgraph
-
-        sent: list[list[dict[str, str]]] = []
-
-        async def fake_complete(_llm: Any, messages: list[dict[str, str]], **_k: Any) -> str:
-            sent.append(messages)
-            return "## 1. Overview\n\nA report [p.1]."
-
-        async def digest(*_a: Any, **_k: Any) -> LensDigest:
-            return LensDigest()
-
-        async def pool(*_a: Any, **_k: Any) -> list[Any]:
-            return []
-
-        class _Registry:
-            utility_model = "utility"
-
-        state = {
-            "paper_id": "p" * 40,
-            "paper_ir_json": _paper().model_dump_json(),
-            "language": language,
-            "user_question": focus,
-            "progress": [],
-        }
-        with patch.object(lens_subgraph, "chat_complete", fake_complete), \
-             patch.object(lens_subgraph, "generate_lens_digest", digest), \
-             patch.object(lens_subgraph, "extract_evidence_pool", pool), \
-             patch.object(lens_subgraph, "get_registry", lambda: _Registry()):
-            await lens_subgraph.run_logic_lens(state)
-        self.assertEqual(len(sent), 1)
-        return sent[0]
-
-    async def test_the_focus_reaches_the_report_with_the_passages_it_matches(self) -> None:
-        messages = await self._run("effect of inversion steps")
-        prompt = messages[1]["content"]
-        self.assertIn('particularly interested in: "effect of inversion steps"', prompt)
-        self.assertIn("## Passages on the Reader's Focus", prompt)
-        section = prompt.split("## Passages on the Reader's Focus", 1)[1]
-        self.assertIn("Table 6 lists accuracy", section)
-
-    async def test_a_focus_in_another_language_still_reaches_the_report(self) -> None:
-        # Lexical matching finds nothing for Chinese against English text; the
-        # concern is still stated, and no empty passage block is added.
-        prompt = (await self._run("反演步数的影响", language="zh"))[1]["content"]
-        self.assertIn("读者特别关注:「反演步数的影响」", prompt)
-        self.assertNotIn("Passages on the Reader's Focus", prompt)
-
-    async def test_without_a_focus_the_report_is_as_before(self) -> None:
-        prompt = (await self._run(""))[1]["content"]
-        self.assertNotIn("particularly interested", prompt)
-        self.assertNotIn("Passages on the Reader's Focus", prompt)
 
 
 if __name__ == "__main__":

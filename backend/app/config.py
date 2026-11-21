@@ -237,7 +237,6 @@ class AppSettings(BaseSettings):
     sphere_gate_cap: int = Field(default=120, alias="SPHERE_GATE_CAP")
     # Final core-set size (papers used for all synthesis/reporting)
     sphere_core_cap: int = Field(default=40, alias="SPHERE_CORE_CAP")
-    sphere_pdf_parse_cap: int = Field(default=0, alias="SPHERE_PDF_PARSE_CAP")
     # Keyword-search-only candidates need at least this many citations or a
     # ranked venue to survive (they lack citation-graph evidence)
     sphere_t3_min_citations: int = Field(default=5, alias="SPHERE_T3_MIN_CITATIONS")

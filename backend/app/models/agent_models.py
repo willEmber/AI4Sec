@@ -402,9 +402,9 @@ class PostMessageRequest(BaseModel):
     # instead of starting a second one (acceptance case A12).
     client_request_id: str = ""
     paper_ids: list[str] = Field(default_factory=list, max_length=MAX_PAPER_IDS)
-    # Which mode the reader picked in the composer. Anything but `auto` makes
-    # the turn call the matching mode tool; the agent still does it through a
-    # tool call so the event stream has one shape.
+    # Which mode the reader picked in the composer. Anything but `auto` opens
+    # that report before the first model call, announced as a `begin_report`
+    # call so the event stream has one shape.
     mode: AgentMode = "auto"
     owner_token: str = ""
 

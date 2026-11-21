@@ -4,7 +4,7 @@ A report mode's page shows cards beside the prose: Lens its digest and
 framework figures, Snap its scorecard, Sphere its map. When the report was the
 answer of a turn, those are built here at snapshot time, from the finished
 text and the paper's parse, into the same `json_data` fields the report tools
-wrote, so the report page and its views read both kinds alike.
+of before P16 wrote, so the report page and its views read both kinds alike.
 
 Each builder is best-effort: the snapshot keeps the report without its
 structured view when one raises. Model calls made here are utility calls

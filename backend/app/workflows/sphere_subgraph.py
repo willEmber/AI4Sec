@@ -10,15 +10,19 @@ Redesigned around three principles (inspired by Connected Papers / Elicit):
    (foundation / competitor / follow-up / …); "unrelated" is discarded.
 3. **Quota-based core set** — the final ~40-paper core set is assembled per
    relation partition (foundations, method neighbors & competitors,
-   follow-ups, recent frontier, user library), then all synthesis (themes,
-   comparison, gaps, reading paths) runs only on that core set.
+   follow-ups, recent frontier, user library), and only its abstracts are
+   analysed.
 
-Pipeline steps (step names are progress keys mirrored in frontend i18n):
+The result is a literature map (`build_literature_map`), which the
+`build_literature_map` tool hands to a conversation writing a Sphere report
+(P16). The synthesis — themes, comparison, gaps, reading paths — is that
+report; this module no longer writes it.
+
+Map steps (step names are progress keys mirrored in frontend i18n):
     sphere_init_from_pdf → extract_core_metadata → resolve_canonical_ids
     → expand_graph_candidates → enrich_candidates → score_and_rank
     → relevance_gate → build_similarity_graph → select_core_set
-    → layer1_abstract_snap → download_and_mineru_parse
-    → synthesize_landscape → render_output
+    → layer1_abstract_snap
 """
 
 from __future__ import annotations
@@ -28,8 +32,6 @@ import datetime as _dt
 import json
 import logging
 import re
-import time
-from pathlib import Path
 from typing import Any, Coroutine
 
 import httpx
@@ -39,19 +41,15 @@ from app.db import database as db
 from app.models.paper_ir import PaperIR
 from app.models.sphere_models import (
     CandidateSource,
-    ComparisonRow,
     CorePartition,
     EdgeType,
-    GapIdea,
     KeyHub,
     LibraryMatch,
-    ReadingPath,
     RelationType,
     SphereConfig,
     SphereEdge,
     SphereNode,
     SphereState,
-    ThemeCluster,
     TimelineEntry,
     make_node_id,
     tier_for_sources,
@@ -59,27 +57,19 @@ from app.models.sphere_models import (
 from app.services.llm_gateway import get_registry
 from app.services.llm_service import chat_complete, get_llm_service
 from app.services.paper_search import normalize_whitespace, title_fingerprint
-from app.services.qa_retrieval import FULL_TEXT_MAX_CHARS
 from app.services.sphere_scorer import is_preprint_venue, is_survey_title, normalize_venue
 from app.workflows.progress import emit_progress as _emit_progress
 from app.workflows.state import MainGraphState
 
 logger = logging.getLogger("scholar.graph")
 
-# Output budget for the passes that run on the reader's model with thinking on
-# (abstract analysis, theme naming and classification, comparison, gaps). The
-# ceiling covers reasoning as well as the JSON: at 4096 a batch of 20 abstracts
-# had no room for both, and each of these fails into an empty section of a run
-# that still reports success. They go through `chat_complete` for the same
-# reason — a cut-off answer would otherwise surface as a JSON parse error.
+# Output budget for the abstract analysis, which runs on the reader's model
+# with thinking on. The ceiling covers reasoning as well as the JSON: at 4096 a
+# batch of 20 abstracts had no room for both, and the analysis failed into an
+# empty section of a map that still reported success. It goes through
+# `chat_complete` for the same reason — a cut-off answer would otherwise
+# surface as a JSON parse error.
 _SYNTH_MAX_TOKENS = 16384
-# The comparison table and the gaps pass read the whole core set and write the
-# longest answers of the run.
-_SYNTH_LONG_MAX_TOKENS = 32768
-# The comparator reads the center paper whole, the same size Q&A does. At 6000
-# characters it saw the abstract and the start of the introduction, and filled
-# the method, dataset and metric columns of the center's row from those.
-_CENTER_TEXT_MAX_CHARS = FULL_TEXT_MAX_CHARS
 
 
 def _current_year() -> int:
@@ -1652,15 +1642,6 @@ async def step_select_core_set(
         if partitions[k]
     ]
 
-    # Layer 2: full-text parse candidates (DOI-bearing, best first)
-    core_nodes = [sphere.nodes[nid] for nid in selected if nid in sphere.nodes]
-    with_doi = [n for n in core_nodes if n.doi]
-    with_doi.sort(key=lambda n: n.score_total, reverse=True)
-    layer2_ids = [n.node_id for n in with_doi[:config.pdf_parse_cap]]
-    sphere.layer2_node_ids = layer2_ids
-    for nid in layer2_ids:
-        sphere.nodes[nid].layer = 2
-
     # Reason strings (provenance + relation + quality), rendered in reports
     _build_reason_strings(sphere, zh)
 
@@ -1691,8 +1672,7 @@ async def step_select_core_set(
 
     part_summary = {k: len(v) for k, v in partitions.items() if v}
     logger.info(
-        f"[{paper_id}] sphere select: core={len(selected)} partitions={part_summary} "
-        f"layer2={len(layer2_ids)}"
+        f"[{paper_id}] sphere select: core={len(selected)} partitions={part_summary}"
     )
     await _emit_progress(run_id, "select_core_set", "done")
     return sphere
@@ -1943,212 +1923,8 @@ async def step_layer1_abstract_snap(
 
 
 # ──────────────────────────────────────────────────────────────────────
-# Step 11: Download and MinerU parse
+# Timeline and hubs
 # ──────────────────────────────────────────────────────────────────────
-
-async def step_download_and_parse(
-    sphere: SphereState,
-    state: MainGraphState,
-    run_id: str,
-) -> SphereState:
-    """Download PDFs for layer2 nodes via OA Resolver / Elsevier TDM / Wiley TDM.
-
-    MinerU parsing of the downloaded PDFs is left to a future step.
-    """
-    await _emit_progress(run_id, "download_and_mineru_parse", "running")
-
-    paper_id = state["paper_id"]
-    if sphere.config.pdf_parse_cap <= 0 or not sphere.layer2_node_ids:
-        logger.info(
-            f"[{paper_id}] sphere download: skipped (pdf_parse_cap={sphere.config.pdf_parse_cap})"
-        )
-        await _emit_progress(run_id, "download_and_mineru_parse", "done")
-        return sphere
-
-    from app.services.paper_downloader import (
-        DownloaderCredentials,
-        DEFAULT_USER_AGENT,
-        download_paper,
-        safe_filename,
-    )
-
-    settings = get_settings()
-    credentials = DownloaderCredentials(
-        unpaywall_email=settings.unpaywall_email,
-        core_api_key=settings.core_api_key,
-        elsevier_api_key=settings.elsevier_api_key,
-        elsevier_inst_token=settings.elsevier_inst_token,
-        wiley_tdm_token=settings.wiley_tdm_token,
-    )
-
-    has_any_cred = any(
-        [
-            credentials.unpaywall_email,
-            credentials.core_api_key,
-            credentials.elsevier_api_key,
-            credentials.wiley_tdm_token,
-        ]
-    )
-    if not has_any_cred:
-        logger.warning(
-            f"[{paper_id}] sphere download: no downloader credentials configured, skipping"
-        )
-        await _emit_progress(run_id, "download_and_mineru_parse", "done")
-        return sphere
-
-    refs_dir = settings.data_dir / "papers" / paper_id / "refs"
-    refs_dir.mkdir(parents=True, exist_ok=True)
-
-    targets: list[tuple[str, SphereNode, Path]] = []
-    for nid in sphere.layer2_node_ids:
-        node = sphere.nodes.get(nid)
-        if not node or not node.doi:
-            continue
-        if node.pdf_path and Path(node.pdf_path).exists():
-            continue
-        dest = refs_dir / f"{safe_filename(node.doi)}.pdf"
-        targets.append((nid, node, dest))
-
-    if not targets:
-        logger.info(f"[{paper_id}] sphere download: no DOI-bearing layer2 nodes to download")
-        await _emit_progress(run_id, "download_and_mineru_parse", "done")
-        return sphere
-
-    semaphore = asyncio.Semaphore(4)
-
-    async with httpx.AsyncClient(
-        headers={"User-Agent": DEFAULT_USER_AGENT},
-        timeout=60.0,
-    ) as client:
-        async def _do_one(node: SphereNode, dest: Path):
-            async with semaphore:
-                return await download_paper(
-                    node.doi,
-                    dest,
-                    credentials=credentials,
-                    title=node.title,
-                    client=client,
-                    timeout=60.0,
-                    retries=3,
-                )
-
-        results = await asyncio.gather(
-            *(_do_one(node, dest) for _, node, dest in targets),
-            return_exceptions=True,
-        )
-
-    ok_count = 0
-    fail_count = 0
-    for (nid, node, dest), result in zip(targets, results):
-        if isinstance(result, Exception):
-            fail_count += 1
-            logger.warning(f"[{paper_id}] sphere download: {node.doi} crashed: {result}")
-            continue
-        if result.ok and result.pdf_path:
-            node.pdf_path = result.pdf_path
-            ok_count += 1
-        else:
-            fail_count += 1
-            logger.info(
-                f"[{paper_id}] sphere download: {node.doi} failed via {result.source}: {result.detail}"
-            )
-
-    logger.info(
-        f"[{paper_id}] sphere download: downloaded {ok_count}/{len(targets)} layer2 PDFs "
-        f"(fail={fail_count}) → {refs_dir}"
-    )
-    await _emit_progress(run_id, "download_and_mineru_parse", "done")
-    return sphere
-
-
-# ──────────────────────────────────────────────────────────────────────
-# Step 12: Synthesize landscape
-# ──────────────────────────────────────────────────────────────────────
-
-_CLUSTER_NAMER_SYSTEM = """You are a research theme namer. You will receive groups of papers that were clustered by citation-structure similarity (bibliographic coupling). For each group, produce a concise theme name and a 1-2 sentence definition based on the member papers.
-
-Return ONLY a JSON array:
-[{"group": 0, "name": "theme name", "definition": "1-2 sentence definition"}]
-No markdown fences."""
-
-_CLASSIFIER_SYSTEM = """You are a research theme classifier. Given a list of papers with their metadata and analysis, identify 3-8 thematic clusters.
-
-Return a JSON object:
-{
-  "themes": [
-    {
-      "name": "theme name",
-      "definition": "1-2 sentence definition",
-      "paper_indices": [0, 3, 7]
-    }
-  ]
-}
-
-Group papers by shared methodology, problem domain, or approach. Every paper should belong to at least one theme. Return ONLY valid JSON, no markdown fences."""
-
-_COMPARATOR_SYSTEM = """You are a research comparator. Given the center paper and top comparison papers, produce a detailed comparison.
-
-Return a JSON object:
-{
-  "rows": [
-    {
-      "idx": 0,
-      "problem": "problem addressed",
-      "assumption": "key assumptions",
-      "method": "methodology",
-      "dataset": "datasets used",
-      "metric": "evaluation metrics",
-      "strength": "key strengths",
-      "weakness": "key weaknesses"
-    }
-  ]
-}
-
-idx=0 is the center paper. Subsequent indices match the comparison papers in order.
-Be specific and concise. Return ONLY valid JSON, no markdown fences."""
-
-_ADVISOR_SYSTEM = """You are a research advisor. Given relation partitions (foundations / method neighbors & competitors / follow-up work / recent frontier), theme clusters, a comparison matrix, and key hub papers — all centered on one paper — identify research gaps and suggest reading paths.
-
-Return a JSON object:
-{
-  "overview": "2-3 paragraph landscape overview describing the research field around the center paper: its intellectual roots, main competing/adjacent approaches, how follow-up work evolved, and where the frontier is",
-  "gaps": [
-    {
-      "title": "gap title",
-      "description": "explanation of the gap and why it matters",
-      "evidence_indices": [0, 2, 5]
-    }
-  ],
-  "reading_paths": [
-    {
-      "name": "fast",
-      "description": "Quick introduction path (3-5 papers)",
-      "paper_indices": [0, 1, 3]
-    },
-    {
-      "name": "deep",
-      "description": "Thorough understanding path (8-12 papers)",
-      "paper_indices": [0, 1, 2, 3, 5, 7, 8, 10]
-    },
-    {
-      "name": "frontier",
-      "description": "Cutting-edge research path (5-8 papers)",
-      "paper_indices": [2, 4, 6, 9, 11]
-    }
-  ]
-}
-
-Return ONLY valid JSON, no markdown fences."""
-
-
-# Appended to the synthesis role prompts when the user requested Chinese.
-# The JSON *keys* must stay English (the code parses them), so we only ask the
-# model to write the natural-language *values* in Chinese — this avoids a full
-# post-hoc translation pass over the assembled report.
-_SPHERE_ZH_DIRECTIVE = """
-
-输出语言要求:JSON 的所有键名(key)保持英文不变;但所有自然语言文本字段的值(如 name、definition、problem、assumption、method、dataset、metric、strength、weakness、title、description、overview 等)一律用简体中文撰写。论文标题、作者姓名、期刊/会议名称、以及专有技术术语可保留英文(术语首次出现可在括号内附中文解释)。仍然只返回合法 JSON,不要 markdown 代码围栏或任何解释。"""
-
 
 def timeline_and_hubs(
     sphere: SphereState, paper_list: list[SphereNode], *, log_label: str = "sphere"
@@ -2193,316 +1969,6 @@ def timeline_and_hubs(
         ))
 
 
-async def step_synthesize_landscape(
-    sphere: SphereState,
-    state: MainGraphState,
-    run_id: str,
-) -> SphereState:
-    """LLM synthesis over the core set: themes, comparison, gaps, paths."""
-    await _emit_progress(run_id, "synthesize_landscape", "running")
-
-    paper_id = state["paper_id"]
-    model = state.get("llm_model", "")
-    language = state.get("language", "en")
-    center = sphere.center_node
-    if not center:
-        await _emit_progress(run_id, "synthesize_landscape", "done")
-        return sphere
-
-    def _localize(base: str) -> str:
-        """Append the Chinese output directive to a role prompt when lang=zh."""
-        return base + _SPHERE_ZH_DIRECTIVE if language == "zh" else base
-
-    llm = get_llm_service()
-
-    # All synthesis runs ONLY on the core set
-    paper_list: list[SphereNode] = [
-        sphere.nodes[nid] for nid in sphere.layer1_node_ids if nid in sphere.nodes
-    ]
-
-    # Create indexed paper descriptions
-    def _paper_desc(idx: int, node: SphereNode) -> str:
-        parts = [f"[{idx}] {node.title}"]
-        if node.year:
-            parts.append(f"Year: {node.year}")
-        if node.venue:
-            venue_str = normalize_venue(node.venue)
-            badge = _rank_badge(node)
-            if badge:
-                venue_str += f" ({badge})"
-            parts.append(f"Venue: {venue_str}")
-        if node.cited_by_count:
-            parts.append(f"Citations: {node.cited_by_count}")
-        if node.relation_type != RelationType.UNKNOWN:
-            parts.append(f"Relation to center: {node.relation_type.value}")
-        if node.authors:
-            parts.append(f"Authors: {node.authors[:100]}")
-        if node.abstract_text:
-            parts.append(f"Abstract: {node.abstract_text[:300]}")
-        if node.method_summary:
-            parts.append(f"Method: {node.method_summary}")
-        if node.contribution:
-            parts.append(f"Contribution: {node.contribution}")
-        if node.task:
-            parts.append(f"Task: {node.task}")
-        return "\n".join(parts)
-
-    papers_context = "\n\n".join(_paper_desc(i, p) for i, p in enumerate(paper_list))
-
-    # ── Comparator inputs: only true comparables (competitors and method
-    #    neighbors) — never applications of the center's technique, and never
-    #    surveys (a survey has no method/dataset of its own to compare) ──
-    comparables = [
-        p for p in paper_list
-        if p.relation_type in (RelationType.COMPETITOR, RelationType.METHOD_NEIGHBOR)
-        and not _is_center_paper(center, p.title, p.doi)
-        and not is_survey_title(p.title)
-    ]
-    comparables.sort(key=lambda n: (n.score_total, n.cited_by_count), reverse=True)
-    if len(comparables) < 3:
-        # Sparse gate results — fall back to the strongest core papers
-        fallback = [
-            p for p in paper_list
-            if p not in comparables and not _is_center_paper(center, p.title, p.doi)
-            and p.relation_type != RelationType.APPLICATION
-            and not is_survey_title(p.title)
-        ]
-        fallback.sort(key=lambda n: (n.score_total, n.cited_by_count), reverse=True)
-        comparables = (comparables + fallback)[:sphere.config.comparison_top_k]
-    comparison_papers = comparables[:sphere.config.comparison_top_k]
-
-    paper_ir = PaperIR.model_validate_json(state["paper_ir_json"])
-    center_text_parts = []
-    for block in paper_ir.blocks:
-        if block.type in ("text", "title", "list", "equation"):
-            center_text_parts.append(f"{block.text.strip()} [p.{block.page_idx + 1}]")
-    center_text = "\n".join(center_text_parts)
-    if len(center_text) > _CENTER_TEXT_MAX_CHARS:
-        center_text = center_text[:_CENTER_TEXT_MAX_CHARS] + "\n[...truncated...]"
-
-    comp_context = f"CENTER PAPER:\n[0] {center.title}\n{center_text}\n\nCOMPARISON PAPERS:\n"
-    for i, node in enumerate(comparison_papers):
-        comp_context += f"\n{_paper_desc(i + 1, node)}\n"
-
-    # ── Themes from citation-structure communities (Connected Papers idea);
-    #    LLM only names them. Falls back to full LLM classification when the
-    #    coupling graph is too sparse to form communities. ──
-    async def _run_theme_builder() -> list[ThemeCluster]:
-        groups: dict[int, list[SphereNode]] = {}
-        for p in paper_list:
-            if p.cluster_id >= 0:
-                groups.setdefault(p.cluster_id, []).append(p)
-        named_groups = [members for members in groups.values() if len(members) >= 3]
-
-        if len(named_groups) >= 2:
-            try:
-                lines = []
-                for gi, members in enumerate(named_groups):
-                    titles = "; ".join(m.title[:80] for m in members[:8])
-                    methods = "; ".join(
-                        m.method_summary[:60] for m in members[:5] if m.method_summary
-                    )
-                    line = f"[group {gi}] papers: {titles}"
-                    if methods:
-                        line += f"\n  methods: {methods}"
-                    lines.append(line)
-                resp = await chat_complete(
-                    llm,
-                    [
-                        {"role": "system", "content": _localize(_CLUSTER_NAMER_SYSTEM)},
-                        {"role": "user", "content": "\n\n".join(lines)},
-                    ],
-                    model=model, temperature=0.2, max_tokens=_SYNTH_MAX_TOKENS,
-                    log_label=f"[{paper_id}] sphere synth: cluster naming",
-                )
-                data = json.loads(_strip_json_fences(resp))
-                themes: list[ThemeCluster] = []
-                if isinstance(data, list):
-                    for entry in data:
-                        gi = entry.get("group", -1)
-                        if not (0 <= gi < len(named_groups)):
-                            continue
-                        members = named_groups[gi]
-                        members.sort(key=lambda n: n.score_total, reverse=True)
-                        themes.append(ThemeCluster(
-                            name=entry.get("name", ""),
-                            definition=entry.get("definition", ""),
-                            representative_node_ids=[m.node_id for m in members],
-                        ))
-                if themes:
-                    logger.info(
-                        f"[{paper_id}] sphere synth: {len(themes)} themes from "
-                        f"citation-structure communities"
-                    )
-                    return themes
-            except Exception as e:
-                logger.warning(f"[{paper_id}] sphere synth: cluster naming failed: {e}")
-
-        # Fallback: LLM classification over the core set
-        try:
-            resp = await chat_complete(
-                llm,
-                [
-                    {"role": "system", "content": _localize(_CLASSIFIER_SYSTEM)},
-                    {"role": "user", "content": f"Classify these {len(paper_list)} papers into themes:\n\n{papers_context}"},
-                ],
-                model=model, temperature=0.2, max_tokens=_SYNTH_MAX_TOKENS,
-                log_label=f"[{paper_id}] sphere synth: classifier",
-            )
-            data = json.loads(_strip_json_fences(resp))
-            themes = []
-            for theme_data in data.get("themes", []):
-                indices = theme_data.get("paper_indices", [])
-                node_ids = [paper_list[i].node_id for i in indices if 0 <= i < len(paper_list)]
-                themes.append(ThemeCluster(
-                    name=theme_data.get("name", ""),
-                    definition=theme_data.get("definition", ""),
-                    representative_node_ids=node_ids,
-                ))
-            return themes
-        except Exception as e:
-            logger.warning(f"[{paper_id}] sphere synth: Classifier failed: {e}")
-            return []
-
-    # ── Comparator (async) ──
-    async def _run_comparator() -> dict[str, Any] | None:
-        try:
-            comparator_messages = [
-                {"role": "system", "content": _localize(_COMPARATOR_SYSTEM)},
-                {"role": "user", "content": f"Compare these papers:\n\n{comp_context}"},
-            ]
-            comparator_resp = await chat_complete(
-                llm, comparator_messages, model=model, temperature=0.2,
-                max_tokens=_SYNTH_LONG_MAX_TOKENS,
-                log_label=f"[{paper_id}] sphere synth: comparator",
-            )
-            return json.loads(_strip_json_fences(comparator_resp))
-        except Exception as e:
-            logger.warning(f"[{paper_id}] sphere synth: Comparator failed: {e}")
-            return None
-
-    themes, comparator_data = await asyncio.gather(
-        _run_theme_builder(), _run_comparator(),
-    )
-
-    sphere.output.themes = themes
-
-    # Process Comparator results (with dedup by node_id)
-    if comparator_data:
-        seen_comp_nids: set[str] = set()
-        for row_data in comparator_data.get("rows", []):
-            idx = row_data.get("idx", -1)
-            if idx == 0:
-                nid = center.node_id
-                title = center.title
-            elif 1 <= idx <= len(comparison_papers):
-                nid = comparison_papers[idx - 1].node_id
-                title = comparison_papers[idx - 1].title
-            else:
-                continue
-
-            # Skip duplicate rows for the same paper
-            if nid in seen_comp_nids:
-                continue
-            seen_comp_nids.add(nid)
-
-            sphere.output.comparison_table.append(ComparisonRow(
-                node_id=nid,
-                title=title,
-                problem=row_data.get("problem", ""),
-                assumption=row_data.get("assumption", ""),
-                method=row_data.get("method", ""),
-                dataset=row_data.get("dataset", ""),
-                metric=row_data.get("metric", ""),
-                strength=row_data.get("strength", ""),
-                weakness=row_data.get("weakness", ""),
-            ))
-
-    timeline_and_hubs(sphere, paper_list, log_label=f"[{paper_id}] sphere synth")
-
-    # ── Research Advisor ──
-    try:
-        partition_desc = json.dumps(
-            [
-                {
-                    "partition": p.key,
-                    "papers": [
-                        sphere.nodes[nid].title
-                        for nid in p.node_ids[:12] if nid in sphere.nodes
-                    ],
-                }
-                for p in sphere.output.partitions
-            ],
-            indent=2, ensure_ascii=False,
-        )
-        themes_desc = json.dumps(
-            [{"name": t.name, "definition": t.definition, "papers": len(t.representative_node_ids)}
-             for t in sphere.output.themes],
-            indent=2, ensure_ascii=False,
-        )
-        hubs_desc = json.dumps(
-            [{"title": h.title, "citations": h.cited_by_count, "pagerank": round(h.pagerank, 3)}
-             for h in sphere.output.key_hubs],
-            indent=2, ensure_ascii=False,
-        )
-        comp_desc = json.dumps(
-            [{"title": r.title, "method": r.method, "strength": r.strength, "weakness": r.weakness}
-             for r in sphere.output.comparison_table],
-            indent=2, ensure_ascii=False,
-        )
-
-        advisor_context = (
-            f"CENTER PAPER: {center.title} ({center.year})\n\n"
-            f"RELATION PARTITIONS:\n{partition_desc}\n\n"
-            f"THEMES:\n{themes_desc}\n\n"
-            f"KEY HUBS:\n{hubs_desc}\n\n"
-            f"COMPARISON SUMMARY:\n{comp_desc}\n\n"
-            f"PAPER LIST:\n{papers_context}"
-        )
-
-        advisor_messages = [
-            {"role": "system", "content": _localize(_ADVISOR_SYSTEM)},
-            {"role": "user", "content": f"Analyze research landscape:\n\n{advisor_context}"},
-        ]
-        advisor_resp = await chat_complete(
-            llm, advisor_messages, model=model, temperature=0.3,
-            max_tokens=_SYNTH_LONG_MAX_TOKENS,
-            log_label=f"[{paper_id}] sphere synth: advisor",
-        )
-        advisor_data = json.loads(_strip_json_fences(advisor_resp))
-
-        sphere.output.sphere_overview = advisor_data.get("overview", "")
-
-        for gap_data in advisor_data.get("gaps", []):
-            indices = gap_data.get("evidence_indices", [])
-            node_ids = [paper_list[i].node_id for i in indices if 0 <= i < len(paper_list)]
-            sphere.output.gaps_and_ideas.append(GapIdea(
-                title=gap_data.get("title", ""),
-                description=gap_data.get("description", ""),
-                evidence_node_ids=node_ids,
-            ))
-
-        for path_data in advisor_data.get("reading_paths", []):
-            indices = path_data.get("paper_indices", [])
-            node_ids = [paper_list[i].node_id for i in indices if 0 <= i < len(paper_list)]
-            sphere.output.reading_paths.append(ReadingPath(
-                name=path_data.get("name", ""),
-                description=path_data.get("description", ""),
-                node_ids=node_ids,
-            ))
-    except Exception as e:
-        logger.warning(f"[{paper_id}] sphere synth: Advisor failed: {e}")
-
-    logger.info(
-        f"[{paper_id}] sphere synth: themes={len(sphere.output.themes)} "
-        f"comparison={len(sphere.output.comparison_table)} "
-        f"gaps={len(sphere.output.gaps_and_ideas)} "
-        f"paths={len(sphere.output.reading_paths)}"
-    )
-    await _emit_progress(run_id, "synthesize_landscape", "done")
-    return sphere
-
-
 def _strip_json_fences(text: str) -> str:
     """Remove markdown code fences from JSON response."""
     text = text.strip()
@@ -2513,30 +1979,8 @@ def _strip_json_fences(text: str) -> str:
 
 
 # ──────────────────────────────────────────────────────────────────────
-# Step 13: Render output
+# The report's structured fields
 # ──────────────────────────────────────────────────────────────────────
-
-_PARTITION_TITLES = {
-    "zh": {
-        "foundation": "奠基与背景",
-        "method": "方法近邻与竞品",
-        "follow_up": "后续发展",
-        "application": "跨域应用",
-        "frontier": "最新前沿",
-        "survey": "相关综述",
-        "library": "你的文献库",
-    },
-    "en": {
-        "foundation": "Foundations & Background",
-        "method": "Method Neighbors & Competitors",
-        "follow_up": "Follow-up Work",
-        "application": "Cross-domain Applications",
-        "frontier": "Recent Frontier",
-        "survey": "Surveys & Reviews",
-        "library": "From Your Library",
-    },
-}
-
 
 def _node_payload(node: SphereNode) -> dict[str, Any]:
     return {
@@ -2624,212 +2068,6 @@ def sphere_json_fields(
     }
 
 
-async def step_render_output(
-    sphere: SphereState,
-    state: MainGraphState,
-    run_id: str,
-) -> tuple[str, str]:
-    """Convert SphereOutput to markdown and JSON."""
-    await _emit_progress(run_id, "render_output", "running")
-
-    center = sphere.center_node
-    output = sphere.output
-    paper_id = state["paper_id"]
-    zh = state.get("language", "en") == "zh"
-    lang = "zh" if zh else "en"
-
-    # Localized scaffolding for the rendered report (the LLM fills the prose
-    # fields; these are the fixed headings/labels the code emits).
-    t = (
-        {
-            "overview_h": "## 研究全景概览\n",
-            "core_h": "## 核心文献分区\n",
-            "core_intro": "以下 {n} 篇论文经过来源分层、质量评估与相关性审查后入选核心集,按其与本文的关系分区:\n",
-            "themes_h": "## 主题聚类\n",
-            "themes_intro": "基于引文结构相似度(文献耦合)的社区划分:\n",
-            "timeline_h": "## 脉络与时间线\n", "comparison_h": "## 对比矩阵\n\n",
-            "comparison_cols": "| 论文 | 问题 | 方法 | 数据集 | 指标 | 优势 | 不足 |\n",
-            "hubs_h": "## 关键枢纽论文\n", "gaps_h": "## 研究空白与想法\n",
-            "paths_h": "## 推荐阅读路径\n", "cited_by": "被引", "more": "篇",
-            "evidence_from": "证据来源", "path_suffix": "路径", "unknown": "[未知论文]",
-            "library_h": "## 你的文献库中的相关工作\n",
-            "library_intro": "以下论文来自你自己的知识库,与本文语义相关:\n",
-            "center_marker": "(本文)",
-        }
-        if zh
-        else {
-            "overview_h": "## Research Landscape Overview\n",
-            "core_h": "## Core Literature Partitions\n",
-            "core_intro": "The following {n} papers passed provenance, quality, and relevance review, partitioned by their relation to this paper:\n",
-            "themes_h": "## Thematic Clusters\n",
-            "themes_intro": "Communities detected from citation-structure similarity (bibliographic coupling):\n",
-            "timeline_h": "## Lineage & Timeline\n", "comparison_h": "## Comparison Matrix\n\n",
-            "comparison_cols": "| Paper | Problem | Method | Dataset | Metric | Strength | Weakness |\n",
-            "hubs_h": "## Key Hub Papers\n", "gaps_h": "## Research Gaps & Ideas\n",
-            "paths_h": "## Suggested Reading Paths\n", "cited_by": "cited by", "more": "more",
-            "evidence_from": "Evidence from", "path_suffix": "Path", "unknown": "[unknown paper]",
-            "library_h": "## Related Work in Your Library\n",
-            "library_intro": "These papers from your own knowledge base are semantically related to this paper:\n",
-            "center_marker": "(this paper)",
-        }
-    )
-
-    # Node lookup helper
-    def _node_ref(node_id: str) -> str:
-        node = sphere.nodes.get(node_id)
-        if not node:
-            return t["unknown"]
-        year_str = f" ({node.year})" if node.year else ""
-        return f"**{node.title}**{year_str}"
-
-    def _node_line(node: SphereNode) -> str:
-        """One bullet line: title (year) — venue [rank] — citations | reason."""
-        bits: list[str] = []
-        year_str = f" ({node.year})" if node.year else ""
-        head = f"**{node.title}**{year_str}"
-        if node.venue:
-            venue = normalize_venue(node.venue)
-            if len(venue) > 60:
-                venue = venue[:57] + "…"
-            badge = _rank_badge(node)
-            if badge:
-                venue += f" [{badge}]"
-            bits.append(venue)
-        if node.cited_by_count:
-            bits.append(f"{t['cited_by']} {node.cited_by_count}")
-        line = head
-        if bits:
-            line += " — " + " · ".join(bits)
-        if node.relation_reason:
-            line += f"\n  - {node.relation_reason}"
-        return line
-
-    md_parts: list[str] = []
-
-    # ── Section 1: Overview ──
-    md_parts.append(t["overview_h"])
-    if output.sphere_overview:
-        md_parts.append(output.sphere_overview + "\n")
-
-    # ── Section 2: Core literature partitions ──
-    if output.partitions:
-        md_parts.append("\n" + t["core_h"])
-        n_core = sum(len(p.node_ids) for p in output.partitions)
-        md_parts.append(t["core_intro"].format(n=n_core) + "\n")
-        titles = _PARTITION_TITLES[lang]
-        for part in output.partitions:
-            md_parts.append(f"### {titles.get(part.key, part.key)}\n")
-            for nid in part.node_ids:
-                node = sphere.nodes.get(nid)
-                if node:
-                    md_parts.append(f"- {_node_line(node)}\n")
-            md_parts.append("\n")
-
-    # ── Section 3: Themes ──
-    if output.themes:
-        md_parts.append(t["themes_h"])
-        md_parts.append(t["themes_intro"])
-        for i, theme in enumerate(output.themes, 1):
-            md_parts.append(f"**{i}. {theme.name}**: {theme.definition}\n")
-            for nid in theme.representative_node_ids[:8]:
-                node = sphere.nodes.get(nid)
-                if node:
-                    year_str = f" ({node.year})" if node.year else ""
-                    cite_str = f" — {t['cited_by']} {node.cited_by_count}" if node.cited_by_count else ""
-                    md_parts.append(f"- {node.title}{year_str}{cite_str}\n")
-            md_parts.append("\n")
-
-    # ── Section 4: Timeline ──
-    if output.timeline:
-        md_parts.append(t["timeline_h"])
-        center_id = center.node_id if center else ""
-        for entry in output.timeline:
-            nodes_in_year = [sphere.nodes.get(nid) for nid in entry.node_ids if sphere.nodes.get(nid)]
-            if nodes_in_year:
-                titles_strs = []
-                for n in nodes_in_year[:5]:
-                    label = n.title[:60]
-                    if n.node_id == center_id:
-                        label = f"**{label}** {t['center_marker']}"
-                    titles_strs.append(label)
-                extra = f" (+{len(nodes_in_year) - 5} {t['more']})" if len(nodes_in_year) > 5 else ""
-                md_parts.append(f"- **{entry.year}**: {', '.join(titles_strs)}{extra}\n")
-        md_parts.append("\n")
-
-    # ── Section 5: Comparison Matrix ──
-    if output.comparison_table:
-        md_parts.append(t["comparison_h"])
-        md_parts.append(t["comparison_cols"])
-        md_parts.append("|-------|---------|--------|---------|--------|----------|----------|\n")
-        for row in output.comparison_table:
-            short_title = row.title[:40] + ("..." if len(row.title) > 40 else "")
-            md_parts.append(
-                f"| {short_title} | {row.problem} | {row.method} | "
-                f"{row.dataset} | {row.metric} | {row.strength} | {row.weakness} |\n"
-            )
-        md_parts.append("\n")
-
-    # ── Section 6: Key Hubs ──
-    if output.key_hubs:
-        md_parts.append(t["hubs_h"])
-        for hub in output.key_hubs:
-            md_parts.append(
-                f"- **{hub.title}** — PageRank: {hub.pagerank:.3f}, "
-                f"{t['cited_by']}: {hub.cited_by_count}"
-            )
-            if hub.reason:
-                md_parts.append(f" ({hub.reason})")
-            md_parts.append("\n")
-        md_parts.append("\n")
-
-    # ── Section 7: Gaps & Ideas ──
-    if output.gaps_and_ideas:
-        md_parts.append(t["gaps_h"])
-        for i, gap in enumerate(output.gaps_and_ideas, 1):
-            md_parts.append(f"### {i}. {gap.title}\n\n")
-            md_parts.append(f"{gap.description}\n\n")
-            if gap.evidence_node_ids:
-                evidence = [_node_ref(nid) for nid in gap.evidence_node_ids[:5]]
-                md_parts.append(f"*{t['evidence_from']}*: {', '.join(evidence)}\n\n")
-
-    # ── Section 8: Reading Paths ──
-    if output.reading_paths:
-        md_parts.append(t["paths_h"])
-        for path in output.reading_paths:
-            md_parts.append(f"### {path.name.title()} {t['path_suffix']}\n\n")
-            md_parts.append(f"{path.description}\n\n")
-            for j, nid in enumerate(path.node_ids, 1):
-                node = sphere.nodes.get(nid)
-                if node:
-                    year_str = f" ({node.year})" if node.year else ""
-                    md_parts.append(f"{j}. {node.title}{year_str}\n")
-            md_parts.append("\n")
-
-    # ── Section 9: Related work in the user's own library (Dify KB) ──
-    if sphere.library_matches:
-        md_parts.append(t["library_h"])
-        md_parts.append(t["library_intro"])
-        for m in sphere.library_matches[:15]:
-            label = f"[{m.title}](/library?doc={m.document_id})" if m.document_id else m.title
-            score = f" ({m.score:.2f})" if m.score and m.score > 0 else ""
-            md_parts.append(f"- {label}{score}\n")
-        md_parts.append("\n")
-
-    markdown = "".join(md_parts)
-
-    json_data = json.dumps(
-        sphere_json_fields(
-            sphere, paper_id=paper_id, language=lang,
-            num_nodes=len(sphere.nodes), num_edges=len(sphere.edges),
-        ),
-        ensure_ascii=False,
-    )
-
-    logger.info(f"[{paper_id}] sphere render: markdown={len(markdown)} chars")
-    await _emit_progress(run_id, "render_output", "done")
-    return markdown, json_data
-
-
 # ──────────────────────────────────────────────────────────────────────
 # Main orchestrator
 # ──────────────────────────────────────────────────────────────────────
@@ -2841,7 +2079,6 @@ def sphere_config() -> SphereConfig:
         candidate_cap=settings.sphere_candidate_cap,
         gate_cap=settings.sphere_gate_cap,
         core_cap=settings.sphere_core_cap,
-        pdf_parse_cap=settings.sphere_pdf_parse_cap,
         t3_min_citations=settings.sphere_t3_min_citations,
         venue_rank_enabled=settings.sphere_venue_rank_enabled,
         frontier_min_citations=settings.sphere_frontier_min_citations,
@@ -2914,47 +2151,3 @@ def map_papers(sphere: SphereState) -> list[tuple[str, SphereNode]]:
             seen.add(hub.node_id)
     return out
 
-
-async def run_research_sphere(state: MainGraphState) -> dict[str, Any]:
-    """Run the redesigned Research Sphere pipeline."""
-    paper_id = state["paper_id"]
-    run_id = state.get("run_id", "")
-    t0 = time.perf_counter()
-
-    config = sphere_config()
-    sphere = SphereState(config=config)
-
-    logger.info(f"[{paper_id}] sphere: Starting pipeline (config={config.model_dump()})")
-
-    try:
-        sphere = await step_init_from_pdf(sphere, state, run_id)
-        sphere = await step_extract_core_metadata(sphere, state, run_id)
-        sphere = await step_resolve_canonical_ids(sphere, state, run_id)
-        sphere = await step_expand_graph_candidates(sphere, state, run_id)
-        sphere = await step_enrich_candidates(sphere, state, run_id)
-        sphere = await step_score_and_rank(sphere, state, run_id)
-        sphere = await step_relevance_gate(sphere, state, run_id)
-        sphere = await step_build_similarity_graph(sphere, state, run_id)
-        sphere = await step_select_core_set(sphere, state, run_id)
-        sphere = await step_layer1_abstract_snap(sphere, state, run_id)
-        sphere = await step_download_and_parse(sphere, state, run_id)
-        sphere = await step_synthesize_landscape(sphere, state, run_id)
-        markdown, json_data = await step_render_output(sphere, state, run_id)
-    except Exception as e:
-        elapsed = time.perf_counter() - t0
-        logger.exception(f"[{paper_id}] sphere: Pipeline failed at {elapsed:.1f}s — {e}")
-        return {
-            "error": f"Research Sphere failed: {e}",
-            "progress": state.get("progress", []) + [{"step": "run_sphere", "status": "failed"}],
-        }
-
-    elapsed = time.perf_counter() - t0
-    logger.info(f"[{paper_id}] sphere: Pipeline completed in {elapsed:.1f}s — {len(markdown)} chars markdown")
-
-    return {
-        "final_markdown": markdown,
-        "analysis_language": state.get("language", "en"),
-        "final_json": json_data,
-        "sphere_state_json": sphere.model_dump_json(),
-        "progress": state.get("progress", []) + [{"step": "run_sphere", "status": "done"}],
-    }

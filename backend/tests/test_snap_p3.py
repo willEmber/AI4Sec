@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -8,18 +7,13 @@ from unittest.mock import AsyncMock, patch
 
 from app.models.paper_ir import Block, PaperIR
 from app.models.snap_models import CitationIntents, TriageSignals
-from app.services.grobid_client import GrobidHeader, _parse_tei_header, extract_header
+from app.services.grobid_client import _parse_tei_header, extract_header
 from app.services.triage_signals import (
     _s2_citation_intents,
     compute_external_score,
     get_or_collect_triage_signals,
     load_cached_signals,
     store_signals,
-)
-from app.services.triage_verdict import (
-    parse_content_review,
-    render_verdict_markdown,
-    synthesize_verdict,
 )
 
 _TEI = """<?xml version="1.0" encoding="UTF-8"?>
@@ -127,36 +121,6 @@ class TestCitationIntents(unittest.IsolatedAsyncioTestCase):
         with patch("app.services.citation_graph._get_json", AsyncMock(return_value=None)):
             intents = await _s2_citation_intents(None, "abc")
         self.assertFalse(intents.available)
-
-    def test_intents_render_as_an_evidence_row(self) -> None:
-        signals = compute_external_score(TriageSignals(
-            venue="ICML", ccf_rank="A", year=2021, cited_by_count=800, resolved=True,
-            intents=CitationIntents(background=40, methodology=52, result=9, sampled=98),
-            provenance={"intents": "Semantic Scholar"},
-        ))
-        review = parse_content_review(json.dumps({"contribution_strength": 3}))
-        md = render_verdict_markdown(synthesize_verdict(review, signals), review, signals)
-        self.assertIn("methodology 52", md)
-        self.assertIn("of 98 sampled", md)
-
-        signals.intents.labelled = 90
-        md = render_verdict_markdown(synthesize_verdict(review, signals), review, signals)
-        self.assertIn("90 labelled of 98 sampled", md)
-
-    def test_an_unlabelled_sample_has_no_row(self) -> None:
-        signals = compute_external_score(TriageSignals(
-            venue="CVPR", resolved=True, intents=CitationIntents(sampled=200, influential=26),
-        ))
-        review = parse_content_review(json.dumps({"contribution_strength": 3}))
-        md = render_verdict_markdown(synthesize_verdict(review, signals), review, signals)
-        self.assertNotIn("Cited as", md)
-
-    def test_intents_row_is_omitted_when_unsampled(self) -> None:
-        signals = compute_external_score(TriageSignals(venue="ICML", resolved=True))
-        review = parse_content_review(json.dumps({"contribution_strength": 3}))
-        md = render_verdict_markdown(synthesize_verdict(review, signals), review, signals)
-        self.assertNotIn("Cited as", md)
-
 
 class TestSignalsCache(unittest.IsolatedAsyncioTestCase):
     """The cache is keyed by paper, so re-running the same PDF costs no API calls."""

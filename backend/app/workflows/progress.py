@@ -11,7 +11,7 @@ logger = logging.getLogger("scholar.progress")
 
 
 # Progress as it happens, for a caller in the same process that started the run
-# and wants each step (a conversation showing a mode tool's steps). Everything
+# and wants each step (a conversation showing the literature map's). Everything
 # else reads the steps back from the run's row.
 _listeners: dict[str, set[asyncio.Queue[dict[str, Any]]]] = {}
 

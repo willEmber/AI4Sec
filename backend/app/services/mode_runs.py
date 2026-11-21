@@ -1,18 +1,19 @@
 """The `runs` row of a mode report: stopping, deleting, heartbeat, recovery.
 
-A report is made inside a conversation turn (`agents/tools/modes.py`); the
-upload page that once started runs on their own, and the executor that ran
-them, are gone (P16). What is left is the row's own life, which the report
-page, the library and the exports read:
+A report is written as a conversation turn's answer (P16,
+`services/answer_reports.py`); the upload page that once started runs on their
+own, the executor that ran them and the report tools are gone. What is left is
+the row's own life, which the report page, the library and the exports read:
 
-*The row is the truth.* The tool stamps its worker on the row and heartbeats
-while it works (`heartbeating`); every terminal status it writes is
-conditional on the run still being active, so a report that finishes anyway
-cannot reopen a run somebody closed.
+*The row is the truth.* The turn writing the report stamps its worker on the
+row and heartbeats while it works (`heartbeating`); every terminal status it
+writes is conditional on the run still being active, so a report that
+finishes anyway cannot reopen a run somebody closed.
 
-*Stopping is a change to the row.* `cancel` closes it; the heartbeat of
-whichever replica is making the report notices and interrupts the tool, at its
-next beat. The turn's own stop button does the same through the turn.
+*Closing the row stops the report.* `cancel` closes it (deleting a report
+does, first); the heartbeat of whichever replica is writing it notices and
+interrupts the turn, at its next beat. The turn's own stop button closes the
+row through the turn.
 
 *An orphaned run is closed, not repeated.* Its turn died with the same worker
 and is closed as `interrupted`; the turn that asks again finds the report job
@@ -27,7 +28,6 @@ import logging
 from collections.abc import AsyncIterator
 
 from app.db import database as db
-from app.services import llm_usage
 from app.services.agent_worker import HEARTBEAT_SECONDS, RUN_STALE_SECONDS, WORKER_ID
 
 logger = logging.getLogger("scholar.runs")
@@ -40,8 +40,8 @@ INTERRUPTED = "Interrupted (the worker executing this run stopped)"
 async def cancel(run_id: str) -> bool:
     """Close an active run. Returns whether it was still active.
 
-    The tool making the report is interrupted by its own heartbeat, which
-    stops beating on a closed row; the model call in flight is abandoned, not
+    The turn writing the report is interrupted by its heartbeat, which stops
+    beating on a closed row; the model call in flight is abandoned, not
     refunded.
     """
     closed = await db.execute(
@@ -100,28 +100,6 @@ async def heartbeating(run_id: str) -> AsyncIterator[None]:
         beater.cancel()
         with contextlib.suppress(asyncio.CancelledError, Exception):
             await beater
-
-
-@contextlib.asynccontextmanager
-async def recording_tokens(run_id: str) -> AsyncIterator[llm_usage.UsageMeter]:
-    """Add what the block spends on the model to the run's `tokens`.
-
-    Added, not set, and written however the block ends: a failed or cancelled
-    report was billed up to the point it stopped.
-    """
-    meter = llm_usage.metering()
-    try:
-        with meter:
-            yield meter
-    finally:
-        if meter.total:
-            with contextlib.suppress(Exception):
-                await asyncio.shield(
-                    db.execute(
-                        "UPDATE runs SET tokens = tokens + ? WHERE run_id = ?",
-                        (meter.total, run_id),
-                    )
-                )
 
 
 async def recover_stale(*, stale_after_seconds: int = RUN_STALE_SECONDS) -> dict[str, list[str]]:

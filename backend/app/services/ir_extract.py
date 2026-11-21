@@ -1,11 +1,10 @@
 """Shared ``PaperIR`` extraction primitives.
 
-Logic Lens and Insight Snap need the same handful of operations over a
-``PaperIR``: find the sections whose (ancestor-aware) title matches a keyword
-set, pull blocks of a given type, and turn MinerU's HTML table bodies into
-something compact enough to put in a prompt. These used to be private helpers
-inside ``lens_subgraph``; Snap needs them too, so they live here instead of
-being copied.
+The reading tools, the Lens elements tool, Snap's triage context and the
+report views need the same handful of operations over a ``PaperIR``: find the
+sections whose (ancestor-aware) title matches a keyword set, pull blocks of a
+given type, and turn MinerU's HTML table bodies into something compact enough
+to put in a prompt.
 
 MinerU stores a table's caption and its HTML body in one ``text`` field
 (``caption\\n<table>…``), so a raw table block is both verbose and hard for a
@@ -22,25 +21,15 @@ from typing import Any, Iterable
 from app.models.paper_ir import Block, PaperIR, Section
 
 # ──────────────────────────────────────────────────────────────────────
-# Section keyword sets (shared by the mode subgraphs)
+# Section keyword sets
 # ──────────────────────────────────────────────────────────────────────
-
-FRAMING_KEYWORDS = frozenset({
-    "abstract", "introduction", "related work", "related", "background",
-    "motivation", "conclusion", "conclusions", "summary", "discussion",
-})
-
-METHOD_KEYWORDS = frozenset({
-    "method", "approach", "model", "framework", "architecture",
-    "proposed", "algorithm", "implementation", "design",
-})
 
 EXPERIMENT_KEYWORDS = frozenset({
     "experiment", "evaluation", "result", "empirical", "ablation",
     "setup", "training", "implementation", "dataset", "benchmark",
 })
 
-# Narrower than FRAMING_KEYWORDS: the sections a triage read must never miss.
+# The sections a triage read must never miss.
 ABSTRACT_KEYWORDS = frozenset({"abstract", "summary"})
 INTRO_KEYWORDS = frozenset({"introduction", "motivation", "contribution", "contributions"})
 CONCLUSION_KEYWORDS = frozenset({"conclusion", "conclusions", "concluding", "discussion", "outlook"})

@@ -6,8 +6,9 @@ with its ordinary tools and writes the report as its answer. When the turn
 ends, the runner calls :func:`snapshot` (finished) or :func:`close` (stopped,
 cut off, failed), and nothing else ever writes the row.
 
-The row is the same `runs` / `run_outputs` pair a report tool writes, so the
-report page, the library's compare matrix and both exports read it unchanged.
+The row is the same `runs` / `run_outputs` pair the report tools of before
+P16 wrote, so the report page, the library's compare matrix and both exports
+read it unchanged.
 What differs is `json_data`: it holds the citation table the report page
 renders from (`report_citations`), the structured parts the report's tools
 handed over, and what each mode extracts from the finished text — never

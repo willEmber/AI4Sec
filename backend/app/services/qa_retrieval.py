@@ -414,55 +414,6 @@ def retrieve_qa_context(paper_ir: PaperIR, question: str, max_chars: int = FULL_
     return _format_context(chosen, max_chars), len(chosen)
 
 
-def focus_passages(paper_ir: PaperIR, focus: str, max_chars: int) -> str:
-    """Passages a reader's stated concern matches, in reading order; '' when none does.
-
-    For a report that reads the paper through fixed excerpts (Logic Lens), where
-    the concern may sit in a part those excerpts cut. Unlike
-    `retrieve_qa_context` there are no opening anchors and no fallback: every
-    passage returned contains a word of the concern, so an empty result means
-    the concern matched nothing, not that the paper was skipped.
-    """
-    tokens = _tokenize(focus)
-    if not tokens or max_chars <= 0:
-        return ""
-    intent = _detect_intent(focus, tokens)
-    chunks = [
-        node for node in build_paper_nodes(paper_ir)
-        if node.node_type == "chunk"
-        and node.block_type in _SEARCHABLE_BLOCK_TYPES
-        and node.text.strip()
-    ]
-
-    def matches(node: PaperNode) -> bool:
-        text_l = node.text_for_search.lower()
-        return any(token.lower() in text_l for token in tokens)
-
-    scored = sorted(
-        (
-            (_score_node(node, tokens, intent), node)
-            for node in chunks
-            if matches(node)
-        ),
-        key=lambda item: (-item[0], item[1].page_start, item[1].order_idx),
-    )
-    by_order = {node.block_start: node for node in chunks}
-    chosen: dict[str, PaperNode] = {}
-    used = 0
-    for _, node in scored:
-        if used >= max_chars:
-            break
-        # A matching sentence is read with the ones around it.
-        for neighbour in (
-            by_order.get(node.block_start - 1), node, by_order.get(node.block_start + 1)
-        ):
-            if neighbour is not None and neighbour.node_id not in chosen:
-                chosen[neighbour.node_id] = neighbour
-                used += len(neighbour.text)
-    ordered = sorted(chosen.values(), key=lambda item: (item.page_start, item.order_idx))
-    return _format_context(ordered, max_chars) if ordered else ""
-
-
 def _paper_node_from_row(row: dict[str, Any]) -> PaperNode:
     return PaperNode(
         node_id=row["node_id"],

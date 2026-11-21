@@ -144,8 +144,6 @@ class SphereConfig(BaseModel):
     candidate_cap: int = 200     # max candidates fetched from all channels
     gate_cap: int = 120          # max candidates entering the LLM relevance gate
     core_cap: int = 40           # size of the final core set
-    pdf_parse_cap: int = 0       # Phase A: skip downloads
-    comparison_top_k: int = 10
 
     # Relevance gate
     min_relevance: int = 1       # candidates below this are discarded

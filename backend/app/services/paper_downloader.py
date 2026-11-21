@@ -42,7 +42,6 @@ WILEY_TDM_URL = "https://api.wiley.com/onlinelibrary/tdm/v1/articles/{doi}"
 
 _DOI_PREFIX_RE = re.compile(r"^https?://(dx\.)?doi\.org/", re.IGNORECASE)
 _DOI_SCHEME_RE = re.compile(r"^doi:\s*", re.IGNORECASE)
-_FILENAME_FORBIDDEN_RE = re.compile(r'[<>:"/\\|?*\x00-\x1F]')
 _WHITESPACE_RE = re.compile(r"\s+")
 
 
@@ -56,17 +55,6 @@ def normalize_doi(raw: str) -> str:
     doi = _DOI_SCHEME_RE.sub("", doi)
     doi = _DOI_PREFIX_RE.sub("", doi)
     return doi.strip().strip("/").lower()
-
-
-def safe_filename(stem: str, *, max_len: int = 180) -> str:
-    """Sanitize a string for use as a filename stem (no extension)."""
-    stem = (stem or "").strip()
-    stem = _FILENAME_FORBIDDEN_RE.sub("_", stem)
-    stem = stem.replace(" ", "_")
-    stem = re.sub(r"_+", "_", stem).strip("_")
-    if not stem:
-        stem = "paper"
-    return stem[:max_len]
 
 
 def _normalize_whitespace(text: str) -> str:
