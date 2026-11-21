@@ -161,20 +161,28 @@ class SnapSignalFactTests(unittest.TestCase):
             "repos": [], "is_open_access": True, "oa_url": "https://x.test/p.pdf",
             "is_retracted": False,
             "provenance": {"venue": "Crossref", "ccf_rank": "EasyScholar",
-                           "citations": "Semantic Scholar", "open_access": "OpenAlex",
-                           "intents": "Semantic Scholar"},
+                           "citations": "OpenAlex", "influential_citations": "Semantic Scholar",
+                           "open_access": "OpenAlex", "intents": "Semantic Scholar"},
             "unavailable": [],
         }
         facts = dict(snap_signal_facts(signals, "Attention Is All You Need"))
-        self.assertEqual(
-            facts["Attention Is All You Need — cited by 196,706, 19,670.6 per year, 20,951 influential"],
-            "Semantic Scholar",
-        )
+        # Two indexes, two facts: S2's influential count is not OpenAlex's.
+        self.assertEqual(facts["Attention Is All You Need — cited by 196,706, 19,670.6 per year"], "OpenAlex")
+        self.assertEqual(facts["Attention Is All You Need — 20,951 influential citations"], "Semantic Scholar")
         self.assertEqual(facts["NeurIPS — CCF A"], "EasyScholar")
         self.assertNotIn("JCR", " ".join(facts))   # an empty rank is not a fact
         self.assertIn("Attention Is All You Need — not marked as retracted", facts)
         self.assertIn("Attention Is All You Need — no code repository link found in the paper", facts)
         self.assertTrue(any("published at Neural Information Processing Systems (NeurIPS), 2017" in f for f in facts))
+
+    def test_an_influential_count_s2_did_not_make_is_no_fact(self) -> None:
+        from app.agents.tools.modes import snap_signal_facts
+
+        facts = snap_signal_facts(
+            {"cited_by_count": 481, "influential_citation_count": 0, "provenance": {"citations": "OpenAlex"}},
+            "P",
+        )
+        self.assertEqual(facts, [("P — cited by 481", "OpenAlex")])
 
     def test_citation_intents_are_a_fact_only_when_labelled(self) -> None:
         from app.agents.tools.modes import snap_signal_facts

@@ -317,9 +317,15 @@ def snap_signal_facts(signals: dict[str, Any], title: str) -> list[tuple[str, st
         parts = [f"cited by {int(signals['cited_by_count']):,}"]
         if signals.get("citations_per_year"):
             parts.append(f"{float(signals['citations_per_year']):,.1f} per year")
-        if signals.get("influential_citation_count") is not None:
-            parts.append(f"{int(signals['influential_citation_count']):,} influential")
         facts.append((f"{name} — " + ", ".join(parts), str(provenance.get("citations") or "")))
+    # Semantic Scholar's count even when OpenAlex gave the citations: in the
+    # same sentence it was sourced to OpenAlex. Without a provenance S2 did
+    # not count it, and the 0 it defaults to is not a count.
+    if provenance.get("influential_citations") and signals.get("influential_citation_count") is not None:
+        facts.append((
+            f"{name} — {int(signals['influential_citation_count']):,} influential citations",
+            str(provenance["influential_citations"]),
+        ))
     intents = CitationIntents.model_validate(signals.get("intents") or {})
     # A sample without a single label is no measurement (`available`).
     if intents.available and "intents" not in missing:
@@ -327,8 +333,8 @@ def snap_signal_facts(signals: dict[str, Any], title: str) -> list[tuple[str, st
         if intents.labelled:
             sample += f", {intents.labelled:,} of them labelled"
         facts.append((
-            f"{name} — citation intents in {sample}: background {intents.background:,}, "
-            f"methodology {intents.methodology:,}, result {intents.result:,}",
+            (f"{name} — citation intents in {sample}: background {intents.background:,}, "
+             f"methodology {intents.methodology:,}, result {intents.result:,}"),
             str(provenance.get("intents") or ""),
         ))
     if signals.get("is_open_access") is not None and "open_access" not in missing:
