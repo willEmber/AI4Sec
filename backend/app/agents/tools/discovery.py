@@ -39,7 +39,13 @@ from app.db import agent_repository as repo
 from app.models.agent_models import ErrorCode, ToolResult
 from app.services import citation_graph, evidence_service, paper_catalog
 from app.services.citation_graph import PaperMetadata
-from app.services.paper_search import Paper, SearchFilters, SearchOutcome, jaccard_similarity
+from app.services.paper_ir_loader import load_pub_rank
+from app.services.paper_search import (
+    Paper,
+    SearchFilters,
+    SearchOutcome,
+    jaccard_similarity,
+)
 from app.services.paper_search import search_papers_detailed as run_search
 from app.services.paper_search.http_client import HTTPClient, HTTPStatusError
 from app.services.paper_search.models import PUBLICATION_TYPES, SORTS
@@ -934,22 +940,56 @@ def _s2_lookup_id(target: dict[str, str]) -> str:
     return ""
 
 
+async def _session_paper_works(
+    ctx: AgentContext, paper_ids: list[str] | None
+) -> tuple[list[tuple[str, str, str]], list[dict[str, str]]]:
+    """`(query, literature_id, stored DOI)` of papers this session holds.
+
+    A parsed paper is listed to the model by its `paper_id` alone, so asking
+    about the paper being read used to fail: the tool took only work ids. A
+    full id or an unambiguous prefix of eight or more characters (the
+    section ids carry eight) names a paper; one the session does not hold is
+    refused alike whether it exists or not, as the reading tools do.
+    """
+    wanted = _clean_list(paper_ids)
+    if not wanted:
+        return [], []
+    held = [p for p in await repo.list_session_papers(ctx.session_id) if p.paper_id]
+    works: list[tuple[str, str, str]] = []
+    not_found: list[dict[str, str]] = []
+    for query in wanted:
+        q = query.casefold()
+        matches = [p for p in held if p.paper_id == q or (len(q) >= 8 and p.paper_id.startswith(q))]
+        if len(matches) != 1:
+            not_found.append({"query": query, "reason": "not a paper of this session"})
+            continue
+        stored = await load_pub_rank(matches[0].paper_id)
+        works.append((query, matches[0].literature_id, stored.get("doi") or ""))
+    return works, not_found
+
+
 async def _metadata_targets(
-    literature_ids: list[str] | None, dois: list[str] | None, arxiv_ids: list[str] | None
+    ctx: AgentContext,
+    literature_ids: list[str] | None,
+    dois: list[str] | None,
+    arxiv_ids: list[str] | None,
+    paper_ids: list[str] | None = None,
 ) -> tuple[list[dict[str, str]], list[dict[str, str]]]:
     """What the caller asked about, each with whatever identifiers are known."""
     targets: list[dict[str, str]] = []
-    not_found: list[dict[str, str]] = []
-    for lit in _clean_list(literature_ids):
+    works, not_found = await _session_paper_works(ctx, paper_ids)
+    asked = [*works, *((lit, lit, "") for lit in _clean_list(literature_ids))]
+    for query, lit, stored_doi in asked:
         item = await paper_catalog.get_literature_item(lit)
         if item is None:
-            not_found.append({"query": lit, "reason": "unknown literature_id"})
+            not_found.append({"query": query, "reason": "unknown literature_id"})
             continue
         targets.append(
             {
-                "query": lit,
+                "query": query,
                 "literature_id": lit,
-                "doi": item.get("doi") or "",
+                # A local paper's work may predate the DOI its venue lookup found.
+                "doi": item.get("doi") or stored_doi,
                 "arxiv_id": item.get("arxiv_id") or "",
                 "s2_paper_id": item.get("s2_paper_id") or "",
                 "title": item.get("title") or "",
@@ -968,6 +1008,7 @@ async def get_paper_metadata(
     literature_ids: list[str] | None = None,
     dois: list[str] | None = None,
     arxiv_ids: list[str] | None = None,
+    paper_ids: list[str] | None = None,
 ) -> str:
     """Bibliographic facts for up to 20 papers in one call.
 
@@ -977,14 +1018,14 @@ async def get_paper_metadata(
     status, fields of study and a one-sentence TL;DR. Use it to compare how
     cited several papers are, or to check a venue or date, instead of calling
     resolve_paper once per paper. Identify papers by literature_id (from any
-    earlier tool), DOI or arXiv id.
+    earlier tool), DOI, arXiv id, or paper_id for a paper of this session.
     """
     ctx = runtime.context
-    targets, not_found = await _metadata_targets(literature_ids, dois, arxiv_ids)
+    targets, not_found = await _metadata_targets(ctx, literature_ids, dois, arxiv_ids, paper_ids)
     if not targets and not not_found:
         return ToolResult.failed(
             ErrorCode.INVALID_ARGUMENT,
-            "Pass literature_ids, dois or arxiv_ids.",
+            "Pass literature_ids, dois, arxiv_ids or paper_ids.",
             retryable=False,
         ).to_json()
     if len(targets) > MAX_METADATA_ITEMS:

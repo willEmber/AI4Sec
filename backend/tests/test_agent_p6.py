@@ -892,6 +892,26 @@ class MetadataToolTests(AgentP2TestCase):
         self.assertEqual(evidence.source_level.value, "metadata")
         self.assertIn("21 (Semantic Scholar)", evidence.quote)
 
+    async def test_a_session_paper_is_named_by_its_paper_id(self) -> None:
+        # A parsed paper is listed to the model by its paper_id alone.
+        from app.agents.tools import get_paper_metadata
+        from app.db import database as db
+
+        # The venue lookup stored the published version's DOI on the paper's row.
+        await db.execute("UPDATE papers SET doi = ? WHERE paper_id = 'paper1'", ("10.1109/cvpr.2024.1",))
+        s2 = mock.AsyncMock(return_value=[_s2_record(title="SparseMoE Routing")])
+        with mock.patch("app.agents.tools.discovery.s2_batch", new=s2), \
+             mock.patch("app.services.citation_graph.openalex_batch_fetch_by_doi",
+                        new=mock.AsyncMock(return_value={})):
+            result = await self._call(get_paper_metadata, paper_ids=["paper1", "deadbeefcafe"])
+
+        self.assertEqual(s2.await_args.args[1], ["DOI:10.1109/cvpr.2024.1"])
+        [paper] = result["data"]["papers"]
+        self.assertEqual(paper["citations"], {"semanticscholar": 21})
+        # A paper the session does not hold is refused, whether or not it exists.
+        self.assertEqual(result["data"]["not_found"],
+                         [{"query": "deadbeefcafe", "reason": "not a paper of this session"}])
+
     async def test_nothing_to_look_up_is_an_argument_error(self) -> None:
         from app.agents.tools import get_paper_metadata
 
