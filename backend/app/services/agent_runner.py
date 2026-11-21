@@ -612,9 +612,10 @@ async def _execute_turn(
         flush_ms=settings.agent_delta_flush_ms,
         flush_chars=settings.agent_delta_flush_chars,
     )
-    # Where the answer stood after the latest tool result: the report is what
-    # the turn wrote after it, not the narration between its reads.
-    report_mark = 0
+    # Where the answer stood after each tool result: the report is a stretch
+    # written after one, not the narration between reads
+    # (`answer_reports.report_body`).
+    report_marks: list[int] = []
 
     def _report_run() -> str:
         report = context.report if context is not None else None
@@ -772,7 +773,7 @@ async def _execute_turn(
                         # paper list beside the conversation, so it has to hear about
                         # it now rather than on the next reload.
                         await stream.emit(EventType.PAPER_ADDED, attached)
-                    report_mark = len(stream.shown_text())
+                    report_marks.append(len(stream.shown_text()))
                     continue
 
                 if isinstance(message, (AIMessage, AIMessageChunk)):
@@ -866,7 +867,8 @@ async def _execute_turn(
         if context.report is not None:
             if completion == "complete":
                 await _save_report(
-                    context, stream, body=shown[report_mark:].strip(),
+                    context, stream,
+                    body=answer_reports.report_body(shown, report_marks, context.report.required),
                     stop_reason=stop_reason or "", sink=_tool_tokens,
                 )
             else:

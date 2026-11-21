@@ -19,6 +19,7 @@ The turn keeps the row alive: the runner's heartbeat beats it with the turn
 
 from __future__ import annotations
 
+import itertools
 import json
 import logging
 import re
@@ -123,6 +124,26 @@ def missing_sections(body: str, required: tuple[str, ...]) -> list[str]:
     that *contains* the required words counts ("2. 方法流程" for "方法流程")."""
     headings = [h.casefold() for h in _HEADING_RE.findall(body)]
     return [r for r in required if not any(r.casefold() in h for h in headings)]
+
+
+def report_body(shown: str, marks: list[int], required: tuple[str, ...]) -> str:
+    """The report among what the turn wrote between its tool results.
+
+    `marks` are where the answer stood after each tool result. The report is
+    normally the last stretch — narration between reads is not the report —
+    but a model can write the report and call a tool with it (save a memory
+    the reader asked for, check one number) and close with a line, which
+    would then be saved as the report. The stretch missing the fewest
+    required headings is taken, the latest among equals: a draft outline
+    written before the reads loses to the report written after them.
+    """
+    bounds = [0, *marks, len(shown)]
+    stretches = [shown[a:b].strip() for a, b in itertools.pairwise(bounds)]
+    best = min(
+        range(len(stretches)),
+        key=lambda i: (len(missing_sections(stretches[i], required)), -i),
+    )
+    return stretches[best]
 
 
 async def _paper_title(paper_id: str) -> str:

@@ -118,6 +118,37 @@ class ReportCitationTests(unittest.TestCase):
         self.assertEqual(_exported_markdown(None, run), "")
 
 
+class ReportBodyTests(unittest.TestCase):
+    REPORT = "# Core idea\nSparse [E1].\n\n# Method\nTwo steps [E2]."
+    REQUIRED = ("Core idea", "Method")
+
+    def _body(self, *stretches: str, required: tuple[str, ...] = REQUIRED) -> str:
+        from app.services.answer_reports import report_body
+
+        shown, marks = "", []
+        for i, stretch in enumerate(stretches):
+            shown += stretch
+            if i < len(stretches) - 1:
+                marks.append(len(shown))
+        return report_body(shown, marks, required)
+
+    def test_the_report_is_written_after_the_last_read(self) -> None:
+        self.assertEqual(self._body("Reading the method. ", "", self.REPORT), self.REPORT)
+        self.assertEqual(self._body(self.REPORT), self.REPORT)
+
+    def test_a_tool_called_after_the_report_does_not_replace_it(self) -> None:
+        self.assertEqual(self._body("Reading. ", self.REPORT, "Saved to memory."), self.REPORT)
+
+    def test_a_draft_outline_loses_to_the_report_written_after_the_reads(self) -> None:
+        draft = "Plan:\n# Core idea\n# Method\n"
+        self.assertEqual(self._body(draft, "", self.REPORT), self.REPORT)
+
+    def test_without_required_headings_the_last_stretch_stands(self) -> None:
+        self.assertEqual(self._body("Reading. ", "The answer.", required=()), "The answer.")
+        # Renamed headings everywhere: nothing to prefer, the last stretch as before.
+        self.assertEqual(self._body("# Idea\nX", "Done."), "Done.")
+
+
 class SkillsDirMixin:
     """Points the method loader at a temporary directory holding a Lens method."""
 
@@ -340,6 +371,25 @@ class AnswerReportTurnTests(SkillsDirMixin, GuardTestCase):
 
         [artifact] = await repo.list_session_artifacts(self.session.session_id)
         self.assertEqual((artifact.run_id, artifact.answer, artifact.stop_reason), (row["run_id"], True, ""))
+
+    async def test_a_tool_called_with_the_report_leaves_the_report_whole(self) -> None:
+        report = "# Core idea\nRouting is sparse [E1].\n\n# Method\nTwo steps [E2]."
+        run, _ = await self._run(
+            [
+                ("tools", [("passages_tool", {"n": 2})], "Reading the method first."),
+                # The report, and a tool called with it; then a closing line.
+                ("tools", [("passages_tool", {"n": 1})], report),
+                ("text", "I also checked the first passage."),
+            ],
+            mode="lens",
+        )
+        self.assertEqual((await self._finished(run)).status.value, "done")
+        [row] = await self._report_rows()
+        self.assertTrue(row["markdown"].startswith("# Core idea"))
+        self.assertNotIn("I also checked", row["markdown"])
+        self.assertTrue(json.loads(row["json_data"])["structure_ok"])
+        # The answer the reader saw keeps every word.
+        self.assertTrue((await self._answer(run)).content.endswith("I also checked the first passage."))
 
     async def test_the_model_may_open_a_report_itself_once(self) -> None:
         run, _ = await self._run(
