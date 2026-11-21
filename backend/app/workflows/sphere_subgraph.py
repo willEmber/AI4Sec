@@ -50,7 +50,6 @@ from app.models.sphere_models import (
     SphereConfig,
     SphereEdge,
     SphereNode,
-    SphereOutput,
     SphereState,
     ThemeCluster,
     TimelineEntry,
@@ -1682,11 +1681,13 @@ async def step_select_core_set(
         ],
     )
 
-    # Persist nodes + edges
-    try:
-        await _persist_sphere(sphere, run_id)
-    except Exception as e:
-        logger.warning(f"[{paper_id}] sphere select: DB persist failed: {e}")
+    # Persist nodes + edges (they hang on a `runs` row; a literature map made
+    # outside a report has none)
+    if run_id and state.get("persist_sphere", True):
+        try:
+            await _persist_sphere(sphere, run_id)
+        except Exception as e:
+            logger.warning(f"[{paper_id}] sphere select: DB persist failed: {e}")
 
     part_summary = {k: len(v) for k, v in partitions.items() if v}
     logger.info(
@@ -2149,6 +2150,49 @@ _SPHERE_ZH_DIRECTIVE = """
 输出语言要求:JSON 的所有键名(key)保持英文不变;但所有自然语言文本字段的值(如 name、definition、problem、assumption、method、dataset、metric、strength、weakness、title、description、overview 等)一律用简体中文撰写。论文标题、作者姓名、期刊/会议名称、以及专有技术术语可保留英文(术语首次出现可在括号内附中文解释)。仍然只返回合法 JSON,不要 markdown 代码围栏或任何解释。"""
 
 
+def timeline_and_hubs(
+    sphere: SphereState, paper_list: list[SphereNode], *, log_label: str = "sphere"
+) -> None:
+    """The parts of the landscape code can lay out without a model: years and hubs.
+
+    The timeline groups the core set and the center by year; the key hubs are
+    the PageRank leaders of the similarity graph, when it has edges between
+    candidates (a pure star around the center makes every node identical).
+    """
+    center = sphere.center_node
+    sphere.output.timeline = []
+    sphere.output.key_hubs = []
+    year_groups: dict[int, list[str]] = {}
+    timeline_nodes = list(paper_list)
+    if center is not None and center.year > 0:
+        timeline_nodes.append(center)
+    for node in timeline_nodes:
+        if node.year > 0:
+            year_groups.setdefault(node.year, []).append(node.node_id)
+    for year in sorted(year_groups.keys()):
+        sphere.output.timeline.append(TimelineEntry(year=year, node_ids=year_groups[year]))
+
+    center_id = center.node_id if center is not None else ""
+    has_candidate_edges = any(
+        e.edge_type == EdgeType.COUPLING
+        or (e.edge_type == EdgeType.CITES and e.source_node_id != center_id and e.target_node_id != center_id)
+        for e in sphere.edges
+    )
+    if not has_candidate_edges:
+        logger.info(f"{log_label}: no candidate-level edges — skipping key hubs")
+        return
+    hub_candidates = [n for nid, n in sphere.nodes.items() if nid != center_id and n.score_graph > 0]
+    hub_candidates.sort(key=lambda n: (n.score_graph, n.cited_by_count), reverse=True)
+    for node in hub_candidates[:10]:
+        sphere.output.key_hubs.append(KeyHub(
+            node_id=node.node_id,
+            title=node.title,
+            pagerank=node.score_graph,
+            cited_by_count=node.cited_by_count,
+            reason=node.reason,
+        ))
+
+
 async def step_synthesize_landscape(
     sphere: SphereState,
     state: MainGraphState,
@@ -2374,49 +2418,7 @@ async def step_synthesize_landscape(
                 weakness=row_data.get("weakness", ""),
             ))
 
-    # ── Timeline (core set + center only — no more garbage years) ──
-    year_groups: dict[int, list[str]] = {}
-    timeline_nodes = list(paper_list)
-    if center.year > 0:
-        timeline_nodes.append(center)
-    for node in timeline_nodes:
-        if node.year > 0:
-            year_groups.setdefault(node.year, []).append(node.node_id)
-    for year in sorted(year_groups.keys()):
-        sphere.output.timeline.append(TimelineEntry(
-            year=year,
-            node_ids=year_groups[year],
-        ))
-
-    # ── Key hubs: PageRank over the *similarity graph* (candidate↔candidate
-    #    citations + bibliographic coupling). Only meaningful when such edges
-    #    exist; a pure star graph would make every node identical. ──
-    center_id = center.node_id
-    has_candidate_edges = any(
-        e.edge_type == EdgeType.COUPLING
-        or (e.edge_type == EdgeType.CITES and e.source_node_id != center_id and e.target_node_id != center_id)
-        for e in sphere.edges
-    )
-    if has_candidate_edges:
-        hub_candidates = [
-            n for nid, n in sphere.nodes.items()
-            if nid != center_id and n.score_graph > 0
-        ]
-        hub_candidates.sort(
-            key=lambda n: (n.score_graph, n.cited_by_count), reverse=True
-        )
-        for node in hub_candidates[:10]:
-            sphere.output.key_hubs.append(KeyHub(
-                node_id=node.node_id,
-                title=node.title,
-                pagerank=node.score_graph,
-                cited_by_count=node.cited_by_count,
-                reason=node.reason,
-            ))
-    else:
-        logger.info(
-            f"[{paper_id}] sphere synth: no candidate-level edges — skipping key hubs"
-        )
+    timeline_and_hubs(sphere, paper_list, log_label=f"[{paper_id}] sphere synth")
 
     # ── Research Advisor ──
     try:
@@ -2534,6 +2536,92 @@ _PARTITION_TITLES = {
         "library": "From Your Library",
     },
 }
+
+
+def _node_payload(node: SphereNode) -> dict[str, Any]:
+    return {
+        "node_id": node.node_id,
+        "title": node.title,
+        "year": node.year,
+        "venue": normalize_venue(node.venue) if node.venue else "",
+        "authors": node.authors,
+        "doi": node.doi,
+        "arxiv_id": node.arxiv_id,
+        "openalex_id": node.openalex_id,
+        "cited_by_count": node.cited_by_count,
+        "sci_rank": node.sci_rank,
+        "ccf_rank": node.ccf_rank,
+        "tier": node.tier,
+        "quality_score": round(node.quality_score, 3),
+        "relevance": node.relevance,
+        "relation_type": node.relation_type.value,
+        "relation_reason": node.relation_reason,
+        "reason": node.reason,
+        "cluster_id": node.cluster_id,
+        "influential": node.influential,
+        "library_document_id": node.library_document_id,
+        "method_summary": node.method_summary,
+        "contribution": node.contribution,
+        "task": node.task,
+        "dataset": node.dataset,
+    }
+
+
+def sphere_json_fields(
+    sphere: SphereState, *, paper_id: str, language: str, num_nodes: int, num_edges: int
+) -> dict[str, Any]:
+    """The `json_data` the Sphere views render, from a finished state.
+
+    The markdown flattens every node into a prose bullet; the frontend needs the
+    same nodes as fields so it can render cards, badges and filters. Only nodes
+    the output refers to are emitted, keeping the payload proportional to the
+    core set rather than to every candidate. The counts are passed in because a
+    literature map keeps only the nodes it shows, not every candidate it weighed.
+    """
+    center = sphere.center_node
+    output = sphere.output
+    referenced_ids: set[str] = set()
+    for part in output.partitions:
+        referenced_ids.update(part.node_ids)
+    for theme in output.themes:
+        referenced_ids.update(theme.representative_node_ids)
+    for entry in output.timeline:
+        referenced_ids.update(entry.node_ids)
+    for hub in output.key_hubs:
+        referenced_ids.add(hub.node_id)
+    for row in output.comparison_table:
+        referenced_ids.add(row.node_id)
+    for gap in output.gaps_and_ideas:
+        referenced_ids.update(gap.evidence_node_ids)
+    for path in output.reading_paths:
+        referenced_ids.update(path.node_ids)
+    if center:
+        referenced_ids.add(center.node_id)
+
+    nodes_payload = {
+        nid: _node_payload(node)
+        for nid in sorted(referenced_ids)
+        if (node := sphere.nodes.get(nid)) is not None
+    }
+    return {
+        "mode": "sphere",
+        "paper_id": paper_id,
+        "title": center.title if center else "",
+        "num_nodes": num_nodes,
+        "num_edges": num_edges,
+        "num_core": len(sphere.layer1_node_ids),
+        "num_layer2": len(sphere.layer2_node_ids),
+        "language": language,
+        "center_node_id": center.node_id if center else "",
+        "nodes": nodes_payload,
+        "partitions": [p.model_dump() for p in output.partitions],
+        "num_library_matches": len(sphere.library_matches),
+        "library_matches": [m.model_dump() for m in sphere.library_matches],
+        "sphere_output": output.model_dump(),
+        # Per-stage candidate funnel (counts + top dropped papers per stage);
+        # answers "where did paper X disappear" without rerunning the pipeline.
+        "debug": {"funnel": sphere.funnel},
+    }
 
 
 async def step_render_output(
@@ -2729,83 +2817,13 @@ async def step_render_output(
 
     markdown = "".join(md_parts)
 
-    # ── Node dictionary for structured (non-markdown) renderers ──
-    # The markdown above flattens every node into a prose bullet; the frontend
-    # needs the same nodes as fields so it can render cards, badges and filters.
-    # Only nodes actually referenced by the report are emitted, keeping the
-    # payload proportional to the core set rather than to every candidate.
-    referenced_ids: set[str] = set()
-    for part in output.partitions:
-        referenced_ids.update(part.node_ids)
-    for theme in output.themes:
-        referenced_ids.update(theme.representative_node_ids)
-    for entry in output.timeline:
-        referenced_ids.update(entry.node_ids)
-    for hub in output.key_hubs:
-        referenced_ids.add(hub.node_id)
-    for row in output.comparison_table:
-        referenced_ids.add(row.node_id)
-    for gap in output.gaps_and_ideas:
-        referenced_ids.update(gap.evidence_node_ids)
-    for path in output.reading_paths:
-        referenced_ids.update(path.node_ids)
-    if center:
-        referenced_ids.add(center.node_id)
-
-    def _node_payload(node: SphereNode) -> dict[str, Any]:
-        return {
-            "node_id": node.node_id,
-            "title": node.title,
-            "year": node.year,
-            "venue": normalize_venue(node.venue) if node.venue else "",
-            "authors": node.authors,
-            "doi": node.doi,
-            "arxiv_id": node.arxiv_id,
-            "openalex_id": node.openalex_id,
-            "cited_by_count": node.cited_by_count,
-            "sci_rank": node.sci_rank,
-            "ccf_rank": node.ccf_rank,
-            "tier": node.tier,
-            "quality_score": round(node.quality_score, 3),
-            "relevance": node.relevance,
-            "relation_type": node.relation_type.value,
-            "relation_reason": node.relation_reason,
-            "reason": node.reason,
-            "cluster_id": node.cluster_id,
-            "influential": node.influential,
-            "library_document_id": node.library_document_id,
-            "method_summary": node.method_summary,
-            "contribution": node.contribution,
-            "task": node.task,
-            "dataset": node.dataset,
-        }
-
-    nodes_payload = {
-        nid: _node_payload(node)
-        for nid in sorted(referenced_ids)
-        if (node := sphere.nodes.get(nid)) is not None
-    }
-
-    # Build JSON output
-    json_data = json.dumps({
-        "mode": "sphere",
-        "paper_id": paper_id,
-        "title": center.title if center else "",
-        "num_nodes": len(sphere.nodes),
-        "num_edges": len(sphere.edges),
-        "num_core": len(sphere.layer1_node_ids),
-        "num_layer2": len(sphere.layer2_node_ids),
-        "language": lang,
-        "center_node_id": center.node_id if center else "",
-        "nodes": nodes_payload,
-        "partitions": [p.model_dump() for p in output.partitions],
-        "num_library_matches": len(sphere.library_matches),
-        "library_matches": [m.model_dump() for m in sphere.library_matches],
-        "sphere_output": output.model_dump(),
-        # Per-stage candidate funnel (counts + top dropped papers per stage);
-        # answers "where did paper X disappear" without rerunning the pipeline.
-        "debug": {"funnel": sphere.funnel},
-    }, ensure_ascii=False)
+    json_data = json.dumps(
+        sphere_json_fields(
+            sphere, paper_id=paper_id, language=lang,
+            num_nodes=len(sphere.nodes), num_edges=len(sphere.edges),
+        ),
+        ensure_ascii=False,
+    )
 
     logger.info(f"[{paper_id}] sphere render: markdown={len(markdown)} chars")
     await _emit_progress(run_id, "render_output", "done")
@@ -2816,14 +2834,9 @@ async def step_render_output(
 # Main orchestrator
 # ──────────────────────────────────────────────────────────────────────
 
-async def run_research_sphere(state: MainGraphState) -> dict[str, Any]:
-    """Run the redesigned Research Sphere pipeline."""
-    paper_id = state["paper_id"]
-    run_id = state.get("run_id", "")
-    t0 = time.perf_counter()
-
+def sphere_config() -> SphereConfig:
     settings = get_settings()
-    config = SphereConfig(
+    return SphereConfig(
         radius=settings.sphere_radius,
         candidate_cap=settings.sphere_candidate_cap,
         gate_cap=settings.sphere_gate_cap,
@@ -2833,6 +2846,82 @@ async def run_research_sphere(state: MainGraphState) -> dict[str, Any]:
         venue_rank_enabled=settings.sphere_venue_rank_enabled,
         frontier_min_citations=settings.sphere_frontier_min_citations,
     )
+
+
+# The steps of a literature map (P16 §4.1): the funnel up to the core set's
+# abstract analysis. Downloading core papers is the conversation's to decide,
+# and the synthesis is the report it writes.
+MAP_STEPS = (
+    step_init_from_pdf,
+    step_extract_core_metadata,
+    step_resolve_canonical_ids,
+    step_expand_graph_candidates,
+    step_enrich_candidates,
+    step_score_and_rank,
+    step_relevance_gate,
+    step_build_similarity_graph,
+    step_select_core_set,
+    step_layer1_abstract_snap,
+)
+
+
+async def build_literature_map(state: MainGraphState, run_id: str = "") -> SphereState:
+    """Run the map steps, lay out timeline and hubs, keep only what the map shows.
+
+    `run_id` receives the step progress (and the node rows, when it names a
+    `runs` row and `persist_sphere` is not false). The state returned holds the
+    center, the core set and the hubs; edges are dropped once they have done
+    their work (clusters, PageRank), so a cached map stays small.
+    """
+    sphere = SphereState(config=sphere_config())
+    for step in MAP_STEPS:
+        sphere = await step(sphere, state, run_id)
+    core = [sphere.nodes[nid] for nid in sphere.layer1_node_ids if nid in sphere.nodes]
+    timeline_and_hubs(sphere, core, log_label=f"[{state['paper_id']}] sphere map")
+    return sphere
+
+
+def trim_to_map(sphere: SphereState) -> SphereState:
+    keep = set(sphere.layer1_node_ids) | {h.node_id for h in sphere.output.key_hubs}
+    if sphere.center_node is not None:
+        keep.add(sphere.center_node.node_id)
+    return sphere.model_copy(
+        update={
+            "nodes": {nid: n for nid, n in sphere.nodes.items() if nid in keep},
+            "edges": [],
+            "pdf_refs": [],
+        }
+    )
+
+
+def map_papers(sphere: SphereState) -> list[tuple[str, SphereNode]]:
+    """(group, node) of a literature map: the core set by partition, then the
+    hubs outside it (group "hub"). The order the tool numbers papers in, and
+    the one the report's view indexes them by."""
+    out: list[tuple[str, SphereNode]] = []
+    seen: set[str] = set()
+    partitions = {p.key: p.node_ids for p in sphere.output.partitions}
+    for key in [*_PARTITION_ORDER, *(k for k in partitions if k not in _PARTITION_ORDER)]:
+        for nid in partitions.get(key, []):
+            node = sphere.nodes.get(nid)
+            if node is not None and nid not in seen:
+                out.append((key, node))
+                seen.add(nid)
+    for hub in sphere.output.key_hubs:
+        node = sphere.nodes.get(hub.node_id)
+        if node is not None and hub.node_id not in seen:
+            out.append(("hub", node))
+            seen.add(hub.node_id)
+    return out
+
+
+async def run_research_sphere(state: MainGraphState) -> dict[str, Any]:
+    """Run the redesigned Research Sphere pipeline."""
+    paper_id = state["paper_id"]
+    run_id = state.get("run_id", "")
+    t0 = time.perf_counter()
+
+    config = sphere_config()
     sphere = SphereState(config=config)
 
     logger.info(f"[{paper_id}] sphere: Starting pipeline (config={config.model_dump()})")

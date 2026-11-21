@@ -1062,6 +1062,12 @@ def _tool_completion_payload(message: ToolMessage) -> dict[str, Any]:
                     "title": data.get("title", ""),
                     "availability": data.get("availability", ""),
                 }
+            elif data.get("candidates_added"):
+                # A literature map attached its papers as candidates.
+                payload["_attached_paper"] = {
+                    "candidates_added": data["candidates_added"],
+                    "added_by": "sphere",
+                }
     payload["_evidence_ids"] = evidence_ids
     return payload
 

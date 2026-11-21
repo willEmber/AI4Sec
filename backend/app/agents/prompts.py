@@ -30,7 +30,12 @@ each tool is for; the prompt says what good reading looks like.
 
 from __future__ import annotations
 
-from app.models.agent_models import AgentMemory, AgentProject, SessionPaper
+from app.models.agent_models import (
+    AgentMemory,
+    AgentProject,
+    Availability,
+    SessionPaper,
+)
 
 # Recorded on every run so an evaluation can tell which prompt produced a result.
 # A turn with report modes written as answers records more (`current_prompt_version`).
@@ -364,6 +369,15 @@ def _format_papers(papers: list[SessionPaper], language: str) -> str:
             "user attaches one."
         )
 
+    # A literature map attaches a few dozen candidates at once (P16 §4.1). They
+    # are listed apart, one short line each, so the papers the reader is
+    # working on stay readable.
+    def _mapped(paper: SessionPaper) -> bool:
+        return paper.added_by == "sphere" and paper.availability == Availability.CANDIDATE
+
+    mapped = [p for p in papers if _mapped(p)]
+    papers = [p for p in papers if not _mapped(p)]
+
     lines = []
     for paper in papers:
         title = paper.title or "(untitled)"
@@ -374,7 +388,19 @@ def _format_papers(papers: list[SessionPaper], language: str) -> str:
             handle = f"literature_id={paper.literature_id}"
         lines.append(f"- {title} ({year}) — {handle}, {paper.availability.value}")
 
-    body = "\n".join(lines)
+    body = "\n".join(lines) or ("（无）" if language == "zh" else "(none)")
+    if mapped:
+        listed = "\n".join(
+            f"- {p.title or '(untitled)'}"
+            + (f" ({p.year})" if p.year_known else "")
+            + f" — literature_id={p.literature_id}"
+            for p in mapped
+        )
+        body += (
+            f"\n\n文献图候选（{len(mapped)} 篇，只有元数据和摘要）：\n{listed}"
+            if language == "zh"
+            else f"\n\nLiterature-map candidates ({len(mapped)}, metadata and abstract only):\n{listed}"
+        )
     if language == "zh":
         return (
             "\n\n## 本会话的论文\n\n"

@@ -151,6 +151,34 @@ def to_pages(markdown: str, citations: dict[str, dict[str, Any]], *, paper_id: s
     return _REPEATED_PAGE_RE.sub(r"\1", text)
 
 
+_REPEATED_WORK_RE = re.compile(r"(\[#\d+\])(?:\s*\1)+")
+
+
+def to_works(
+    markdown: str, citations: dict[str, dict[str, Any]], *, paper_id: str, numbers: dict[str, int]
+) -> str:
+    """The report with each citation as the number of the work it came from, `[#n]`.
+
+    For what reads a report by the papers it discusses: the Sphere digest maps
+    a statement to the papers of the literature map by these numbers rather
+    than by how the report happened to shorten a title. This paper is `#0`;
+    `numbers` maps a `literature_id` to its number, and a citation of a work
+    without one is left out.
+    """
+
+    def work(eid: str) -> str:
+        entry = citations.get(eid) or {}
+        if paper_id and entry.get("paper_id") == paper_id:
+            return "[#0]"
+        n = numbers.get(entry.get("literature_id") or "")
+        return f"[#{n}]" if n is not None else ""
+
+    text = normalise(markdown)
+    text = _BRACKETED_RE.sub(lambda m: work(m.group(1)), text)
+    text = _ID_RE.sub(lambda m: work(m.group(0)), text)
+    return _REPEATED_WORK_RE.sub(r"\1", text)
+
+
 def to_numbered(
     markdown: str, citations: dict[str, dict[str, Any]], *, paper_id: str, language: str
 ) -> str:

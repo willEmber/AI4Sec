@@ -1,7 +1,7 @@
 {
   "name": "chains_seed",
   "version": "2",
-  "description": "Whole-paper reports and the chains around them: each of the three modes on request and unprompted, a question answered after a report (the step a folded-in report could drop), a report asked to weigh a specific concern, and a paper found and fetched before it is read. Same two papers as reading_seed. Costly: every attempt makes its reports anew, and the acquisition case downloads and parses a paper. v2 (P16): a Lens or Snap case passes with the report written as the answer (begin_report) or made by the tool, its citations are scored, and the follow-up must not write it again (nor look the Snap signals up again).",
+  "description": "Whole-paper reports and the chains around them: each of the three modes on request and unprompted, a question answered after a report (the step a folded-in report could drop), a report asked to weigh a specific concern, and a paper found and fetched before it is read. Same two papers as reading_seed. Costly: every attempt makes its reports anew, and the acquisition case downloads and parses a paper. v2 (P16): a report case passes with the report written as the answer (begin_report) or made by the tool, its citations are scored, and the follow-up must not write it again (nor look the Snap signals up again, nor rebuild the Sphere literature map).",
   "repeats": 3,
   "papers": {
     "sinsr": {
@@ -117,8 +117,8 @@
       "papers": ["sinsr"],
       "mode": "sphere",
       "question": "这篇在领域里处于什么位置？相关工作有哪些？",
-      "cites": false,
-      "expect_tools": ["run_research_sphere"],
+      "cites": true,
+      "expect_any_tools": ["run_research_sphere", "begin_report"],
       "key_points": [
         "点明 SinSR 建立在 ResShift 之上（ResShift 是它的教师模型或直接前序工作）"
       ],
@@ -135,7 +135,7 @@
       "setup": [{"question": "这篇在领域里处于什么位置？相关工作有哪些？", "mode": "sphere"}],
       "question": "全景报告里和 SinSR 最直接竞争的是哪几篇？从中挑一篇最值得我接着读的，说明理由。",
       "cites": false,
-      "forbid_tools": ["run_research_sphere"],
+      "forbid_tools": ["run_research_sphere", "begin_report", "build_literature_map"],
       "key_points": [
         "给出了报告中具体的论文名称作为直接竞争的方法",
         "从中推荐了一篇，并给出与 SinSR 相关的理由"

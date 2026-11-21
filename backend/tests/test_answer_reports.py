@@ -60,6 +60,18 @@ class ReportCitationTests(unittest.TestCase):
         self.assertEqual(normalise(text), f"x [{A}][{B}] y [{C}][{A}] z [{D}]")
         self.assertEqual(cited_ids(text), [A, B, C, D])
 
+    def test_work_form_numbers_citations_by_the_paper_they_are_from(self) -> None:
+        from app.services.report_citations import to_works
+
+        table = _table()
+        table[B] = {**table[B], "literature_id": "lit_b"}
+        table[D] = {**table[D], "literature_id": "lit_d"}
+        text = f"This [{A}], rival [{B}][{B}], rank [{C}], blog [{D}]."
+        self.assertEqual(
+            to_works(text, table, paper_id="p1", numbers={"lit_b": 2}),
+            "This [#0], rival [#2], rank , blog .",
+        )
+
     def test_page_form_keeps_this_papers_passages_only(self) -> None:
         from app.services.report_citations import to_pages
 
@@ -187,6 +199,8 @@ class ToolAndPromptTests(unittest.TestCase):
         self.assertNotIn("get_triage_signals", [t.name for t in ALL_AGENT_TOOLS])
         every = [t.name for t in agent_tools(frozenset({"lens", "snap", "sphere"}))]
         self.assertFalse({"run_insight_snap", "run_logic_lens", "run_research_sphere"} & set(every))
+        self.assertIn("build_literature_map", every)
+        self.assertNotIn("build_literature_map", snap_only)
 
     def test_the_prompt_is_unchanged_until_a_mode_is_switched_on(self) -> None:
         from app.agents.prompts import _EN, _ZH, build_system_prompt, current_prompt_version
@@ -502,6 +516,117 @@ class SnapViewTests(unittest.IsolatedAsyncioTestCase):
         data, _ = await self._view({})
         self.assertNotIn("verdict", data)
         self.assertIn("report", data)
+
+
+
+def _sphere_map() -> dict[str, Any]:
+    from app.models.sphere_models import (
+        CorePartition,
+        KeyHub,
+        SphereNode,
+        SphereOutput,
+        SphereState,
+        TimelineEntry,
+    )
+
+    center = SphereNode(node_id="c", title="SinSR", year=2024)
+    nodes = {
+        "c": center,
+        "n1": SphereNode(node_id="n1", title="ResShift", year=2023, layer=1, cluster_id=0),
+        "n2": SphereNode(node_id="n2", title="DDPM", year=2020, layer=1, cluster_id=0),
+        "h": SphereNode(node_id="h", title="Latent Diffusion", year=2022),
+    }
+    state = SphereState(
+        center_node=center,
+        nodes=nodes,
+        layer1_node_ids=["n1", "n2"],
+        output=SphereOutput(
+            partitions=[CorePartition(key="foundation", node_ids=["n2"]),
+                        CorePartition(key="method", node_ids=["n1"])],
+            timeline=[TimelineEntry(year=2020, node_ids=["n2"]), TimelineEntry(year=2023, node_ids=["n1"])],
+            key_hubs=[KeyHub(node_id="h", title="Latent Diffusion", pagerank=0.3)],
+        ),
+        funnel=[{"stage": "select", "core": 2}],
+    )
+    return {
+        "state": state.model_dump(mode="json"),
+        "num_nodes": 180,
+        "num_edges": 900,
+        "literature_ids": {"n1": "lit_b", "n2": "lit_x", "h": "lit_h"},
+    }
+
+
+class SphereViewTests(unittest.IsolatedAsyncioTestCase):
+    async def _view(self, parts: dict[str, Any], digest: dict[str, Any] | None):
+        from app.services import report_views
+        from app.services.answer_reports import ReportTurn
+
+        seen: dict[str, Any] = {}
+
+        async def fake_digest(_llm, *, markdown, papers, language, model, log_label):
+            seen["markdown"] = markdown
+            seen["papers"] = [p.title for p in papers]
+            seen["language"] = language
+            return digest
+
+        table = _table()
+        table[B] = {**table[B], "literature_id": "lit_b"}
+        report = ReportTurn(run_id="r1", mode="sphere", paper_id="p1", parts=parts)
+        with mock.patch.object(report_views, "generate_sphere_digest", side_effect=fake_digest), \
+             mock.patch.object(report_views, "get_llm_service", return_value=object()):
+            data = await report_views.sphere_view(
+                report, f"# T\n## Themes\nResShift [{B}] builds on this [{A}].", table, "en"
+            )
+        return data, seen
+
+    async def test_the_map_view_is_the_tools_map_and_the_texts_reading(self) -> None:
+        digest = {
+            "overview": "Diffusion SR moved to one step [#1].",
+            "themes": [{"name": "Few-step diffusion", "definition": "Fewer steps.", "papers": [1, 0, 9]}],
+            "timeline": [{"year": 2023, "summary": "ResShift shortens the chain."},
+                         {"year": 2024, "summary": "One step."}],
+            "comparison": [{"paper": 0, "method": "distillation"}, {"paper": 1, "method": "residual shift"},
+                           {"paper": 1, "method": "again"}],
+            "gaps": [{"title": "Fidelity", "description": "PSNR drops.", "papers": [0, 1]}],
+            "reading_paths": [{"name": "Fast", "papers": [2, 1]}, {"name": "odd", "papers": [3]},
+                              {"name": "frontier", "papers": [42]}],
+        }
+        data, seen = await self._view({"map": _sphere_map()}, digest)
+        # The map's papers, numbered as the tool numbered them, the center first;
+        # citations become those numbers.
+        self.assertEqual(seen["papers"], ["SinSR", "DDPM", "ResShift", "Latent Diffusion"])
+        self.assertIn("ResShift [#2] builds on this [#0].", seen["markdown"])
+        self.assertEqual(seen["language"], "en")
+        out = data["sphere_output"]
+        self.assertEqual(out["sphere_overview"], "Diffusion SR moved to one step.")
+        # The center is not a theme member, an unknown number is dropped.
+        self.assertEqual(out["themes"][0]["representative_node_ids"], ["n2"])
+        self.assertEqual([r["node_id"] for r in out["comparison_table"]], ["c", "n2"])
+        self.assertEqual(out["comparison_table"][1]["title"], "DDPM")
+        self.assertEqual([(p["name"], p["node_ids"]) for p in out["reading_paths"]],
+                         [("fast", ["n1", "n2"]), ("deep", ["h"])])
+        self.assertEqual(
+            [(e["year"], e["node_ids"], e["summary"]) for e in out["timeline"]],
+            [(2020, ["n2"], ""), (2023, ["n1"], "ResShift shortens the chain."), (2024, [], "One step.")],
+        )
+        # Partitions, hubs, nodes and counts are the tool's; identity is the snapshot's.
+        self.assertEqual([p["key"] for p in data["partitions"]], ["foundation", "method"])
+        self.assertEqual(out["key_hubs"][0]["node_id"], "h")
+        self.assertEqual(set(data["nodes"]), {"c", "n1", "n2", "h"})
+        self.assertEqual((data["num_nodes"], data["num_edges"], data["num_core"]), (180, 900, 2))
+        self.assertEqual(data["center_node_id"], "c")
+        self.assertEqual(data["debug"]["funnel"], [{"stage": "select", "core": 2}])
+        self.assertFalse({"mode", "paper_id", "title", "language"} & set(data))
+
+    async def test_an_unreadable_digest_leaves_the_map(self) -> None:
+        data, _ = await self._view({"map": _sphere_map()}, None)
+        self.assertEqual(data["sphere_output"]["themes"], [])
+        self.assertEqual(len(data["partitions"]), 2)
+
+    async def test_without_a_map_there_is_no_view(self) -> None:
+        data, seen = await self._view({}, {"overview": "x"})
+        self.assertEqual(data, {})
+        self.assertEqual(seen, {})
 
 
 if __name__ == "__main__":

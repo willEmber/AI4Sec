@@ -20,6 +20,7 @@ from typing import TYPE_CHECKING, Any
 from app.config import get_settings
 from app.models.lens_models import LensDigest, LensFigure
 from app.models.snap_models import SnapReport, TriageSignals
+from app.models.sphere_models import SphereNode, SphereState
 from app.services import report_citations
 from app.services.ir_extract import (
     extract_algorithms,
@@ -34,6 +35,7 @@ from app.services.llm_gateway import get_registry
 from app.services.llm_service import get_llm_service
 from app.services.paper_ir_loader import load_paper_ir
 from app.services.snap_digest import generate_snap_digest
+from app.services.sphere_digest import apply_digest, generate_sphere_digest
 from app.services.triage_verdict import ContentReview, synthesize_verdict
 
 if TYPE_CHECKING:
@@ -121,4 +123,53 @@ async def snap_view(
     return data
 
 
-BUILDERS: dict[str, Builder] = {"lens": lens_view, "snap": snap_view}
+async def sphere_view(
+    report: ReportTurn, text: str, citations: dict[str, dict[str, Any]], language: str
+) -> dict[str, Any]:
+    """The map view: the literature map the tool built, the report's reading of it.
+
+    Nodes, partitions, hubs, the timeline's years, the funnel and the counts
+    are what `build_literature_map` handed the report (`report.parts["map"]`);
+    the overview, themes, comparison, gaps, reading paths and what the
+    timeline says of each year are extracted from the text. Without a map
+    there is no view, and the page shows the report's text.
+    """
+    from app.workflows.sphere_subgraph import map_papers, sphere_json_fields
+
+    found = report.parts.get("map")
+    if not found:
+        return {}
+    sphere = SphereState.model_validate(found["state"])
+    papers = [sphere.center_node or SphereNode()] + [node for _group, node in map_papers(sphere)]
+    literature_ids = found.get("literature_ids") or {}
+    numbers = {
+        literature_ids[node.node_id]: n
+        for n, node in enumerate(papers)
+        if n and node.node_id in literature_ids
+    }
+    digest = await generate_sphere_digest(
+        get_llm_service(),
+        markdown=report_citations.to_works(
+            text, citations, paper_id=report.paper_id, numbers=numbers
+        ),
+        papers=papers,
+        language=language,
+        model=get_registry().utility_model,
+        log_label=f"[run:{report.run_id}] sphere",
+    )
+    if digest is not None:
+        apply_digest(sphere.output, digest, papers)
+    fields = sphere_json_fields(
+        sphere,
+        paper_id=report.paper_id,
+        language=language,
+        num_nodes=int(found.get("num_nodes") or len(sphere.nodes)),
+        num_edges=int(found.get("num_edges") or 0),
+    )
+    # The snapshot's own identity fields stand.
+    for key in ("mode", "paper_id", "title", "language"):
+        fields.pop(key, None)
+    return fields
+
+
+BUILDERS: dict[str, Builder] = {"lens": lens_view, "snap": snap_view, "sphere": sphere_view}

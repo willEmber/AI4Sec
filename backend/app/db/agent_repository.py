@@ -1267,6 +1267,29 @@ async def attach_session_paper(
     )
 
 
+async def add_session_candidates(
+    *, session_id: str, literature_ids: list[str], added_by: str, note: str = ""
+) -> None:
+    """Attach works as candidates, leaving any the session already holds as they are.
+
+    A literature map names a few dozen papers at once; one of them may already
+    be downloaded or parsed here, and attaching it again as a bare candidate
+    would forget that.
+    """
+    if not literature_ids:
+        return
+    await db.execute_many(
+        """INSERT INTO session_papers
+               (session_id, literature_id, paper_id, availability, added_by, note)
+           VALUES (?, ?, '', ?, ?, ?)
+           ON CONFLICT(session_id, literature_id) DO NOTHING""",
+        [
+            (session_id, literature_id, Availability.CANDIDATE.value, added_by, note)
+            for literature_id in dict.fromkeys(literature_ids)
+        ],
+    )
+
+
 async def set_session_paper_availability(
     *, session_id: str, literature_id: str, availability: Availability, note: str = ""
 ) -> None:
