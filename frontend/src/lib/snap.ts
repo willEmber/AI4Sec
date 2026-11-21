@@ -57,6 +57,13 @@ export interface SnapCitationIntents {
   influential: number;
   /** How many citation edges were inspected — these counts are a sample. */
   sampled: number;
+  /** How many of them carry an intent; absent on signals cached before it was recorded. */
+  labelled?: number;
+}
+
+/** Whether the sample holds any intent at all: S2 leaves most edges unlabelled. */
+export function hasIntents(intents: SnapCitationIntents): boolean {
+  return intents.background + intents.methodology + intents.result > 0;
 }
 
 export interface SnapSignals {

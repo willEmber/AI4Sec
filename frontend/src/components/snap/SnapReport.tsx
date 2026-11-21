@@ -7,6 +7,7 @@ import { useTranslation } from "@/lib/i18n";
 import {
   TIER_ACCENT,
   formatCount,
+  hasIntents,
   isUnknown,
   paperExternalUrl,
   repoLabel,
@@ -126,7 +127,7 @@ function EvidenceTable({ signals }: { signals: SnapSignals }) {
         </EvidenceRow>
       )}
 
-      {signals.intents.sampled > 0 && (
+      {hasIntents(signals.intents) && (
         <EvidenceRow label={t("snap.sig.intents")} source={p.intents || "—"}>
           <span className="flex flex-wrap items-baseline gap-x-2.5 gap-y-0.5">
             <span>
@@ -142,7 +143,12 @@ function EvidenceTable({ signals }: { signals: SnapSignals }) {
               <span className="font-mono tabular-nums">{signals.intents.background}</span>
             </span>
             <span className="text-[11px] text-muted-foreground">
-              {t("snap.intent.sampled", { n: String(signals.intents.sampled) })}
+              {signals.intents.labelled
+                ? t("snap.intent.sampled_labelled", {
+                    n: String(signals.intents.sampled),
+                    k: String(signals.intents.labelled),
+                  })
+                : t("snap.intent.sampled", { n: String(signals.intents.sampled) })}
             </span>
           </span>
         </EvidenceRow>

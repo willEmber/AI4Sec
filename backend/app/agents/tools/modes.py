@@ -45,6 +45,7 @@ from app.config import get_settings
 from app.db import agent_repository as repo
 from app.db import database as db
 from app.models.agent_models import Availability, ErrorCode, EventType, ToolResult
+from app.models.snap_models import CitationIntents
 from app.services import agent_jobs, mode_runs, paper_catalog, parse_service
 from app.services.paper_ir_loader import PaperNotParsed, ensure_pub_rank, load_paper_ir
 from app.workflows import progress
@@ -319,12 +320,15 @@ def snap_signal_facts(signals: dict[str, Any], title: str) -> list[tuple[str, st
         if signals.get("influential_citation_count") is not None:
             parts.append(f"{int(signals['influential_citation_count']):,} influential")
         facts.append((f"{name} — " + ", ".join(parts), str(provenance.get("citations") or "")))
-    intents = signals.get("intents") or {}
-    if intents.get("sampled") and "intents" not in missing:
+    intents = CitationIntents.model_validate(signals.get("intents") or {})
+    # A sample without a single label is no measurement (`available`).
+    if intents.available and "intents" not in missing:
+        sample = f"a sample of {intents.sampled:,} citing papers"
+        if intents.labelled:
+            sample += f", {intents.labelled:,} of them labelled"
         facts.append((
-            f"{name} — citation intents in a sample of {intents['sampled']} citing papers: "
-            f"background {intents.get('background', 0)}, methodology "
-            f"{intents.get('methodology', 0)}, result {intents.get('result', 0)}",
+            f"{name} — citation intents in {sample}: background {intents.background:,}, "
+            f"methodology {intents.methodology:,}, result {intents.result:,}",
             str(provenance.get("intents") or ""),
         ))
     if signals.get("is_open_access") is not None and "open_access" not in missing:

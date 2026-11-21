@@ -446,6 +446,7 @@ async def _s2_citation_intents(
         intents.sampled += 1
         if edge.get("isInfluential"):
             intents.influential += 1
+        labelled = False
         for intent in edge.get("intents") or []:
             if intent == "background":
                 intents.background += 1
@@ -453,6 +454,10 @@ async def _s2_citation_intents(
                 intents.methodology += 1
             elif intent in ("result", "resultclaim"):
                 intents.result += 1
+            else:
+                continue
+            labelled = True
+        intents.labelled += labelled
     return intents
 
 

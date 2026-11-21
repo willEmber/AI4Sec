@@ -176,6 +176,21 @@ class SnapSignalFactTests(unittest.TestCase):
         self.assertIn("Attention Is All You Need — no code repository link found in the paper", facts)
         self.assertTrue(any("published at Neural Information Processing Systems (NeurIPS), 2017" in f for f in facts))
 
+    def test_citation_intents_are_a_fact_only_when_labelled(self) -> None:
+        from app.agents.tools.modes import snap_signal_facts
+
+        def intents_fact(intents: dict) -> list[str]:
+            facts = snap_signal_facts({"intents": intents, "provenance": {"intents": "Semantic Scholar"}}, "P")
+            return [f for f, _ in facts if "intents" in f]
+
+        # 200 edges sampled, none labelled: not "background 0, methodology 0, result 0".
+        self.assertEqual(intents_fact({"sampled": 200, "influential": 26}), [])
+        self.assertEqual(
+            intents_fact({"sampled": 121, "labelled": 14, "background": 10, "methodology": 5, "result": 1}),
+            [("P — citation intents in a sample of 121 citing papers, 14 of them labelled: "
+              "background 10, methodology 5, result 1")],
+        )
+
     def test_what_the_report_could_not_obtain_is_left_out(self) -> None:
         from app.agents.tools.modes import snap_signal_facts
 

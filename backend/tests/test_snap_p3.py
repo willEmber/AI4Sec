@@ -106,6 +106,18 @@ class TestCitationIntents(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(intents.methodology, 2)
         self.assertEqual(intents.result, 1)
         self.assertEqual(intents.influential, 2)
+        self.assertEqual(intents.labelled, 3)
+
+    async def test_a_sample_without_a_single_label_is_no_measurement(self) -> None:
+        # What S2 returned for SinSR's citations (2026-11-21): 50 edges, none labelled.
+        payload = {"data": [{"intents": [], "isInfluential": i < 5, "contexts": []} for i in range(50)]}
+        with patch("app.services.citation_graph._get_json", AsyncMock(return_value=payload)):
+            intents = await _s2_citation_intents(None, "abc")
+        self.assertEqual((intents.sampled, intents.labelled, intents.influential), (50, 0, 5))
+        self.assertFalse(intents.available)
+        # Signals cached before `labelled` was recorded decide by their counts.
+        self.assertFalse(CitationIntents(sampled=200, influential=26).available)
+        self.assertTrue(CitationIntents(sampled=121, background=10).available)
 
     async def test_no_paper_id_short_circuits(self) -> None:
         intents = await _s2_citation_intents(None, "")
@@ -126,6 +138,18 @@ class TestCitationIntents(unittest.IsolatedAsyncioTestCase):
         md = render_verdict_markdown(synthesize_verdict(review, signals), review, signals)
         self.assertIn("methodology 52", md)
         self.assertIn("of 98 sampled", md)
+
+        signals.intents.labelled = 90
+        md = render_verdict_markdown(synthesize_verdict(review, signals), review, signals)
+        self.assertIn("90 labelled of 98 sampled", md)
+
+    def test_an_unlabelled_sample_has_no_row(self) -> None:
+        signals = compute_external_score(TriageSignals(
+            venue="CVPR", resolved=True, intents=CitationIntents(sampled=200, influential=26),
+        ))
+        review = parse_content_review(json.dumps({"contribution_strength": 3}))
+        md = render_verdict_markdown(synthesize_verdict(review, signals), review, signals)
+        self.assertNotIn("Cited as", md)
 
     def test_intents_row_is_omitted_when_unsampled(self) -> None:
         signals = compute_external_score(TriageSignals(venue="ICML", resolved=True))

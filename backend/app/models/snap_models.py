@@ -67,7 +67,9 @@ class CitationIntents(BaseModel):
     That distinction is what makes this worth a request.
 
     ``sampled`` records how many edges were actually inspected, because the
-    endpoint is paginated and these counts are a sample, not a census.
+    endpoint is paginated and these counts are a sample, not a census;
+    ``labelled`` how many of them carry an intent at all. An edge without one
+    is unknown, not "none of the three".
     """
 
     background: int = 0
@@ -75,10 +77,16 @@ class CitationIntents(BaseModel):
     result: int = 0
     influential: int = 0
     sampled: int = 0
+    labelled: int = 0
 
     @property
     def available(self) -> bool:
-        return self.sampled > 0
+        # The counts, not `sampled`: S2 now leaves `intents` empty on most
+        # edges (SinSR: 50 of 50, 34 of them with citation contexts), and a
+        # sample without a single label read as "methodology 0, result 0,
+        # background 0". Counts also decide for signals cached before
+        # `labelled` was recorded.
+        return self.background + self.methodology + self.result > 0
 
 
 class TriageSignals(BaseModel):

@@ -307,7 +307,9 @@ _L = {
         "citations": "Citation impact",
         "influential": "Influential citations",
         "intents": "Cited as",
-        "intents_value": "methodology {methodology} \u00b7 result {result} \u00b7 background {background} (of {sampled} sampled)",
+        "intents_value": "methodology {methodology} \u00b7 result {result} \u00b7 background {background} ({sample})",
+        "intents_sample": "of {sampled} sampled",
+        "intents_sample_labelled": "{labelled} labelled of {sampled} sampled",
         "code": "Official code",
         "code_third_party": "Code links (third-party)",
         "oa": "Open access",
@@ -350,7 +352,9 @@ _L = {
         "citations": "引用影响",
         "influential": "高影响力引用",
         "intents": "被引用方式",
-        "intents_value": "方法学 {methodology} \u00b7 结果 {result} \u00b7 背景 {background}(抽样 {sampled} 条)",
+        "intents_value": "方法学 {methodology} \u00b7 结果 {result} \u00b7 背景 {background}({sample})",
+        "intents_sample": "抽样 {sampled} 条",
+        "intents_sample_labelled": "抽样 {sampled} 条，{labelled} 条有标注",
         "code": "官方代码",
         "code_third_party": "代码链接(第三方)",
         "oa": "开放获取",
@@ -447,7 +451,10 @@ def _signal_rows(signals: TriageSignals, lang: dict[str, str]) -> list[tuple[str
                 methodology=intents.methodology,
                 result=intents.result,
                 background=intents.background,
-                sampled=intents.sampled,
+                # Cached before `labelled` was recorded: the sample alone.
+                sample=lang["intents_sample_labelled" if intents.labelled else "intents_sample"].format(
+                    sampled=intents.sampled, labelled=intents.labelled
+                ),
             ),
             signals.provenance.get("intents", "—"),
         ))
