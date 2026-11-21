@@ -39,8 +39,8 @@ class CheckTurnTests(unittest.TestCase):
         self.assertTrue(checks["finished"]["hard"])
 
     def test_tool_expectations_are_hard_and_call_counts_soft(self) -> None:
-        turn = Turn("q", tools_any=("save_memory",), tools_none=("run_insight_snap",), max_tool_calls=1)
-        record = _record(tool_calls=[{"tool": "run_insight_snap"}, {"tool": "search_paper_content"}])
+        turn = Turn("q", tools_any=("save_memory",), tools_none=("begin_report",), max_tool_calls=1)
+        record = _record(tool_calls=[{"tool": "begin_report"}, {"tool": "search_paper_content"}])
         checks = _by_name(check_turn(turn, record, {}))
         self.assertFalse(checks["tools_any"]["ok"])
         self.assertFalse(checks["tools_none"]["ok"])

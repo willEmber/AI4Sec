@@ -194,8 +194,8 @@ class DatasetTests(unittest.TestCase):
     def test_unknown_tool_names_are_reported(self) -> None:
         paper = {"p": {"paper_id": "a" * 40, "title": "t"}}
         dataset = Dataset(name="d", version="1", papers=paper,
-                          cases=[_case(forbid_tools=["run_insight_snapp"])])
-        self.assertEqual(dataset.unknown_tools({"run_insight_snap"}), {"c1": ["run_insight_snapp"]})
+                          cases=[_case(forbid_tools=["begin_reportt"])])
+        self.assertEqual(dataset.unknown_tools({"begin_report"}), {"c1": ["begin_reportt"]})
 
     def test_rules_for_chains(self) -> None:
         with self.assertRaises(ValueError):          # a follow-up needs something to follow
@@ -286,7 +286,7 @@ class ScoreCaseTests(unittest.IsolatedAsyncioTestCase):
         fields = dict(
             category="report", mode="lens", cites=False,
             key_points=["names the method"], report_key_points=["loss is MSE", "three terms"],
-            expect_tools=["run_logic_lens"],
+            expect_tools=["begin_report"],
         )
         fields.update(overrides)
         return _case(**fields)
@@ -303,7 +303,7 @@ class ScoreCaseTests(unittest.IsolatedAsyncioTestCase):
         record = {
             "answer": "The method distils a sampler into one step.",
             "completed": True,
-            "tool_calls": [{"tool": "run_logic_lens"}],
+            "tool_calls": [{"tool": "begin_report"}],
             "reports": [{"mode": "lens", "markdown": "# Lens\n\nL_gt is the MSE of three terms."}],
         }
         score = await scoring.score_case(judge, self._report_case(), record)
@@ -319,14 +319,14 @@ class ScoreCaseTests(unittest.IsolatedAsyncioTestCase):
         score = await scoring.score_case(judge, self._report_case(), record)
         self.assertEqual(score["report_correctness"], 0.0)
         self.assertEqual(score["report_points"], ["missing", "missing"])
-        self.assertEqual(score["tools"]["missing"], ["run_logic_lens"])
+        self.assertEqual(score["tools"]["missing"], ["begin_report"])
         self.assertFalse(score["passed"])
 
         follow_up = _case(category="follow_up", setup=[{"question": "q", "mode": "lens"}],
-                          forbid_tools=["run_logic_lens"], key_points=["PSNR is 24.56"], cites=False)
-        record = {"answer": "24.56", "completed": True, "tool_calls": [{"tool": "run_logic_lens"}]}
+                          forbid_tools=["begin_report"], key_points=["PSNR is 24.56"], cites=False)
+        record = {"answer": "24.56", "completed": True, "tool_calls": [{"tool": "begin_report"}]}
         score = await scoring.score_case(judge, follow_up, record)
-        self.assertEqual(score["tools"]["forbidden"], ["run_logic_lens"])
+        self.assertEqual(score["tools"]["forbidden"], ["begin_report"])
         self.assertFalse(score["passed"], "asking for the report again is the dropped step")
 
     async def test_expect_any_tools_needs_only_one(self) -> None:

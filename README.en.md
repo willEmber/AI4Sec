@@ -47,10 +47,10 @@
 
 | Entry / Mode | Best for |
 |---|---|
-| **Reading Chat (`/chat`)** | Primary entry point: start from a blank research question to discover and fetch papers, or attach one/many PDFs for multi-turn deep reading, cross-paper comparison, web/review verification, and on-demand mode reports |
-| **Insight Snap** | 30-second evidence-based triage: structured contribution analysis + independent blind content review + external signals (venue rank, S2/OpenAlex citations & intents, OA/retraction status, code repos) → reading verdict; compare reports side-by-side in `/library` |
+| **Reading Chat (`/chat`)** | Primary entry point: start from a blank research question to discover and fetch papers, or attach one/many PDFs for multi-turn deep reading, cross-paper comparison, web/review verification, and the three whole-paper reports below, which the conversation writes by each mode's method, citing the passage behind every claim |
+| **Insight Snap** | Evidence-based triage in about two minutes: structured contribution analysis + independent blind content review + external signals (venue rank, S2/OpenAlex citations & intents, OA/retraction status, code repos) → reading verdict; compare reports side-by-side in `/library` |
 | **Logic Lens** | Deep method & reproduction breakdown: problem framing, pipeline, typeset formula cards, algorithm steps, experimental tables, and reproduction checklist; accepts a custom `focus` and toggles between structured cards and full Markdown |
-| **Research Sphere** | Field landscape: reference extraction + citation graph expansion → venue/citation scoring & LLM relevance gate → coupling clusters, multi-paper comparison, library matches, and research gaps |
+| **Research Sphere** | Field landscape: reference extraction + citation graph expansion → venue/citation scoring & LLM relevance gate → coupling clusters into a literature map (with library matches), from which the conversation writes themes, multi-paper comparison and research gaps |
 | **Projects (`/projects`)** | Topic-scoped workspaces grouping conversations, derived project papers, scoped memories, and cross-session evidence recall |
 | **Knowledge Base (`/library`)** | Corpus-wide search and Q&A over your private library (enabled when `DIFY_API_BASE` is set) |
 
@@ -262,13 +262,13 @@ Reports & Library (/paper/.../run/... · /library)
 scholar/
 ├── backend/                    # FastAPI + LangGraph + Deep Agents backend
 │   ├── app/
-│   │   ├── agents/             # Reading agent: harness, model factory, TurnGuard, context/alias middleware, prompts & 22 tools
+│   │   ├── agents/             # Reading agent: harness, model factory, TurnGuard, context/alias middleware, prompts & 24 tools
 │   │   ├── api/                # HTTP & SSE routes: agent / papers / runs / auth / library / phoenix / admin / system
 │   │   ├── db/                 # PostgreSQL pool facade, additive SQL migrations (0001–0010) & repositories
 │   │   ├── models/             # Pydantic contracts (Agent, Evidence, PaperIR, API schemas)
-│   │   ├── services/           # Turn/mode execution & recovery, model gateway & token metering, MinerU, immutable evidence,
+│   │   ├── services/           # Turn execution & recovery, report rows & structured views, model gateway & token metering, MinerU, immutable evidence,
 │   │   │                       #   accounts & OAuth, data retention, paper_search / web_search / publication_rank
-│   │   └── workflows/          # LangGraph main graph & mode subgraphs (snap / lens / sphere / qa)
+│   │   └── workflows/          # Sphere literature-map steps, Snap blind review & external signals (reports are written by the conversation)
 │   ├── evals/                  # Offline evaluation harness, LLM judges, golden datasets (reading_seed / chains_seed) & baselines
 │   ├── scripts/                # Gateway, protocol, multi-turn, crash-recovery & retention CLIs
 │   ├── tests/                  # Backend unittest suite
@@ -279,7 +279,7 @@ scholar/
 │   ├── src/
 │   │   ├── app/                # Routes: /chat, /projects, /account, /library, /paper/.../run/... (/upload and /compare only redirect)
 │   │   ├── components/         # agent (3-pane shell/timeline/context panel), snap, lens, sphere, project, account & shared UI
-│   │   ├── hooks/              # SSE hooks (useAgentStream / useRunStream) & persistent UI state
+│   │   ├── hooks/              # Conversation event stream (useAgentStream) & persistent UI state
 │   │   └── lib/                # Event reducer, turn grouping, safe URLs, evidence cache, API clients & EN/ZH i18n
 │   ├── tests/                  # Frontend unit tests (Node test runner)
 │   ├── Dockerfile

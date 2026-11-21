@@ -48,7 +48,7 @@ class EvalRunnerTests(AgentP2TestCase):
                 (report_id, f"# Lens {report_id}"),
             )
             await agent_runner.emit(session_id=session.session_id, run_id=run.run_id,
-                                    type=EventType.TOOL_STARTED, payload={"tool": "run_logic_lens"})
+                                    type=EventType.TOOL_STARTED, payload={"tool": "begin_report"})
             await agent_runner.emit(session_id=session.session_id, run_id=run.run_id,
                                     type=EventType.ARTIFACT_CREATED,
                                     payload={"run_id": report_id, "mode": "lens", "reused": False})
@@ -74,7 +74,7 @@ class EvalRunnerTests(AgentP2TestCase):
             "id": "f", "category": "follow_up", "papers": ["p"],
             "setup": [{"question": "explain the method", "mode": "lens"}],
             "question": "what is the PSNR?", "key_points": ["24.56"],
-            "forbid_tools": ["run_logic_lens"],
+            "forbid_tools": ["begin_report"],
         })
         record = await self._run(case, attempt=1)
 
@@ -87,7 +87,7 @@ class EvalRunnerTests(AgentP2TestCase):
         self.assertEqual([c["tool"] for c in record["tool_calls"]], ["read_paper_section"])
         self.assertEqual(record["reports"], [])
         (setup,) = record["setup"]
-        self.assertEqual(setup["tools"], ["run_logic_lens"])
+        self.assertEqual(setup["tools"], ["begin_report"])
         self.assertEqual(setup["reports"][0]["tokens"], 900)
         self.assertNotIn("markdown", setup["reports"][0], "setup reports are not judged or kept")
 
@@ -95,23 +95,23 @@ class EvalRunnerTests(AgentP2TestCase):
         from app.db import database as db
         from evals.dataset import EvalCase
 
-        for key, status in (("mode:" + "a" * 40 + ":lens:zh:m", "done"),
-                            ("mode:" + "a" * 40 + ":snap:zh:m", "running"),
-                            ("mode:" + "b" * 40 + ":lens:zh:m", "done")):
+        for key, status in (("sphere_map:" + "a" * 40 + ":zh", "done"),
+                            ("blind_review:" + "a" * 40 + ":zh:m", "running"),
+                            ("sphere_map:" + "b" * 40 + ":zh", "done")):
             await db.execute(
                 "INSERT INTO agent_jobs (job_id, kind, idempotency_key, status, request_json, result_json) "
-                "VALUES (?, 'mode', ?, ?, '{}', ?)",
-                (key[-12:] + status, key, status, json.dumps({"run_id": "old"})),
+                "VALUES (?, ?, ?, ?, '{}', ?)",
+                (key[-12:] + status, key.split(":")[0], key, status, json.dumps({"run_id": "old"})),
             )
         case = EvalCase.model_validate({
             "id": "r", "category": "report", "papers": ["p"], "mode": "lens", "cites": False,
-            "question": "explain", "report_key_points": ["x"], "expect_tools": ["run_logic_lens"],
+            "question": "explain", "report_key_points": ["x"], "expect_tools": ["begin_report"],
         })
         record = await self._run(case)
 
         self.assertEqual(record["reports_forgotten"], 1)
         left = {r["idempotency_key"] for r in await db.fetch_all("SELECT idempotency_key FROM agent_jobs")}
-        self.assertEqual(left, {"mode:" + "a" * 40 + ":snap:zh:m", "mode:" + "b" * 40 + ":lens:zh:m"},
+        self.assertEqual(left, {"blind_review:" + "a" * 40 + ":zh:m", "sphere_map:" + "b" * 40 + ":zh"},
                          "a running job and another paper's report are left alone")
         (report,) = record["reports"]
         self.assertEqual((report["mode"], report["tokens"], report["markdown"]), ("lens", 900, "# Lens rep1"))

@@ -47,10 +47,10 @@
 
 | 入口 / 模式 | 适用场景 |
 |---|---|
-| **阅读对话（`/chat`）** | 平台主入口：无附件从零检索文献并下载精读，或围绕一篇/多篇 PDF 连续追问、跨文对比、查证代码与同行评审，按需调用下方任一整篇报告 |
-| **Insight Snap（快速洞察）** | 30 秒证据化初筛：核心贡献拆解 + 独立盲审 + 外部客观信号（发表场所等级、S2/OpenAlex 引用与意图、OA/撤稿状态、代码仓库）→ 综合阅读建议；支持在 `/library` 的对比视图横向对比多篇论文 |
+| **阅读对话（`/chat`）** | 平台主入口：无附件从零检索文献并下载精读，或围绕一篇/多篇 PDF 连续追问、跨文对比、查证代码与同行评审；下方三种整篇报告由对话按各自的方法阅读后写成，每条结论引用原文段落 |
+| **Insight Snap（快速洞察）** | 约两分钟的证据化初筛：核心贡献拆解 + 独立盲审 + 外部客观信号（发表场所等级、S2/OpenAlex 引用与意图、OA/撤稿状态、代码仓库）→ 综合阅读建议；支持在 `/library` 的对比视图横向对比多篇论文 |
 | **Logic Lens（逻辑透镜）** | 深度方法与复现拆解：问题定义、方法管线、排版级核心公式卡片、算法步骤、实验数据表与复现检查清单；支持传入具体关注点（`focus`）定向深挖，提供结构化卡片与全文双视图 |
-| **Research Sphere（研究全景）** | 领域脉络定位：抽取参考文献 + 引用图谱扩展 → 期刊/被引评分与 LLM 相关性门控 → 耦合聚类、多论文对比、私有库相关工作匹配与研究空白识别 |
+| **Research Sphere（研究全景）** | 领域脉络定位：抽取参考文献 + 引用图谱扩展 → 期刊/被引评分与 LLM 相关性门控 → 耦合聚类得到文献地图（含私有库相关工作匹配），对话据此写出主题、多论文对比与研究空白 |
 | **研究项目（`/projects`）** | 课题级工作区：管理同一研究方向下的多轮会话、共享论文池、课题专属记忆与历史问答检索 |
 | **知识库（`/library`）** | 私有语料库检索与跨文献问答（配置 `DIFY_API_BASE` 后启用） |
 
@@ -262,13 +262,13 @@ npm run build
 scholar/
 ├── backend/                    # FastAPI + LangGraph + Deep Agents 后端
 │   ├── app/
-│   │   ├── agents/             # 阅读智能体：harness、模型工厂、TurnGuard、上下文/证据别名中间件、提示词与 22 个工具
+│   │   ├── agents/             # 阅读智能体：harness、模型工厂、TurnGuard、上下文/证据别名中间件、提示词与 24 个工具
 │   │   ├── api/                # HTTP & SSE 路由：agent / papers / runs / auth / library / phoenix / admin / system
 │   │   ├── db/                 # PostgreSQL 连接池门面、增量 SQL 迁移（0001–0010）与仓储层
 │   │   ├── models/             # Pydantic 数据契约（Agent、Evidence、PaperIR、API Schema）
-│   │   ├── services/           # 智能体执行与恢复、报告调度、模型网关与 Token 计量、MinerU 解析、证据快照、
+│   │   ├── services/           # 智能体执行与恢复、报告行与结构化视图、模型网关与 Token 计量、MinerU 解析、证据快照、
 │   │   │                       #   账号与 OAuth、数据保留期、paper_search / web_search / publication_rank
-│   │   └── workflows/          # LangGraph 报告主图与子图（snap / lens / sphere / qa）
+│   │   └── workflows/          # Sphere 文献地图的检索与筛选步骤、Snap 盲审与外部信号（报告由对话写成）
 │   ├── evals/                  # 离线评测框架、LLM 裁判、黄金数据集（reading_seed / chains_seed）与基线
 │   ├── scripts/                # 网关/协议/多轮/崩溃恢复验证与运维脚本
 │   ├── tests/                  # 后端单元测试套件
@@ -279,7 +279,7 @@ scholar/
 │   ├── src/
 │   │   ├── app/                # 路由页面：/chat、/projects、/account、/library、/paper/.../run/...（/upload、/compare 仅作重定向）
 │   │   ├── components/         # agent（三栏对话壳/时间线/上下文面板）、snap、lens、sphere、project、account 与公共组件
-│   │   ├── hooks/              # SSE 事件流（useAgentStream / useRunStream）与持久化布局状态
+│   │   ├── hooks/              # 对话事件流（useAgentStream）与持久化布局状态
 │   │   └── lib/                # 事件归并器、回合分组、安全链接过滤、证据缓存、API 客户端与双语 i18n
 │   ├── tests/                  # 前端单元测试（Node test runner）
 │   ├── Dockerfile

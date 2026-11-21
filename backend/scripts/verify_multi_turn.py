@@ -155,9 +155,9 @@ SCENARIOS = [
         papers=("transformer",),
         costly=True,
         turns=[
-            Turn("快速评估一下这篇论文值不值得读。", tools_any=("run_insight_snap",)),
+            Turn("快速评估一下这篇论文值不值得读。", tools_any=("begin_report",)),
             Turn("报告里提到的外部信号具体有哪些？引用数是多少？",
-                 tools_none=("run_insight_snap",), max_tool_calls=2),
+                 tools_none=("begin_report", "get_triage_signals"), max_tool_calls=2),
         ],
     ),
 ]

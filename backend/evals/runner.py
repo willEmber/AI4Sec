@@ -40,11 +40,10 @@ async def parsed_paper_ids(paper_ids: list[str]) -> set[str]:
     return {r["paper_id"] for r in rows}
 
 
-# The cached work a report reuses, by key prefix: a report tool's whole report,
-# and the parts a report written as the answer caches — the literature map and
-# the blind review (P16 §3.4). Each attempt has to pay for them, or its cost
-# is not comparable with the baseline's.
-REPORT_JOB_PREFIXES = ("mode", "sphere_map", "blind_review")
+# The cached work a report reuses, by key prefix: the literature map and the
+# blind review (P16 §3.4). Each attempt has to pay for them, or its cost is not
+# comparable with the baseline's.
+REPORT_JOB_PREFIXES = ("sphere_map", "blind_review")
 
 
 async def forget_mode_reports(paper_ids: list[str]) -> int:
