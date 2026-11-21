@@ -1,7 +1,11 @@
 from __future__ import annotations
 
+import asyncio
+import contextlib
+import io
 import json
 import unittest
+from unittest.mock import AsyncMock, patch
 
 from evals import scoring
 from evals.dataset import Dataset, EvalCase, load_dataset
@@ -483,6 +487,63 @@ class RepeatTests(unittest.TestCase):
         self.assertIn("| flaky #2 |", text)
         # The console prints everything above the per-attempt table.
         self.assertIn("Cases that changed", text.split("\n## Cases\n")[0])
+
+
+class SchedulerTests(unittest.IsolatedAsyncioTestCase):
+    """Report cases on one paper run one at a time, and the one waiting for the
+    paper holds no slot, so a case on another paper runs meanwhile."""
+
+    async def test_a_case_waiting_for_its_paper_leaves_its_slot_to_another(self) -> None:
+        from evals import run as eval_run
+
+        dataset = Dataset.model_validate({
+            "name": "sched", "version": "1",
+            "papers": {"a": {"paper_id": "a" * 40, "title": "A"}},
+            "cases": [
+                {"id": "a1", "category": "report", "papers": ["a"], "mode": "lens", "question": "q", "key_points": ["k"]},
+                {"id": "a2", "category": "report", "papers": ["a"], "mode": "lens", "question": "q", "key_points": ["k"]},
+                {"id": "free", "category": "acquisition", "question": "q", "key_points": ["k"]},
+            ],
+        })
+        events: list[tuple[str, str]] = []
+        running: set[str] = set()
+        peak = 0
+        free_started = asyncio.Event()
+
+        async def run_case(_dataset, case, *, owner_id, model, attempt=0):
+            nonlocal peak
+            events.append(("start", case.id))
+            running.add(case.id)
+            peak = max(peak, len(running))
+            if case.id == "free":
+                free_started.set()
+            elif case.id == "a1":
+                # Slot first, paper second, "free" waited for the slot a2 sat
+                # on while it waited for paper a: it could not start before a1 ended.
+                with contextlib.suppress(TimeoutError):
+                    await asyncio.wait_for(free_started.wait(), 1)
+            await asyncio.sleep(0)
+            running.discard(case.id)
+            events.append(("end", case.id))
+            return {"status": "done", "completed": True, "answer": "", "attempt": attempt, "usage": {}}
+
+        with (
+            patch("app.services.identity.create_principal", AsyncMock(return_value=("pr_eval", ""))),
+            patch("evals.runner.parsed_paper_ids", AsyncMock(return_value={"a" * 40})),
+            patch("evals.runner.run_case", run_case),
+            patch.object(scoring, "score_case", AsyncMock(return_value={})),
+            patch.object(eval_run, "_headline", lambda case, score: ""),
+            contextlib.redirect_stdout(io.StringIO()),
+        ):
+            results = await eval_run._run_cases(
+                dataset, dataset.cases, model="m", concurrency=2, repeats=1, ask=AsyncMock()
+            )
+
+        self.assertLess(events.index(("start", "free")), events.index(("end", "a1")))
+        self.assertLess(events.index(("end", "a1")), events.index(("start", "a2")),
+                        "two report cases on one paper never overlap")
+        self.assertLessEqual(peak, 2)
+        self.assertEqual([r["case"]["id"] for r in results], ["a1", "a2", "free"])
 
 
 if __name__ == "__main__":

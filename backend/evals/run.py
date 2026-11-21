@@ -92,9 +92,14 @@ async def _run_cases(
         result: dict[str, Any] = {"case": case.model_dump()}
         papers = sorted(dataset.papers[key].paper_id for key in case.papers)
         locks = [paper_locks.setdefault(p, asyncio.Lock()) for p in papers] if case.runs_modes else []
-        async with slots, contextlib.AsyncExitStack() as held:
+        async with contextlib.AsyncExitStack() as held:
+            # Its papers first, then a slot: a case waiting for a paper another
+            # report holds would otherwise sit on a slot a case on another
+            # paper could run in (a chains round lost ~8 minutes to it).
+            # Locks are taken in sorted order, so two cases cannot deadlock.
             for lock in locks:
                 await held.enter_async_context(lock)
+            await held.enter_async_context(slots)
             try:
                 record = await runner.run_case(
                     dataset, case, owner_id=owner_id, model=model, attempt=number
