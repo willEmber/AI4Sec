@@ -29,8 +29,11 @@ export default async function RootLayout({
   const theme = parseTheme(jar.get(THEME_COOKIE)?.value) ?? DEFAULT_THEME;
 
   return (
-    <html lang={locale === "zh" ? "zh-CN" : "en"} data-theme={theme}>
-      <body>
+    // Browser extensions (e.g. Immersive Translate, Grammarly) inject data-*
+    // attributes onto <html> and <body> before React hydrates; suppressHydrationWarning
+    // only applies one level deep so child component mismatches still surface.
+    <html lang={locale === "zh" ? "zh-CN" : "en"} data-theme={theme} suppressHydrationWarning>
+      <body suppressHydrationWarning>
         <ClientLayout initialLocale={locale} hasStoredLocale={stored !== null} initialTheme={theme}>
           {children}
         </ClientLayout>
