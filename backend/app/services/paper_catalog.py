@@ -249,6 +249,30 @@ async def literature_for_paper(paper_id: str) -> str:
     return row["literature_id"] if row else ""
 
 
+async def record_published_year(paper_id: str, *, doi: str, year: int) -> None:
+    """The year of a file's published version, onto the work the file belongs to.
+
+    Work records fill blanks only, so the first year any source gave stands:
+    for a paper on arXiv first that is often the preprint's (Semantic
+    Scholar's `year`), and the prompt lists the paper with it (SinSR, CVPR
+    2024, was "SinSR (2023)"). The venue lookup of the file names the
+    published version by its DOI; that version's year replaces the work's.
+    Only the year, and only for a work that has no DOI or this one — a work
+    under another DOI is another version, and its year is its own.
+    """
+    if not doi or not year:
+        return
+    literature_id = await literature_for_paper(paper_id)
+    if not literature_id:
+        return
+    await db.execute(
+        "UPDATE literature_items SET year = ?, year_known = 1, updated_at = now() "
+        "WHERE literature_id = ? AND (doi = '' OR LOWER(doi) = LOWER(?)) "
+        "AND (year_known = 0 OR year <> ?)",
+        (year, literature_id, doi, year),
+    )
+
+
 async def primary_paper_for_literature(literature_id: str) -> str:
     row = await db.fetch_one(
         "SELECT paper_id FROM literature_files WHERE literature_id = ? "

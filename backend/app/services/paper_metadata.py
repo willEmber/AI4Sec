@@ -335,6 +335,10 @@ async def enrich_metadata(
                 "UPDATE papers SET doi = ?, venue = ?, year = ?, sci_rank = ?, ccf_rank = ? WHERE paper_id = ?",
                 (doi, venue, year, sci_rank, ccf_rank, paper_id),
             )
+            if venue:
+                from app.services.paper_catalog import record_published_year
+
+                await record_published_year(paper_id, doi=doi, year=year)
 
         pub_rank = {
             "venue": venue,
@@ -400,4 +404,7 @@ async def refresh_metadata(paper_id: str, *, apply: bool = False) -> dict[str, A
                 (*(now[key] for key in _FIELDS), paper_id),
             )
             await tx.execute("DELETE FROM paper_signals WHERE paper_id = ?", (paper_id,))
+        from app.services.paper_catalog import record_published_year
+
+        await record_published_year(paper_id, doi=now["doi"], year=now["year"])
     return changed

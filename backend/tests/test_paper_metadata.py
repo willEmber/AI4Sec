@@ -195,6 +195,24 @@ class RefreshStoredRecordTests(unittest.IsolatedAsyncioTestCase):
                          {"doi": CVPR_DOI, "venue": "Computer Vision and Pattern Recognition", "year": 2024})
         self.assertIsNone(await self.db.fetch_one("SELECT 1 FROM paper_signals WHERE paper_id = 'p1'"))
 
+    async def test_the_files_work_takes_the_published_year(self) -> None:
+        # Works keep the first year a source gave; the prompt lists the paper with it.
+        from app.services import paper_catalog
+
+        work = await paper_catalog.upsert_literature_item(
+            title="SinSR", doi=CVPR_DOI.lower(), year=2023, source="search")
+        await paper_catalog.link_paper_file(literature_id=work, paper_id="p1", origin="upload")
+        other = await paper_catalog.upsert_literature_item(
+            title="Other", doi="10.1000/another-version", year=2020, source="search")
+        await paper_catalog.link_paper_file(literature_id=other, paper_id="p3", origin="upload")
+
+        await paper_metadata.refresh_metadata("p1", apply=True)
+        self.assertEqual((await paper_catalog.get_literature_item(work))["year"], 2024)
+
+        # A work under another DOI is another version: its year is its own.
+        await paper_catalog.record_published_year("p3", doi=CVPR_DOI, year=2024)
+        self.assertEqual((await paper_catalog.get_literature_item(other))["year"], 2020)
+
     async def test_a_venue_read_from_a_reference_is_replaced(self) -> None:
         self.ir = PaperIR(paper_id="p3", title="Gaussian Shading", blocks=[
             Block(type="ref_text", page_idx=8, text="[2] Balle et al. arXiv:1802.01436"),

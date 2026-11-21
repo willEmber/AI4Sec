@@ -7,6 +7,11 @@ the venue of an arXiv id read from its references. Each paper is looked up as
 a new one would be, one at a time (S2 allows one request a second); a lookup
 that finds no venue changes nothing.
 
+A second pass, local only, gives each file's work record the year of the
+file's published version: work records keep the first year any source gave,
+which for a paper on arXiv first was often the preprint's, and the prompt
+lists the paper with it.
+
     uv run python -m scripts.refresh_paper_metadata            # what would change
     uv run python -m scripts.refresh_paper_metadata --apply    # write it
 """
@@ -54,10 +59,31 @@ async def _run(apply: bool) -> int:
             changed += 1
             diff = "; ".join(f"{key} {was or '-'} -> {now or '-'}" for key, (was, now) in found.items())
             print(f"  {label}: {diff}")
+        works = await _sync_work_years(apply)
     finally:
         await database.close_pool()
-    print(f"{'Updated' if apply else 'Would update'} {changed} of {len(rows)} papers.")
+    print(f"{'Updated' if apply else 'Would update'} {changed} of {len(rows)} papers, {works} work years.")
     return 0
+
+
+async def _sync_work_years(apply: bool) -> int:
+    from app.services.paper_catalog import record_published_year
+
+    stale = await database.fetch_all(
+        """SELECT p.paper_id, p.doi, p.year, li.literature_id, li.year AS work_year, li.title
+             FROM papers p
+             JOIN literature_files lf ON lf.paper_id = p.paper_id
+             JOIN literature_items li ON li.literature_id = lf.literature_id
+            WHERE p.doi <> '' AND p.year > 0 AND p.venue <> ''
+              AND (li.doi = '' OR LOWER(li.doi) = LOWER(p.doi))
+              AND (li.year_known = 0 OR li.year <> p.year)"""
+    )
+    for row in stale:
+        print(f"  work {row['literature_id']} {(row.get('title') or '')[:50]}: "
+              f"year {row['work_year'] or '-'} -> {row['year']}")
+        if apply:
+            await record_published_year(row["paper_id"], doi=row["doi"], year=row["year"])
+    return len(stale)
 
 
 def main() -> int:
