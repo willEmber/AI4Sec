@@ -326,6 +326,8 @@ class TestSignalCollection(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(signals.resolved)
         self.assertEqual(signals.cited_by_count, 342)
         self.assertEqual(signals.provenance["citations"], "Semantic Scholar")
+        # The smaller count is kept too, under its own index.
+        self.assertEqual(signals.citation_counts, {"OpenAlex": 300, "Semantic Scholar": 342})
         self.assertEqual(signals.influential_citation_count, 28)
         self.assertEqual(signals.ccf_rank, "A")
         self.assertEqual(signals.provenance["ccf_rank"], "EasyScholar")

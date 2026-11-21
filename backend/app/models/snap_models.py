@@ -110,7 +110,13 @@ class TriageSignals(BaseModel):
     publication_types: list[str] = Field(default_factory=list)
 
     # --- impact ---
+    # The larger of the indexes' counts, which the citation score uses; its
+    # source is `provenance["citations"]`.
     cited_by_count: int = 0
+    # Each index's own count ("OpenAlex", "Semantic Scholar"). They count
+    # differently, and a reader asking how often the paper is cited is owed
+    # both: keeping only the larger made a follow-up look S2's up again.
+    citation_counts: dict[str, int] = Field(default_factory=dict)
     citations_per_year: float = 0.0
     influential_citation_count: int = 0
     reference_count: int = 0

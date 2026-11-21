@@ -338,6 +338,7 @@ def _apply_openalex(signals: TriageSignals, work: dict[str, Any]) -> None:
 
     cited = work.get("cited_by_count")
     if cited is not None:
+        signals.citation_counts["OpenAlex"] = int(cited)
         signals.cited_by_count = max(signals.cited_by_count, int(cited))
         signals.provenance["citations"] = "OpenAlex"
 
@@ -374,6 +375,8 @@ def _apply_s2(signals: TriageSignals, paper: dict[str, Any]) -> None:
     signals.s2_paper_id = paper.get("paperId") or signals.s2_paper_id
 
     cited = paper.get("citationCount")
+    if cited is not None:
+        signals.citation_counts["Semantic Scholar"] = int(cited)
     if cited is not None and int(cited) > signals.cited_by_count:
         signals.cited_by_count = int(cited)
         signals.provenance["citations"] = "Semantic Scholar"

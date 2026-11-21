@@ -313,11 +313,17 @@ def snap_signal_facts(signals: dict[str, Any], title: str) -> list[tuple[str, st
         facts.append((f"{label} — CCF {signals['ccf_rank']}", str(provenance.get("ccf_rank") or "")))
     if signals.get("sci_rank") and "sci_rank" not in missing:
         facts.append((f"{label} — JCR {signals['sci_rank']}", str(provenance.get("sci_rank") or "")))
-    if signals.get("cited_by_count") is not None and "citations" not in missing:
-        parts = [f"cited by {int(signals['cited_by_count']):,}"]
-        if signals.get("citations_per_year"):
-            parts.append(f"{float(signals['citations_per_year']):,.1f} per year")
-        facts.append((f"{name} — " + ", ".join(parts), str(provenance.get("citations") or "")))
+    counts = signals.get("citation_counts") or {}
+    if "citations" not in missing and (counts or signals.get("cited_by_count") is not None):
+        # One fact per index: they count differently. Signals cached before
+        # the counts were kept apart hold only the larger, under its source.
+        source = str(provenance.get("citations") or "")
+        for index, cited in (counts or {source: signals["cited_by_count"]}).items():
+            parts = [f"cited by {int(cited):,} ({index})" if counts else f"cited by {int(cited):,}"]
+            # The per-year rate is computed from the larger count.
+            if index == source and signals.get("citations_per_year"):
+                parts.append(f"{float(signals['citations_per_year']):,.1f} per year")
+            facts.append((f"{name} — " + ", ".join(parts), index))
     # Semantic Scholar's count even when OpenAlex gave the citations: in the
     # same sentence it was sourced to OpenAlex. Without a provenance S2 did
     # not count it, and the 0 it defaults to is not a count.

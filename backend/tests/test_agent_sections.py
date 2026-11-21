@@ -175,6 +175,21 @@ class SnapSignalFactTests(unittest.TestCase):
         self.assertIn("Attention Is All You Need — no code repository link found in the paper", facts)
         self.assertTrue(any("published at Neural Information Processing Systems (NeurIPS), 2017" in f for f in facts))
 
+    def test_each_index_s_count_is_its_own_fact(self) -> None:
+        # Keeping only the larger made a follow-up look the other one up again.
+        from app.agents.tools.modes import snap_signal_facts
+
+        facts = dict(snap_signal_facts(
+            {"cited_by_count": 481, "citations_per_year": 160.3,
+             "citation_counts": {"OpenAlex": 481, "Semantic Scholar": 412},
+             "provenance": {"citations": "OpenAlex"}},
+            "SinSR",
+        ))
+        self.assertEqual(facts, {
+            "SinSR — cited by 481 (OpenAlex), 160.3 per year": "OpenAlex",
+            "SinSR — cited by 412 (Semantic Scholar)": "Semantic Scholar",
+        })
+
     def test_an_influential_count_s2_did_not_make_is_no_fact(self) -> None:
         from app.agents.tools.modes import snap_signal_facts
 
