@@ -1,0 +1,116 @@
+{
+  "meta": {
+    "dataset": "chains_seed",
+    "dataset_version": "1",
+    "model": "qwen3.8-flash",
+    "prompt_version": "p15-aliases-1",
+    "commit": "bfdc5c0",
+    "generated_at": "2026-11-21T12:10:41+0900",
+    "partial": true,
+    "repeats": 3,
+    "judge_model": "qwen3.8-flash",
+    "judge_prompt_version": "judge-1",
+    "excluded_cases": [
+      "lens-focus-supermark-steps",
+      "lens-followup-verify-numbers",
+      "lens-sinsr"
+    ],
+    "excluded_reason": "old Lens tool stopped: its reports never returned from the gateway"
+  },
+  "summary": {
+    "cases": 6,
+    "attempts": 18,
+    "skipped": 0,
+    "completion_rate": 1.0,
+    "pass_rate": 0.8333,
+    "correctness": 0.9028,
+    "cases_with_contradiction": 3,
+    "answerable_cases": 18,
+    "abstention_accuracy": null,
+    "fabrication_rate": null,
+    "unanswerable_cases": 0,
+    "tool_selection_accuracy": 0.9444,
+    "tool_checked_attempts": 18,
+    "report_correctness": 1.0,
+    "report_attempts": 6,
+    "reports_missing": 0,
+    "citation_precision": 0.9583,
+    "citation_recall": 0.7872,
+    "citations_judged": 48,
+    "citations_invented": 0,
+    "statements_needing_support": 47,
+    "uncited_claims": 6,
+    "answers_without_citation": 0,
+    "grouped_citation_markers": 0,
+    "judge_errors": 0,
+    "flaky_cases": [],
+    "case_outcomes": {
+      "snap-sinsr": {
+        "attempts": 3,
+        "decided": 3,
+        "passed": 3
+      },
+      "snap-unprompted-supermark": {
+        "attempts": 3,
+        "decided": 3,
+        "passed": 3
+      },
+      "snap-followup-signals": {
+        "attempts": 3,
+        "decided": 3,
+        "passed": 0
+      },
+      "sphere-sinsr": {
+        "attempts": 3,
+        "decided": 3,
+        "passed": 3
+      },
+      "sphere-followup-next-read": {
+        "attempts": 3,
+        "decided": 3,
+        "passed": 3
+      },
+      "acquire-read-sinsr": {
+        "attempts": 3,
+        "decided": 3,
+        "passed": 3
+      }
+    },
+    "cost": {
+      "tool_calls_mean": 2.5,
+      "llm_calls_mean": 2.5556,
+      "tokens_mean": 66878.6111,
+      "tokens_p95": 122981.1,
+      "tokens_total": 1203815,
+      "wall_seconds_mean": 142.8944,
+      "wall_seconds_median": 79.5,
+      "wall_seconds_p95": 519.9
+    },
+    "by_category": {
+      "acquisition": {
+        "cases": 3,
+        "correctness": 1.0,
+        "cases_with_contradiction": 0,
+        "pass_rate": 1.0,
+        "citation_precision": 0.9167,
+        "citation_recall": 0.8333
+      },
+      "follow_up": {
+        "cases": 6,
+        "correctness": 0.75,
+        "cases_with_contradiction": 3,
+        "pass_rate": 0.5,
+        "citation_precision": 1.0,
+        "citation_recall": 0.7586
+      },
+      "report": {
+        "cases": 9,
+        "correctness": 0.9722,
+        "cases_with_contradiction": 0,
+        "pass_rate": 1.0,
+        "citation_precision": null,
+        "citation_recall": null
+      }
+    }
+  }
+}
