@@ -63,6 +63,12 @@ export default function PaperList({
   // Only papers with a file can be attached from here; a metadata-only work
   // is the agent's to fetch.
   const addable = projectPapers.filter((p) => p.paper_id);
+  // A literature map attaches a few dozen candidates at once. They sit in a
+  // folded group of their own until one is fetched, so the papers being read
+  // stay on top.
+  const isMapped = (p: SessionPaper) => p.added_by === "sphere" && p.availability === "candidate";
+  const mapped = papers.filter(isMapped);
+  const held = papers.filter((p) => !isMapped(p));
 
   const addProjectPaper = useCallback(
     async (paperId: string) => {
@@ -135,7 +141,7 @@ export default function PaperList({
         <p className="px-1 py-2 text-xs leading-relaxed text-muted-foreground">{t("chat.papers.empty")}</p>
       )}
 
-      {papers.map((paper) => (
+      {held.map((paper) => (
         <button
           key={paper.literature_id}
           type="button"
@@ -157,6 +163,31 @@ export default function PaperList({
           </span>
         </button>
       ))}
+
+      {mapped.length > 0 && (
+        <details className="group mt-4 border-t border-border pt-3">
+          <summary className="flex cursor-pointer list-none items-center gap-1.5 rounded-md px-1 py-0.5 text-xs font-semibold text-muted-foreground hover:text-foreground [&::-webkit-details-marker]:hidden">
+            <span aria-hidden className="inline-block transition-transform group-open:rotate-90">›</span>
+            {t("chat.map_papers.heading", { count: mapped.length })}
+          </summary>
+          <p className="px-1 pb-2 pt-1 text-xs leading-relaxed text-muted-foreground/80">
+            {t("chat.map_papers.hint")}
+          </p>
+          {mapped.map((paper) => (
+            <div key={paper.literature_id} className="mb-0.5 rounded-lg px-3 py-1.5">
+              <span className="line-clamp-2 block text-xs leading-snug text-muted-foreground">
+                {paper.title || t("chat.papers.untitled")}
+              </span>
+              {(paper.year_known || paper.venue) && (
+                <span className="mt-0.5 flex gap-1.5 text-[0.7rem] text-muted-foreground/80">
+                  {paper.year_known && <span>{paper.year}</span>}
+                  {paper.venue && <span className="min-w-0 truncate">{paper.venue}</span>}
+                </span>
+              )}
+            </div>
+          ))}
+        </details>
+      )}
 
       {addable.length > 0 && (
         <div className="mt-4 border-t border-border pt-3">

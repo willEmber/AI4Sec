@@ -45,6 +45,7 @@ const TOOL_ICON: Record<string, Icon> = {
   begin_report: IconDocument,
   get_triage_signals: IconSearch,
   review_paper_blind: IconListChecks,
+  build_literature_map: IconSphere,
   run_insight_snap: IconSnap,
   run_logic_lens: IconLens,
   run_research_sphere: IconSphere,
