@@ -1,5 +1,5 @@
 ---
-version: 1
+version: 2
 required: One-line verdict | Contributions | Key results | Who should read it | Limitations | External signals & blind review | Reading advice
 ---
 # Insight Snap: method
@@ -42,7 +42,7 @@ The verdict tier exactly as given (must read / selective / skip) and why, in two
 
 ## Rules
 
-1. Every factual statement about the paper cites the passage it came from, `[E12]`; every signal cites its fact's evidence number. The blind review is an opinion: attribute it, do not cite it as the paper, and do not copy its page marks as citations.
+1. Every factual statement about the paper cites the passage it came from, `[E12]`; every signal cites its fact's evidence number. A sentence holding facts from different evidence — the paper's claim, its venue, a citation count — cites each of them. The blind review is an opinion: attribute it, do not cite it as the paper, and do not copy its page marks as citations.
 2. Do not change the verdict tier. When your reading disagrees with it, say so beside it.
 3. Short: a Snap is read in a minute. About 400-700 words.
 4. Write in the conversation's language. Keep paper titles, venue, metric and dataset names as they are.

@@ -1,5 +1,5 @@
 ---
-version: 2
+version: 3
 required: Overview | Themes | Timeline | Hubs | Comparison | Gaps | Reading Paths
 ---
 # Research Sphere: method
@@ -46,7 +46,7 @@ Three numbered lists: **Fast** (3–5 papers to grasp the area), **Deep** (8–1
 
 ## Rules
 
-1. Every statement about a paper cites its evidence right after the claim, `[E12]`: its abstract for what it does, its metadata for venue and citation count, this paper's passages for what this paper says. Cite only numbers from your tool results.
+1. Every statement about a paper cites its evidence right after the claim, `[E12]`: its abstract for what it does, its metadata for venue and citation count, this paper's passages for what this paper says. A sentence holding facts from different evidence — what a paper does and its venue or citation count — cites each of them, or is split in two. Cite only numbers from your tool results.
 2. Name only papers from the map or your other tool results, with their titles as given. Add none from memory.
 3. The map stands on abstracts and metadata. Say "according to its abstract" where it matters, and claim no detail only a full text would show.
 4. Citation counts are the map's, as of its date; do not set them against another index's counts.

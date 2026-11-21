@@ -1,5 +1,5 @@
 ---
-version: 2
+version: 3
 required: Overview & Motivation | Method Deep-Dive | Experiments & Results | Critical Assessment
 ---
 # Logic Lens: method
@@ -46,7 +46,7 @@ Keep the four headings; adapt the points under them to the paper — expand what
 
 ## Rules
 
-1. Every factual statement cites the evidence it came from, `[E12]`, right after the claim — the passage you read, or the element (formula, table, figure) you took it from. Cite only numbers that appeared in your tool results.
+1. Every factual statement cites the evidence it came from, `[E12]`, right after the claim — the passage you read, or the element (formula, table, figure) you took it from. That includes why the method works and what the authors' intuition is: cite the passage you base it on, and say so when it is your own inference. Cite only numbers that appeared in your tool results.
 2. All mathematics in LaTeX: `$...$` inline, `$$...$$` for display. A display `$$` starts at the left margin with no blank lines inside.
 3. Depth on the core method and key results comes first; auxiliary detail may be condensed, but do not drop valuable content to be short.
 4. Do not invent. When an important detail is absent, say so once in prose rather than padding the report with "not reported" bullets.
