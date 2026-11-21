@@ -278,7 +278,7 @@ class TestSignalCollection(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(signals.citation_counts, {"OpenAlex": 300, "Semantic Scholar": 342})
         self.assertEqual(signals.influential_citation_count, 28)
         self.assertEqual(signals.ccf_rank, "A")
-        self.assertEqual(signals.provenance["ccf_rank"], "EasyScholar")
+        self.assertEqual(signals.provenance["ccf_rank"], "Venue Catalog")
         self.assertTrue(signals.is_open_access)
         self.assertTrue(signals.has_official_code)
         self.assertGreater(signals.external_score, 0.5)

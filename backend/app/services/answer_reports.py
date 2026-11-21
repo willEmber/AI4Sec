@@ -173,7 +173,9 @@ async def snapshot(
         await close(report.run_id, status="failed", reason="The report was empty.")
         return None
 
-    text, citations = await report_citations.freeze(body, owner_id=owner_id)
+    text, citations = await report_citations.freeze(
+        body, owner_id=owner_id, paper_id=report.paper_id, language=language
+    )
     missing = missing_sections(text, report.required)
     title = report.title or await _paper_title(report.paper_id)
     data: dict[str, Any] = {

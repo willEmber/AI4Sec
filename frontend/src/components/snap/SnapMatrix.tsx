@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { BADGE_BASE, CCF_COLORS, SCI_COLORS } from "@/components/RankBadges";
+import { MultiSystemRankChips } from "@/components/RankBadges";
 import { IconExternal } from "@/components/icons";
 import { useTranslation } from "@/lib/i18n";
 import {
@@ -167,6 +167,11 @@ export default function SnapMatrix({ entries }: { entries: MatrixEntry[] }) {
                         {t("matrix.retracted_short")}
                       </p>
                     )}
+                    {s.cas_warning && (
+                      <p className="mt-1 text-[11px] font-semibold text-destructive">
+                        {t("matrix.cas_warning_short")}
+                      </p>
+                    )}
                   </td>
 
                   <td className="px-3 py-2.5">
@@ -175,12 +180,14 @@ export default function SnapMatrix({ entries }: { entries: MatrixEntry[] }) {
                         {s.venue_normalized || s.venue || "—"}
                       </span>
                       {s.year > 0 && <span className="tabular-nums text-muted-foreground">{s.year}</span>}
-                      {s.sci_rank && SCI_COLORS[s.sci_rank] && (
-                        <span className={`${BADGE_BASE} ${SCI_COLORS[s.sci_rank]}`}>SCI {s.sci_rank}</span>
-                      )}
-                      {s.ccf_rank && CCF_COLORS[s.ccf_rank] && (
-                        <span className={`${BADGE_BASE} ${CCF_COLORS[s.ccf_rank]}`}>CCF {s.ccf_rank}</span>
-                      )}
+                      <MultiSystemRankChips
+                        sciRank={s.sci_rank}
+                        ccfRank={s.ccf_rank}
+                        venueRanks={s.venue_ranks}
+                        subtrack={s.venue_subtrack}
+                        casWarning={s.cas_warning}
+                        warningPrefix={t("snap.sig.cas_warning_prefix")}
+                      />
                     </span>
                   </td>
 

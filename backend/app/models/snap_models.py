@@ -107,6 +107,8 @@ class TriageSignals(BaseModel):
     sci_rank: str = ""            # Q1..Q4
     ccf_rank: str = ""            # A/B/C
     venue_ranks: dict[str, str] = Field(default_factory=dict)
+    rank_sources: dict[str, str] = Field(default_factory=dict)
+    rank_verified: dict[str, bool] = Field(default_factory=dict)
     venue_verification: str = ""  # verified | unverified | ""
     is_preprint: bool = False
     is_survey: bool = False

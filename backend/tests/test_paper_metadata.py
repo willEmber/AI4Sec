@@ -51,6 +51,55 @@ class S2RecordTests(unittest.TestCase):
         self.assertEqual(paper_metadata._parse_s2_response({"venue": "X"})["year"], 0)
 
 
+class S2TitleMatchGuardTests(unittest.IsolatedAsyncioTestCase):
+    async def test_s2_title_match_rejects_unrelated_fuzzy_hit_and_accepts_dehyphenated_title(self) -> None:
+        class _Resp:
+            status_code = 200
+
+            def __init__(self, payload: dict[str, Any]) -> None:
+                self._payload = payload
+
+            def json(self) -> dict[str, Any]:
+                return self._payload
+
+        sepmark = {
+            "data": [{
+                "title": "SepMark: Deep Separable Watermarking for Unified Source Tracing and Deepfake Detection",
+                "venue": "Proceedings of the 31st ACM International Conference on Multimedia",
+                "year": 2023,
+                "externalIds": {"DOI": "10.1145/3581783.3612471"},
+                "publicationVenue": {"name": "ACM Multimedia"},
+            }]
+        }
+        supermark_exact = {
+            "data": [{
+                "title": "SuperMark: Robust and Training-free Image Watermarking via Diffusion-based Super-Resolution",
+                "venue": "ICLR",
+                "year": 2025,
+                "externalIds": {},
+                "publicationVenue": {"name": "ICLR"},
+            }]
+        }
+
+        client = mock.AsyncMock()
+        client.__aenter__.return_value = client
+        client.get = mock.AsyncMock(return_value=_Resp(sepmark))
+        with (
+            mock.patch("app.services.paper_metadata.httpx.AsyncClient", return_value=client),
+            mock.patch("app.services.paper_search.ratelimit.S2_LIMITER.wait", mock.AsyncMock()),
+        ):
+            rejected = await paper_metadata._s2_lookup(
+                title="SUPERMARK: ROBUST AND TRAINING-FREE IM-AGE WATERMARKING VIA DIFFUSION-BASED SUPER-RESOLUTION"
+            )
+            self.assertEqual(rejected, {})
+
+            client.get = mock.AsyncMock(return_value=_Resp(supermark_exact))
+            accepted = await paper_metadata._s2_lookup(
+                title="SUPERMARK: ROBUST AND TRAINING-FREE IM-AGE WATERMARKING VIA DIFFUSION-BASED SUPER-RESOLUTION"
+            )
+            self.assertEqual(accepted["venue"], "ICLR")
+
+
 class _Rank:
     success, sci, ccf, error = True, "", "A", ""
 

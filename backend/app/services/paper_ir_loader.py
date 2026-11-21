@@ -54,44 +54,38 @@ async def load_paper_ir(paper_id: str) -> PaperIR:
 
 
 async def load_pub_rank(paper_id: str) -> dict[str, Any]:
-    """The `pub_rank_json` payload, from what `enrich_metadata` last stored."""
-    import json
+    """The `pub_rank_json` payload, resolved through `paper_venue.venue_profile` (P18)."""
+    from app.services.publication_rank.paper_venue import (
+        StoredVenue,
+        _loads_extra,
+        paper_venue_row,
+        pub_rank_from_profile,
+        venue_profile,
+    )
 
-    try:
-        row = await db.fetch_one(
-            "SELECT doi, venue, year, sci_rank, ccf_rank, venue_ranks_json FROM papers WHERE paper_id = ?",
-            (paper_id,),
-        )
-    except Exception:
-        row = await db.fetch_one(
-            "SELECT doi, venue, year, sci_rank, ccf_rank FROM papers WHERE paper_id = ?",
-            (paper_id,),
-        )
+    row = await paper_venue_row(paper_id)
     if row is None:
         return {}
-    extra: dict[str, Any] = {}
-    try:
-        extra = json.loads(row.get("venue_ranks_json") or "{}")
-    except Exception:
-        extra = {}
-    out: dict[str, Any] = {
-        "venue": row.get("venue") or "",
-        "year": row.get("year") or 0,
-        "sci": row.get("sci_rank") or "",
-        "ccf": row.get("ccf_rank") or "",
-        "doi": row.get("doi") or "",
-    }
-    if extra.get("ranks"):
-        out["ranks"] = extra["ranks"]
-    if extra.get("subtrack"):
-        out["subtrack"] = extra["subtrack"]
-    if extra.get("cas_warning"):
-        out["cas_warning"] = extra["cas_warning"]
-    if extra.get("source"):
-        out["source"] = extra["source"]
-    if extra.get("verification_status"):
-        out["verification_status"] = extra["verification_status"]
-    return out
+    raw_venue = row.get("effective_venue") or row.get("venue") or ""
+    doi = row.get("effective_doi") or row.get("doi") or ""
+    arxiv_id = row.get("arxiv_id") or ""
+    profile = venue_profile(
+        StoredVenue(
+            venue=raw_venue,
+            sci_rank=row.get("sci_rank") or "",
+            ccf_rank=row.get("ccf_rank") or "",
+            extra=_loads_extra(row.get("venue_ranks_json")),
+            doi=doi,
+            arxiv_id=arxiv_id,
+        )
+    )
+    return pub_rank_from_profile(
+        profile,
+        raw_venue=raw_venue,
+        year=int(row.get("year") or 0),
+        doi=doi,
+        arxiv_id=arxiv_id,
+    )
 
 
 async def ensure_pub_rank(paper_id: str, paper_ir: PaperIR, pdf_path: Path | None) -> dict[str, Any]:

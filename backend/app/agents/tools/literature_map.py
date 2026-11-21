@@ -40,6 +40,7 @@ from app.db import agent_repository as repo
 from app.models.agent_models import ErrorCode, EventType, ToolResult
 from app.models.sphere_models import SphereNode, SphereState
 from app.services import agent_jobs, evidence_service, paper_catalog
+from app.services.publication_rank import StoredVenue, VenueProfile, venue_profile
 from app.services.sphere_scorer import normalize_venue
 from app.workflows import progress
 from app.workflows.sphere_subgraph import map_papers
@@ -84,19 +85,53 @@ def _url(node: SphereNode) -> str:
     return ""
 
 
-def _rank(node: SphereNode) -> str:
-    return " · ".join(
-        part for part in (f"CCF {node.ccf_rank}" if node.ccf_rank else "",
-                          f"JCR {node.sci_rank}" if node.sci_rank else "") if part
+def _node_profile(node: SphereNode) -> VenueProfile:
+    """Resolve `node` through `paper_venue.venue_profile` so cached maps get fresh tiers."""
+    extra: dict[str, Any] = {}
+    if node.venue_ranks:
+        extra["ranks"] = dict(node.venue_ranks)
+    if node.venue_subtrack and node.venue_subtrack != "main":
+        extra["subtrack"] = node.venue_subtrack
+    if node.cas_warning:
+        extra["cas_warning"] = node.cas_warning
+    if node.venue_verification:
+        extra["verification_status"] = node.venue_verification
+    return venue_profile(
+        StoredVenue(
+            venue=node.venue,
+            sci_rank=node.sci_rank,
+            ccf_rank=node.ccf_rank,
+            extra=extra,
+            doi=node.doi,
+            arxiv_id=node.arxiv_id,
+        )
     )
 
 
-def _metadata_quote(node: SphereNode, *, as_of: str) -> str:
+def _rank_label(profile: VenueProfile, language: str = "en") -> str:
+    bits = profile.rank_bits(language, verified_only=True)
+    return " · ".join(bits)
+
+
+def _metadata_quote(
+    node: SphereNode, *, as_of: str, profile: VenueProfile | None = None
+) -> str:
+    prof = profile or _node_profile(node)
     parts = [node.title + (f" ({node.year})" if node.year else "")]
-    if node.venue:
+    clauses = prof.verified_fact_clauses()
+    if clauses:
+        venue = prof.display_venue or (normalize_venue(node.venue) if node.venue else "")
+        if venue and prof.subtrack == "main":
+            cleaned = [
+                c[len(venue) + 2 :] if c.startswith(f"{venue}: ") else c
+                for c in clauses
+            ]
+            parts.append(f"published at {venue} ({'; '.join(cleaned)})")
+        else:
+            parts.extend(clauses)
+    elif node.venue:
         venue = normalize_venue(node.venue) or node.venue
-        rank = _rank(node)
-        parts.append(f"published at {venue}" + (f" ({rank})" if rank else ""))
+        parts.append(f"published at {venue}")
     if node.cited_by_count:
         parts.append(f"cited by {node.cited_by_count:,} (OpenAlex / Semantic Scholar, as of {as_of})")
     return " — ".join(parts)
@@ -105,9 +140,10 @@ def _metadata_quote(node: SphereNode, *, as_of: str) -> str:
 async def _register(
     ctx: AgentContext, entries: Iterable[tuple[str, SphereNode]], *, as_of: str
 ) -> list[dict[str, Any]]:
-    """Each paper as a work with its evidence: `[{group, node, literature_id, ids}]`."""
+    """Each paper as a work with its evidence: `[{group, node, profile, literature_id, ids}]`."""
     out = []
     for group, node in entries:
+        prof = _node_profile(node)
         literature_id = await paper_catalog.upsert_literature_item(
             title=node.title,
             doi=node.doi,
@@ -117,6 +153,7 @@ async def _register(
             authors=[a.strip() for a in (node.authors or "").split(";") if a.strip()],
             year=node.year or None,
             venue=node.venue,
+            venue_ranks=prof.agent_summary() or None,
             abstract=node.abstract_text,
             url=_url(node),
             source="research_sphere",
@@ -134,21 +171,22 @@ async def _register(
             )).evidence_id
         metadata_id = (await evidence_service.record_metadata_evidence(
             literature_id=literature_id,
-            quote=_metadata_quote(node, as_of=as_of),
+            quote=_metadata_quote(node, as_of=as_of, profile=prof),
             owner_id=ctx.owner_id,
             session_id=ctx.session_id,
             provider="research_sphere",
             source_url=_url(node),
         )).evidence_id
         out.append({
-            "group": group, "node": node, "literature_id": literature_id,
+            "group": group, "node": node, "profile": prof, "literature_id": literature_id,
             "abstract_id": abstract_id, "metadata_id": metadata_id,
         })
     return out
 
 
-def _paper_entry(n: int, item: dict[str, Any]) -> dict[str, Any]:
+def _paper_entry(n: int, item: dict[str, Any], *, language: str = "en") -> dict[str, Any]:
     node: SphereNode = item["node"]
+    prof: VenueProfile = item.get("profile") or _node_profile(node)
     entry: dict[str, Any] = {
         "n": n,
         "literature_id": item["literature_id"],
@@ -156,8 +194,10 @@ def _paper_entry(n: int, item: dict[str, Any]) -> dict[str, Any]:
         "relation": node.relation_type.value,
         "title": node.title,
         "year": node.year or None,
-        "venue": normalize_venue(node.venue) if node.venue else "",
-        "rank": _rank(node),
+        "venue": prof.display_venue or (normalize_venue(node.venue) if node.venue else ""),
+        "rank": _rank_label(prof, language),
+        "subtrack": prof.subtrack if prof.subtrack and prof.subtrack != "main" else "",
+        "cas_warning": prof.warning,
         "cited_by": node.cited_by_count,
         "why": (node.relation_reason or node.reason)[:_TEXT_LIMIT],
         "method": node.method_summary[:_TEXT_LIMIT],
@@ -281,14 +321,18 @@ async def build_literature_map(runtime: ToolRuntime[AgentContext], paper_id: str
         if item["group"] != "hub" and node.cluster_id >= 0:
             clusters.setdefault(node.cluster_id, []).append(number[node.node_id])
     center = sphere.center_node or SphereNode(title=paper_ir.title)
+    center_prof = _node_profile(center)
     # This paper's own record, as the indexes the map asked know it: the report
     # opens by placing it, and would otherwise look it up again.
     center_id = ""
     if center.venue or center.cited_by_count:
         center_id = (await evidence_service.record_metadata_evidence(
             literature_id=await paper_catalog.ensure_literature_for_local_paper(paper_id),
-            quote=_metadata_quote(center.model_copy(update={"title": center.title or paper_ir.title}),
-                                  as_of=as_of),
+            quote=_metadata_quote(
+                center.model_copy(update={"title": center.title or paper_ir.title}),
+                as_of=as_of,
+                profile=center_prof,
+            ),
             owner_id=ctx.owner_id,
             session_id=ctx.session_id,
             provider="research_sphere",
@@ -301,7 +345,10 @@ async def build_literature_map(runtime: ToolRuntime[AgentContext], paper_id: str
             k: v for k, v in {
                 "title": center.title or paper_ir.title,
                 "year": center.year or None,
-                "venue": normalize_venue(center.venue) if center.venue else "",
+                "venue": center_prof.display_venue or (normalize_venue(center.venue) if center.venue else ""),
+                "rank": _rank_label(center_prof, language),
+                "subtrack": center_prof.subtrack if center_prof.subtrack != "main" else "",
+                "cas_warning": center_prof.warning,
                 "cited_by": center.cited_by_count or None,
                 "evidence_id": center_id,
             }.items() if v
@@ -311,7 +358,7 @@ async def build_literature_map(runtime: ToolRuntime[AgentContext], paper_id: str
             "core": len(sphere.layer1_node_ids),
             "hubs": len(sphere.output.key_hubs),
         },
-        "papers": [_paper_entry(n, item) for n, item in enumerate(registered, start=1)],
+        "papers": [_paper_entry(n, item, language=language) for n, item in enumerate(registered, start=1)],
         "clusters": [
             {"cluster": cid, "papers": members}
             for cid, members in sorted(clusters.items())

@@ -507,8 +507,113 @@ def _rank_source_label(source: str) -> str:
         return "OpenAlex"
     if s == "llm_websearch":
         return "Web Search (unverified)"
-    # Preserve legacy default when callers pass bare `pub_rank` dicts without `source`.
-    return "EasyScholar"
+    return "stored record (unverified)"
+
+
+def apply_venue_to_signals(
+    signals: TriageSignals, pub_rank: dict[str, Any] | None = None
+) -> TriageSignals:
+    """Apply unified read-time `venue_profile` resolution onto `signals` (P18 §2.1)."""
+    from app.services.publication_rank.paper_venue import StoredVenue, venue_profile
+
+    pr = pub_rank or {}
+    raw_venue = str(pr.get("venue") or signals.venue or "").strip()
+    if raw_venue and not signals.venue:
+        signals.venue = raw_venue
+
+    merged_ranks = dict(signals.venue_ranks)
+    if isinstance(pr.get("ranks"), dict):
+        merged_ranks.update(pr["ranks"])
+
+    merged_sources = dict(signals.rank_sources)
+    if isinstance(pr.get("rank_sources"), dict):
+        merged_sources.update(pr["rank_sources"])
+
+    merged_verified = dict(signals.rank_verified)
+    if isinstance(pr.get("rank_verified"), dict):
+        merged_verified.update(pr["rank_verified"])
+
+    extra: dict[str, Any] = {}
+    if merged_ranks:
+        extra["ranks"] = merged_ranks
+    if merged_sources:
+        extra["rank_sources"] = merged_sources
+    if merged_verified:
+        extra["rank_verified"] = merged_verified
+    subtrack_hint = str(pr.get("subtrack") or signals.venue_subtrack or "").strip()
+    if subtrack_hint and subtrack_hint != "main":
+        extra["subtrack"] = subtrack_hint
+    warn_hint = str(pr.get("cas_warning") or signals.cas_warning or "").strip()
+    if warn_hint:
+        extra["cas_warning"] = warn_hint
+    src_hint = str(pr.get("source") or "").strip()
+    if not src_hint and signals.provenance.get("venue_ranks") == "EasyScholar":
+        src_hint = "easyscholar"
+    elif not src_hint and signals.provenance.get("venue_ranks") == "Web Search (unverified)":
+        src_hint = "llm_websearch"
+    if src_hint:
+        extra["source"] = src_hint
+    ver_hint = str(pr.get("verification_status") or signals.venue_verification or "").strip()
+    if ver_hint:
+        extra["verification_status"] = ver_hint
+    if pr.get("preprint_file_only"):
+        extra["preprint_file_only"] = True
+    if pr.get("presentation_tier"):
+        extra["presentation_tier"] = pr["presentation_tier"]
+
+    prof = venue_profile(
+        StoredVenue(
+            venue=signals.venue or raw_venue,
+            sci_rank=str(pr.get("sci") or signals.sci_rank or ""),
+            ccf_rank=str(pr.get("ccf") or signals.ccf_rank or ""),
+            extra=extra,
+            doi=signals.doi,
+            arxiv_id=signals.arxiv_id,
+        )
+    )
+
+    signals.venue_subtrack = prof.subtrack
+    if prof.subtrack in {"workshop", "companion"}:
+        signals.sci_rank = ""
+        signals.ccf_rank = ""
+        signals.venue_ranks = {}
+        signals.rank_sources = {}
+        signals.rank_verified = {}
+        for k in list(signals.provenance):
+            if k in {"sci_rank", "ccf_rank", "venue_ranks"} or k.startswith("rank:"):
+                signals.provenance.pop(k, None)
+    else:
+        signals.sci_rank = prof.sci_rank
+        signals.ccf_rank = prof.ccf_rank
+        signals.venue_ranks = prof.compact_ranks()
+        signals.rank_sources = prof.rank_sources_map()
+        signals.rank_verified = prof.rank_verified_map()
+        if signals.sci_rank:
+            signals.provenance["sci_rank"] = _rank_source_label(
+                signals.rank_sources.get("JCR", prof.source)
+            )
+        else:
+            signals.provenance.pop("sci_rank", None)
+        if signals.ccf_rank:
+            signals.provenance["ccf_rank"] = _rank_source_label(
+                signals.rank_sources.get("CCF", prof.source)
+            )
+        else:
+            signals.provenance.pop("ccf_rank", None)
+        if signals.venue_ranks:
+            signals.provenance["venue_ranks"] = _rank_source_label(prof.source)
+        else:
+            signals.provenance.pop("venue_ranks", None)
+        for sys_k, sys_src in signals.rank_sources.items():
+            signals.provenance[f"rank:{sys_k}"] = _rank_source_label(sys_src)
+
+    signals.venue_verification = (
+        prof.verification_status if prof.verification_status != "unknown" else ""
+    )
+    signals.cas_warning = prof.warning
+    if prof.warning:
+        signals.provenance["cas_warning"] = "CAS Early Warning List"
+    return signals
 
 
 def compute_external_score(signals: TriageSignals) -> TriageSignals:
@@ -523,6 +628,7 @@ def compute_external_score(signals: TriageSignals) -> TriageSignals:
         signals.ccf_rank,
         venue_ranks=signals.venue_ranks,
         cas_warning=signals.cas_warning,
+        venue_subtrack=signals.venue_subtrack,
     )
 
     if signals.citations_known:
@@ -577,29 +683,13 @@ async def collect_triage_signals(
     signals = TriageSignals(doi=doi.strip().lower(), arxiv_id=arxiv_id)
 
     pub_rank = pub_rank or {}
-    rank_src = _rank_source_label(str(pub_rank.get("source") or ""))
     if pub_rank.get("venue"):
         signals.venue = pub_rank["venue"]
         signals.provenance["venue"] = str(pub_rank.get("venue_source") or "Crossref / Semantic Scholar")
     if pub_rank.get("year"):
         signals.year = int(pub_rank["year"])
         signals.provenance["year"] = str(pub_rank.get("venue_source") or "Crossref / Semantic Scholar")
-    if pub_rank.get("sci"):
-        signals.sci_rank = pub_rank["sci"]
-        signals.provenance["sci_rank"] = rank_src
-    if pub_rank.get("ccf"):
-        signals.ccf_rank = pub_rank["ccf"]
-        signals.provenance["ccf_rank"] = rank_src
-    if isinstance(pub_rank.get("ranks"), dict) and pub_rank["ranks"]:
-        signals.venue_ranks = dict(pub_rank["ranks"])
-        signals.provenance["venue_ranks"] = rank_src
-    if pub_rank.get("subtrack"):
-        signals.venue_subtrack = str(pub_rank["subtrack"])
-    if pub_rank.get("verification_status"):
-        signals.venue_verification = str(pub_rank["verification_status"])
-    if pub_rank.get("cas_warning"):
-        signals.cas_warning = str(pub_rank["cas_warning"])
-        signals.provenance["cas_warning"] = "CAS Early Warning List"
+    apply_venue_to_signals(signals, pub_rank)
 
     # Code links come straight from the PDF — no network needed.
     signals.repos = extract_code_repos(paper_ir)
@@ -660,29 +750,10 @@ async def collect_triage_signals(
                 elif isinstance(result, Exception):
                     logger.debug("%s: signal follow-up failed: %s", log_label, result)
 
-        # If OpenAlex/S2 discovered the venue here and no rank was pre-supplied,
-        # resolve it against the in-process authoritative catalog (<0.1ms).
-        if signals.venue and not (signals.sci_rank or signals.ccf_rank or signals.venue_ranks):
-            from app.services.publication_rank import get_venue_catalog
-
-            prof = get_venue_catalog().resolve(signals.venue)
-            signals.venue_subtrack = prof.subtrack
-            if prof.has_any_rank:
-                src_label = _rank_source_label(prof.source)
-                if prof.sci_rank:
-                    signals.sci_rank = prof.sci_rank
-                    signals.provenance["sci_rank"] = src_label
-                if prof.ccf_rank:
-                    signals.ccf_rank = prof.ccf_rank
-                    signals.provenance["ccf_rank"] = src_label
-                ranks_dict = prof.compact_ranks()
-                if ranks_dict:
-                    signals.venue_ranks = ranks_dict
-                    signals.provenance["venue_ranks"] = src_label
-                signals.venue_verification = prof.verification_status
-                if prof.warning:
-                    signals.cas_warning = prof.warning
-                    signals.provenance["cas_warning"] = "CAS Early Warning List"
+        # Re-apply unified read-time venue resolution in case OpenAlex/S2 discovered
+        # a venue that `pub_rank` did not carry.
+        if signals.venue:
+            apply_venue_to_signals(signals, pub_rank)
 
     compute_external_score(signals)
     logger.info(
@@ -771,6 +842,7 @@ async def get_or_collect_triage_signals(
     if ttl_hours > 0:
         cached = await load_cached_signals(paper_id, ttl_hours=ttl_hours)
         if cached is not None:
+            apply_venue_to_signals(cached, kwargs.get("pub_rank"))
             compute_external_score(cached)
             logger.info(
                 "%s: signals CACHED (citations=%s code=%d external_score=%.2f)",

@@ -161,10 +161,21 @@ class PublicationRankResult:
 
         extra = self.extra or {}
         editions = extra.get("_editions") if isinstance(extra.get("_editions"), dict) else {}
+        src = (self.source or "").strip()
+        verified = src in {"local_catalog", "easyscholar"}
 
         # If converted from a cached/serialized VenueProfile with explicit `_rankings`
         if isinstance(extra.get("_rankings"), list):
-            rankings = [RankingEntry.model_validate(r) for r in extra["_rankings"]]
+            rankings = []
+            for r in extra["_rankings"]:
+                entry = RankingEntry.model_validate(r)
+                if not entry.source and src:
+                    entry = entry.model_copy(update={"source": src, "verified": verified})
+                elif "verified" not in (r if isinstance(r, dict) else {}):
+                    entry = entry.model_copy(
+                        update={"verified": (entry.source or src) in {"local_catalog", "easyscholar"}}
+                    )
+                rankings.append(entry)
         else:
             rankings = []
             if self.sci:
@@ -175,6 +186,8 @@ class PublicationRankResult:
                         category=str(extra.get("jcr_category") or "all"),
                         edition_year=str(editions.get("JCR") or ""),
                         impact_factor=str(extra.get("sciif") or ""),
+                        source=src,
+                        verified=verified,
                     )
                 )
             for key in _CAS_KEYS:
@@ -187,6 +200,8 @@ class PublicationRankResult:
                             category="subject" if key == "sciUpSmall" else "broad",
                             edition_year=str(editions.get("CAS") or ""),
                             top=bool(extra.get("sciUpTop")),
+                            source=src,
+                            verified=verified,
                         )
                     )
                     break
@@ -198,6 +213,8 @@ class PublicationRankResult:
                         category="broad",
                         edition_year=str(editions.get("CAS") or ""),
                         top=bool(extra.get("sciUpTop")),
+                        source=src,
+                        verified=verified,
                     )
                 )
             if self.ccf:
@@ -207,6 +224,8 @@ class PublicationRankResult:
                         rank=self.ccf,
                         category=str(extra.get("ccf_category") or "all"),
                         edition_year=str(editions.get("CCF") or ""),
+                        source=src,
+                        verified=verified,
                     )
                 )
             if extra.get("core"):
@@ -215,6 +234,8 @@ class PublicationRankResult:
                         ranking_system="CORE",
                         rank=str(extra["core"]),
                         edition_year=str(editions.get("CORE") or ""),
+                        source=src,
+                        verified=verified,
                     )
                 )
             if extra.get("th_cpl"):
@@ -223,6 +244,8 @@ class PublicationRankResult:
                         ranking_system="TH_CPL",
                         rank=str(extra["th_cpl"]),
                         edition_year=str(editions.get("TH_CPL") or ""),
+                        source=src,
+                        verified=verified,
                     )
                 )
             if extra.get("caai"):
@@ -231,6 +254,8 @@ class PublicationRankResult:
                         ranking_system="CAAI",
                         rank=str(extra["caai"]),
                         edition_year=str(editions.get("CAAI") or ""),
+                        source=src,
+                        verified=verified,
                     )
                 )
             if extra.get("ccf_cn"):
@@ -239,11 +264,12 @@ class PublicationRankResult:
                         ranking_system="CCF_CN",
                         rank=str(extra["ccf_cn"]),
                         edition_year=str(editions.get("CCF_CN") or ""),
+                        source=src,
+                        verified=verified,
                     )
                 )
 
-        src = (self.source or "").strip()
-        verified = src in {"local_catalog", "easyscholar"}
+        any_verified = any(r.verified for r in rankings) or verified
         metrics = extra.get("metrics") if isinstance(extra.get("metrics"), dict) else {}
         return VenueProfile(
             query_venue=qname,
@@ -262,7 +288,7 @@ class PublicationRankResult:
             note=str(extra.get("note") or ""),
             metrics=metrics,
             source=src,
-            verification_status="verified" if verified else ("unverified" if rankings else "unknown"),
+            verification_status="verified" if any_verified else ("unverified" if rankings else "unknown"),
         )
 
     @classmethod

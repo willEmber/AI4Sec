@@ -39,7 +39,7 @@ from app.models.agent_models import (
 
 # Recorded on every run so an evaluation can tell which prompt produced a result.
 # A turn with report modes written as answers records more (`current_prompt_version`).
-PROMPT_VERSION = "p15-aliases-1"
+PROMPT_VERSION = "p18-venue-1"
 
 
 _ZH = """你是论文阅读助手。你通过工具读取论文原文来回答问题，而不是凭记忆作答。
@@ -49,6 +49,7 @@ _ZH = """你是论文阅读助手。你通过工具读取论文原文来回答�
 - 关于论文内容的每一个说法，都必须来自某次工具调用的返回。
 - 引用工具返回的 `evidence_id`（形如 `E12`），写成 `[E12]` 紧跟在对应说法之后；一处有多条证据时写成 `[E12][E15]`。编号照工具结果原样写。
 - 不要引用没有出现在工具结果里的 `evidence_id`。
+- 会话论文后面的发表徽章只用于选文。问题未问及发表场所或等级时不必顺带陈述，也不要为此额外调用工具；需要陈述发表场所、等级、子轨道或预警时，引用工具返回的 `metadata` 证据，上下文里已有对应证据时直接引用，不要再查。
 - 工具没返回的内容就是你不知道的内容。原文没有答案时直接说明，这是正确回答，不要用常识补全。
 
 ## 阅读
@@ -144,6 +145,11 @@ the provided tools rather than from memory.
   right after the claim it supports; several at one place are `[E12][E15]`.
   Write each id exactly as the tool result gave it.
 - Never cite an `evidence_id` that did not appear in a tool result.
+- The venue badge beside a session paper is for selecting papers, not evidence.
+  Do not mention venue tiers in passing or call tools just to fetch them when
+  the question did not ask; when stating a venue, tier, subtrack or
+  early-warning flag, cite a `metadata` evidence id returned by a tool — and
+  reuse one already in context rather than looking it up again.
 - What the tools did not return is what you do not know. If the paper does not
   answer something, say so — that is a correct answer, not a prompt to fill the
   gap from general knowledge.
@@ -322,50 +328,18 @@ def _paper_venue_badge(paper: SessionPaper, language: str) -> str:
     """Compact venue + tier badge when a session paper has a known venue or rank."""
     if not (paper.venue or paper.ccf_rank or paper.sci_rank or paper.venue_ranks):
         return ""
-    vr = paper.venue_ranks if isinstance(paper.venue_ranks, dict) else {}
-    is_preprint_pdf = bool(
-        vr.get("preprint_file_only")
-        or (paper.arxiv_id and not paper.doi)
-    )
-    pres_tier = str(vr.get("presentation_tier") or "")
-    stored_warn = str(vr.get("cas_warning") or "")
-    try:
-        from app.services.publication_rank import VenueLookupInput, get_venue_catalog
+    from app.services.publication_rank.paper_venue import StoredVenue, venue_profile
 
-        prof = get_venue_catalog().resolve(
-            VenueLookupInput(
-                venue=paper.venue,
-                is_preprint_source=is_preprint_pdf,
-            )
+    return venue_profile(
+        StoredVenue(
+            venue=paper.venue,
+            sci_rank=paper.sci_rank,
+            ccf_rank=paper.ccf_rank,
+            extra=paper.venue_ranks if isinstance(paper.venue_ranks, dict) else {},
+            doi=paper.doi,
+            arxiv_id=paper.arxiv_id,
         )
-        if pres_tier and not prof.openreview_tier:
-            prof.openreview_tier = pres_tier
-        if is_preprint_pdf:
-            prof.is_preprint_file = True
-        if stored_warn and not prof.warning:
-            prof.warning = stored_warn
-        badge = prof.prompt_badge(language)
-        if badge and (prof.has_any_rank or prof.subtrack in {"findings", "workshop", "companion", "preprint"}):
-            return badge
-    except Exception:
-        pass
-    zh = language == "zh"
-    bits = [paper.venue] if paper.venue else []
-    ranks = []
-    if paper.ccf_rank:
-        ranks.append(f"CCF {paper.ccf_rank}")
-    if paper.sci_rank:
-        ranks.append(f"JCR {paper.sci_rank}")
-    if pres_tier:
-        ranks.append(pres_tier.capitalize())
-    if ranks:
-        bits.append(" / ".join(ranks))
-    out = " · ".join(bits)
-    if stored_warn:
-        out += f" [{'预警:' + stored_warn if zh else 'CAS Warning: ' + stored_warn}]"
-    if is_preprint_pdf and paper.venue.lower() not in {"", "arxiv", "corr"}:
-        out += " [预印本文件]" if zh else " [preprint PDF]"
-    return out
+    ).prompt_badge(language)
 
 
 def _format_papers(papers: list[SessionPaper], language: str) -> str:

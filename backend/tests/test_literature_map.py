@@ -90,7 +90,7 @@ class LiteratureMapToolTests(AgentP2TestCase):
         # Partitions in the report's order (foundations first), then a hub outside the core.
         self.assertEqual([(p["n"], p["group"]) for p in papers],
                          [(1, "foundation"), (2, "method"), (3, "method"), (4, "hub")])
-        self.assertEqual(papers[0]["rank"], "CCF A")
+        self.assertEqual(papers[0]["rank"], "CCF A · CORE A*")
         self.assertEqual(papers[0]["why"], "The model it builds on.")
         # A paper without an abstract is cited by its metadata, and says so.
         self.assertEqual(papers[2]["evidence_id"], papers[2]["metadata_evidence_id"])
@@ -107,7 +107,9 @@ class LiteratureMapToolTests(AgentP2TestCase):
         self.assertIn(data["center"]["evidence_id"], result["evidence_ids"])
         self.assertNotIn("fulltext", levels)
         ddpm = next(e for e in stored if e.source_level.value == "metadata" and "Denoising" in e.quote)
-        self.assertIn("NeurIPS (CCF A)", ddpm.quote)
+        self.assertIn("published at NeurIPS", ddpm.quote)
+        self.assertIn("CCF A (2026)", ddpm.quote)
+        self.assertIn("CORE A* (2026)", ddpm.quote)
         self.assertIn("cited by 20,000", ddpm.quote)
 
     async def test_its_papers_join_the_session_as_candidates(self) -> None:

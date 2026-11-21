@@ -1,5 +1,5 @@
 ---
-version: 2
+version: 3
 required: One-line verdict | Contributions | Key results | Who should read it | Limitations | External signals & blind review | Reading advice
 ---
 # Insight Snap: method
@@ -8,7 +8,7 @@ An Insight Snap lets a researcher decide in a minute whether a paper deserves a 
 
 ## Reading (tools, before writing)
 
-1. In ONE step, call `get_triage_signals` and `review_paper_blind` together (pass the reader's concern as `focus` when they named one). They run side by side.
+1. In ONE step, call `get_triage_signals` and `review_paper_blind` together (pass the reader's concern as `focus` when they named one). They run side by side. `get_triage_signals` already resolves every venue ranking system, subtrack, early-warning flag and citation signal — do not call `query_publication_rank` or `get_paper_metadata` on top of it.
 2. In the same step or the next, read the evidence yourself: `search_paper_content` or `read_paper_section` for the abstract and introduction (the claims), the main results table or section (the numbers), and the conclusion or limitations. Read only what the seven sections need.
 3. No web search and no other papers: a Snap is about this paper and its record.
 
@@ -38,7 +38,7 @@ Two to four bullets: assumptions, missing comparisons, threats to the conclusion
 - The blind review's scores in one line (contribution / evidence / novelty / reproducibility out of 3, limitation severity) and its main reasons, attributed to the review.
 
 ## Reading advice
-The verdict tier exactly as given (must read / selective / skip) and why, in two or three sentences; name the sections worth reading first (the review's `must_read_sections` where they agree with what you read). When the reader named a concern, say how well the paper answers it.
+The verdict tier exactly as given (must read / selective / skip) and why, in two or three sentences; when the verdict `drivers` include a CAS early-warning flag, `Workshop` or `Findings` subtrack, state that explicitly here. Name the sections worth reading first (the review's `must_read_sections` where they agree with what you read). When the reader named a concern, say how well the paper answers it.
 
 ## Rules
 

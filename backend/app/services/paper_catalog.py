@@ -117,6 +117,7 @@ async def upsert_literature_item(
     authors: list[str] | None = None,
     year: int | None = None,
     venue: str = "",
+    venue_ranks: dict[str, Any] | None = None,
     abstract: str = "",
     url: str = "",
     oa_pdf_url: str = "",
@@ -145,6 +146,7 @@ async def upsert_literature_item(
     )
 
     year_known = year is not None and year > 0
+    ranks_json = json.dumps(venue_ranks, ensure_ascii=False) if venue_ranks else ""
     values = {
         "doi": normalize_doi(doi),
         "arxiv_id": normalize_arxiv_id(arxiv_id),
@@ -165,9 +167,9 @@ async def upsert_literature_item(
         await db.execute(
             """INSERT INTO literature_items
                    (literature_id, doi, arxiv_id, openalex_id, s2_paper_id, pmid, title,
-                    title_fingerprint, authors_json, year, year_known, venue, abstract,
-                    url, oa_pdf_url, source)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    title_fingerprint, authors_json, year, year_known, venue, venue_ranks_json,
+                    abstract, url, oa_pdf_url, source)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 literature_id,
                 values["doi"],
@@ -181,6 +183,7 @@ async def upsert_literature_item(
                 year if year_known else 0,
                 1 if year_known else 0,
                 values["venue"],
+                ranks_json or "{}",
                 values["abstract"],
                 values["url"],
                 values["oa_pdf_url"],
@@ -189,7 +192,7 @@ async def upsert_literature_item(
         )
         return literature_id
 
-    # Fill blanks only.
+    # Fill blanks only (and upgrade venue_ranks_json when empty or higher priority).
     assignments: list[str] = []
     params: list[Any] = []
     for column, value in values.items():
@@ -199,6 +202,24 @@ async def upsert_literature_item(
     if year_known and not existing.get("year_known"):
         assignments.extend(["year = ?", "year_known = 1"])
         params.append(year)
+    if ranks_json:
+        existing_ranks_raw = existing.get("venue_ranks_json") or "{}"
+        should_write_ranks = existing_ranks_raw in ("", "{}")
+        if not should_write_ranks:
+            try:
+                from app.services.publication_rank.models import source_priority
+
+                old_extra = json.loads(existing_ranks_raw)
+                old_prio = source_priority(str(old_extra.get("source") or ""))
+                new_prio = source_priority(str((venue_ranks or {}).get("source") or ""))
+                should_write_ranks = new_prio > old_prio or (
+                    new_prio == old_prio and ranks_json != existing_ranks_raw
+                )
+            except Exception:
+                should_write_ranks = False
+        if should_write_ranks:
+            assignments.append("venue_ranks_json = ?")
+            params.append(ranks_json)
     if assignments:
         assignments.append("updated_at = now()")
         params.append(literature_id)
@@ -271,6 +292,68 @@ async def record_published_year(paper_id: str, *, doi: str, year: int) -> None:
         "AND (year_known = 0 OR year <> ?)",
         (year, literature_id, doi, year),
     )
+
+
+async def record_published_venue_ranks(
+    paper_id: str,
+    *,
+    doi: str = "",
+    venue: str = "",
+    venue_ranks: dict[str, Any] | None = None,
+) -> bool:
+    """Sync a file's resolved venue and `venue_ranks_json` onto its work record.
+
+    Uses the same DOI guard as :func:`record_published_year`: only updates a
+    work with no DOI or the same DOI. Replaces the work's `venue` when it was
+    blank, a preprint server (`arXiv`), or a generic proceedings series shell.
+    """
+    if not venue and not venue_ranks:
+        return False
+    literature_id = await literature_for_paper(paper_id)
+    if not literature_id:
+        return False
+    item = await get_literature_item(literature_id)
+    if item is None:
+        return False
+    item_doi = (item.get("doi") or "").strip()
+    if doi and item_doi and item_doi.lower() != doi.strip().lower():
+        return False
+
+    from app.services.publication_rank.normalizer import is_preprint_venue, is_umbrella_series
+
+    assignments: list[str] = []
+    params: list[Any] = []
+    clean_venue = normalize_whitespace(venue)
+    existing_venue = (item.get("venue") or "").strip()
+    if (
+        clean_venue
+        and not is_preprint_venue(clean_venue)
+        and not is_umbrella_series(clean_venue)
+        and (
+            not existing_venue
+            or is_preprint_venue(existing_venue)
+            or is_umbrella_series(existing_venue)
+        )
+        and clean_venue != existing_venue
+    ):
+        assignments.append("venue = ?")
+        params.append(clean_venue)
+
+    if venue_ranks is not None:
+        ranks_json = json.dumps(venue_ranks, ensure_ascii=False)
+        if ranks_json != (item.get("venue_ranks_json") or "{}"):
+            assignments.append("venue_ranks_json = ?")
+            params.append(ranks_json)
+
+    if not assignments:
+        return False
+    assignments.append("updated_at = now()")
+    params.append(literature_id)
+    await db.execute(
+        f"UPDATE literature_items SET {', '.join(assignments)} WHERE literature_id = ?",
+        tuple(params),
+    )
+    return True
 
 
 async def primary_paper_for_literature(literature_id: str) -> str:

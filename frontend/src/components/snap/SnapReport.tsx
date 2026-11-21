@@ -1,6 +1,6 @@
 "use client";
 
-import { BADGE_BASE, CCF_COLORS, SCI_COLORS } from "@/components/RankBadges";
+import { BADGE_BASE, MultiSystemRankChips } from "@/components/RankBadges";
 import { IconCheck, IconExternal } from "@/components/icons";
 import { ClaimList, FindingsTable, MeterCard, Section } from "@/components/report/primitives";
 import { useTranslation } from "@/lib/i18n";
@@ -77,7 +77,8 @@ function EvidenceTable({ signals }: { signals: SnapSignals }) {
     <div className="rounded-xl border border-border bg-card px-4 py-1">
       <EvidenceRow
         label={t("snap.sig.venue")}
-        source={p.sci_rank || p.ccf_rank || p.venue || "—"}
+        source={p.venue_ranks || p.ccf_rank || p.sci_rank || p.venue || "—"}
+        warn={Boolean(signals.cas_warning)}
       >
         <span className="flex flex-wrap items-center gap-1.5">
           {signals.venue_normalized || signals.venue ? (
@@ -86,12 +87,14 @@ function EvidenceTable({ signals }: { signals: SnapSignals }) {
             <span className="text-muted-foreground">{t("snap.unknown")}</span>
           )}
           {signals.year > 0 && <span className="tabular-nums text-muted-foreground">{signals.year}</span>}
-          {signals.sci_rank && SCI_COLORS[signals.sci_rank] && (
-            <span className={`${BADGE_BASE} ${SCI_COLORS[signals.sci_rank]}`}>SCI {signals.sci_rank}</span>
-          )}
-          {signals.ccf_rank && CCF_COLORS[signals.ccf_rank] && (
-            <span className={`${BADGE_BASE} ${CCF_COLORS[signals.ccf_rank]}`}>CCF {signals.ccf_rank}</span>
-          )}
+          <MultiSystemRankChips
+            sciRank={signals.sci_rank}
+            ccfRank={signals.ccf_rank}
+            venueRanks={signals.venue_ranks}
+            subtrack={signals.venue_subtrack}
+            casWarning={signals.cas_warning}
+            warningPrefix={t("snap.sig.cas_warning_prefix")}
+          />
           {signals.is_preprint && (
             <span className={`${BADGE_BASE} border-border bg-muted text-muted-foreground`}>
               {t("snap.sig.preprint")}
@@ -280,8 +283,37 @@ export default function SnapReport({
           </p>
         )}
 
+        {signals.cas_warning && (
+          <p className="mt-3 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-[13px] font-medium text-destructive">
+            {t("snap.sig.cas_warning_banner", { warning: signals.cas_warning })}
+          </p>
+        )}
+
         {report.one_liner && (
           <p className="mt-3 text-[14.5px] leading-relaxed text-foreground/90">{report.one_liner}</p>
+        )}
+
+        {verdict.drivers.length > 0 && (
+          <div className="mt-3 flex flex-wrap items-center gap-1.5">
+            {verdict.drivers.map((driver) => {
+              const isRisk =
+                driver === "cas_warning" ||
+                driver === "weak_evidence" ||
+                driver === "severe_limitations";
+              return (
+                <span
+                  key={driver}
+                  className={`inline-flex items-center rounded-md border px-1.5 py-0.5 text-[11px] ${
+                    isRisk
+                      ? "border-destructive/35 bg-destructive/10 font-medium text-destructive"
+                      : "border-border bg-muted/60 text-muted-foreground"
+                  }`}
+                >
+                  {t(`snap.driver.${driver}`)}
+                </span>
+              );
+            })}
+          </div>
         )}
 
         {/* Score provenance: which of the two readings drove the tier. */}

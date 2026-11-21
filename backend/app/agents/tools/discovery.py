@@ -124,7 +124,10 @@ def _clean_list(values: list[str] | None) -> tuple[str, ...]:
 
 
 async def _register_candidate(
-    meta: PaperMetadata | Paper | dict[str, Any], *, source: str
+    meta: PaperMetadata | Paper | dict[str, Any],
+    *,
+    source: str,
+    venue_ranks: dict[str, Any] | None = None,
 ) -> str:
     """Record a discovered paper as a work, whether or not it has a file.
 
@@ -143,6 +146,7 @@ async def _register_candidate(
             authors=[a.strip() for a in (meta.authors or "").split(";") if a.strip()],
             year=meta.year or None,
             venue=meta.venue,
+            venue_ranks=venue_ranks,
             abstract=meta.abstract_text,
             oa_pdf_url=meta.oa_pdf_url,
             source=source,
@@ -158,6 +162,7 @@ async def _register_candidate(
         authors=[a.strip() for a in (meta.get("authors") or "").split(";") if a.strip()],
         year=meta.get("year") or None,
         venue=meta.get("venue", ""),
+        venue_ranks=venue_ranks,
         abstract=meta.get("abstract", ""),
         url=meta.get("url", ""),
         oa_pdf_url=meta.get("oa_pdf_url", ""),
@@ -527,7 +532,9 @@ async def search_papers(
         # Promote formally accepted conference/journal venue when primary record was a preprint/LNCS shell
         if vprof.has_any_rank and vprof.display_venue and (not paper.venue or paper.venue.lower() in {"arxiv", "corr"}):
             paper.venue = vprof.display_venue
-        literature_id = await _register_candidate(paper, source="search")
+        literature_id = await _register_candidate(
+            paper, source="search", venue_ranks=vprof.agent_summary() or None
+        )
         payload, evidence_id = await _candidate_payload(
             literature_id,
             ctx,
@@ -722,12 +729,16 @@ async def resolve_paper(
             "No paper matched. Check the title, or supply a DOI or arXiv id.",
         ).to_json()
 
-    literature_id = await _register_candidate(meta, source=provider)
+    vprof = (await resolve_venue_profiles_batch([_meta_lookup_input(meta)], allow_network=False))[0]
+    literature_id = await _register_candidate(
+        meta, source=provider, venue_ranks=vprof.agent_summary() or None
+    )
     payload, evidence_id = await _candidate_payload(
         literature_id, ctx, provider=provider
     )
     evidence_ids = [evidence_id]
-    vprof = (await resolve_venue_profiles_batch([_meta_lookup_input(meta, payload)], allow_network=False))[0]
+    if not vprof.has_any_rank and payload.get("venue"):
+        vprof = (await resolve_venue_profiles_batch([_meta_lookup_input(meta, payload)], allow_network=False))[0]
     if vprof.agent_summary():
         payload["venue_rank"] = vprof.agent_summary()
     vclauses = vprof.verified_fact_clauses()
@@ -861,7 +872,9 @@ async def get_related_papers(
     papers: list[dict[str, Any]] = []
     evidence_ids: list[str] = []
     for meta, vprof in zip(kept_neighbours, neighbour_profiles):
-        neighbour_id = await _register_candidate(meta, source=provider)
+        neighbour_id = await _register_candidate(
+            meta, source=provider, venue_ranks=vprof.agent_summary() or None
+        )
         payload, evidence_id = await _candidate_payload(
             neighbour_id, ctx, provider=provider
         )

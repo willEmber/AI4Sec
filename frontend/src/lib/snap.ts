@@ -74,9 +74,12 @@ export interface SnapSignals {
   resolved: boolean;
   venue: string;
   venue_normalized: string;
+  venue_subtrack: string;
   year: number;
   sci_rank: string;
   ccf_rank: string;
+  venue_ranks: Record<string, string>;
+  venue_verification: string;
   is_preprint: boolean;
   is_survey: boolean;
   cited_by_count: number;
@@ -87,6 +90,7 @@ export interface SnapSignals {
   is_open_access: boolean;
   oa_url: string;
   is_retracted: boolean;
+  cas_warning: string;
   venue_score: number;
   citation_score: number;
   code_score: number;
@@ -151,12 +155,13 @@ export interface SnapData {
 
 const EMPTY_SIGNALS: SnapSignals = {
   doi: "", arxiv_id: "", openalex_id: "", s2_paper_id: "", resolved: false,
-  venue: "", venue_normalized: "", year: 0, sci_rank: "", ccf_rank: "",
+  venue: "", venue_normalized: "", venue_subtrack: "main", year: 0,
+  sci_rank: "", ccf_rank: "", venue_ranks: {}, venue_verification: "",
   is_preprint: false, is_survey: false, cited_by_count: 0, citations_per_year: 0,
   influential_citation_count: 0,
   intents: { background: 0, methodology: 0, result: 0, influential: 0, sampled: 0 },
   repos: [], is_open_access: false, oa_url: "",
-  is_retracted: false, venue_score: 0, citation_score: 0, code_score: 0,
+  is_retracted: false, cas_warning: "", venue_score: 0, citation_score: 0, code_score: 0,
   external_score: 0, provenance: {}, unavailable: [],
 };
 

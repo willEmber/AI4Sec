@@ -90,10 +90,30 @@ async def upload_paper(
 @router.get("/papers/{paper_id}", response_model=PaperResponse)
 @limiter.limit("30/minute")
 async def get_paper(request: Request, paper_id: str):
+    from app.services.publication_rank.paper_venue import (
+        StoredVenue,
+        _loads_extra,
+        venue_profile,
+    )
+
     row = await db.fetch_one("SELECT * FROM papers WHERE paper_id = ?", (paper_id,))
     if not row:
         raise HTTPException(status_code=404, detail="Paper not found")
-    return PaperResponse(**row)
+    data = dict(row)
+    if data.get("venue") or data.get("sci_rank") or data.get("ccf_rank") or data.get("venue_ranks_json"):
+        prof = venue_profile(
+            StoredVenue(
+                venue=data.get("venue") or "",
+                sci_rank=data.get("sci_rank") or "",
+                ccf_rank=data.get("ccf_rank") or "",
+                extra=_loads_extra(data.get("venue_ranks_json")),
+                doi=data.get("doi") or "",
+            )
+        )
+        data["sci_rank"] = prof.sci_rank
+        data["ccf_rank"] = prof.ccf_rank
+        data["venue_ranks"] = prof.agent_summary()
+    return PaperResponse(**data)
 
 
 @router.get("/papers/{paper_id}/pdf")

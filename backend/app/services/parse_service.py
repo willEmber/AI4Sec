@@ -281,9 +281,11 @@ async def run_parse_job(*, job_id: str, paper_id: str) -> dict[str, Any]:
         parse_id=parse_id,
         parser_config={"backend": settings.mineru_model_version},
     )
-    if hasattr(ir, "model_dump_json"):
+    from app.models.paper_ir import PaperIR
+
+    if isinstance(ir, PaperIR):
         async def _enrich_bg() -> None:
-            with contextlib.suppress(Exception):
+            with contextlib.suppress(Exception, asyncio.CancelledError):
                 from app.services.paper_metadata import enrich_metadata
 
                 await enrich_metadata(
@@ -292,7 +294,9 @@ async def run_parse_job(*, job_id: str, paper_id: str) -> dict[str, Any]:
                     pdf_path=str(pdf_path),
                 )
 
-        asyncio.create_task(_enrich_bg(), name=f"enrich:{paper_id}")
+        bg_task = asyncio.create_task(_enrich_bg(), name=f"enrich:{paper_id}")
+        _BACKGROUND_TASKS.add(bg_task)
+        bg_task.add_done_callback(_BACKGROUND_TASKS.discard)
     version = await paper_catalog.get_current_version(paper_id)
     return {
         "parse_id": parse_id,
@@ -300,3 +304,14 @@ async def run_parse_job(*, job_id: str, paper_id: str) -> dict[str, Any]:
         "sections": len(getattr(ir, "sections", []) or []),
         "resumed": resumed,
     }
+
+
+_BACKGROUND_TASKS: set[asyncio.Task[Any]] = set()
+
+
+def cancel_background_tasks() -> None:
+    """Cancel fire-and-forget post-parse tasks before closing the DB pool."""
+    for task in list(_BACKGROUND_TASKS):
+        if not task.done():
+            task.cancel()
+    _BACKGROUND_TASKS.clear()

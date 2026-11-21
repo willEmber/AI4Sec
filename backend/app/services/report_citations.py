@@ -65,7 +65,37 @@ def _one_line(text: str, limit: int) -> str:
     return text if len(text) <= limit else text[: limit - 1].rstrip() + "…"
 
 
-async def freeze(markdown: str, *, owner_id: str) -> tuple[str, dict[str, dict[str, Any]]]:
+def _frozen_venue(
+    profile: Any, year: int | None, language: str
+) -> dict[str, Any] | None:
+    """Snapshot of a cited work's venue and tier, frozen with the report (P18 §2.6)."""
+    name = profile.display_venue or profile.canonical_name or profile.query_venue
+    if not (name or profile.rankings or profile.warning or profile.subtrack != "main"):
+        return None
+    zh = language == "zh"
+    has_ver = bool(profile.verified_rankings)
+    ranks = " / ".join(profile.rank_bits(language, verified_only=has_ver))
+    if ranks and not has_ver and profile.rankings:
+        ranks += " (未核实)" if zh else " (unverified)"
+    return {
+        "name": name,
+        "ranks": ranks,
+        "badge": profile.prompt_badge(language),
+        "year": year,
+        "subtrack": profile.subtrack,
+        "peer_reviewed": profile.peer_reviewed,
+        "warning": profile.warning,
+        "verified": profile.verification_status == "verified",
+    }
+
+
+async def freeze(
+    markdown: str,
+    *,
+    owner_id: str,
+    paper_id: str = "",
+    language: str = "en",
+) -> tuple[str, dict[str, dict[str, Any]]]:
     """The report's text and its citation table.
 
     Ids are resolved as the report's owner, so a passage only its owner could
@@ -74,20 +104,27 @@ async def freeze(markdown: str, *, owner_id: str) -> tuple[str, dict[str, dict[s
     nothing is taken out of the text: the runner's filter normally makes that
     impossible, and a number that opens nothing is worse than none.
     """
+    from app.services.publication_rank.paper_venue import work_venue_records
+
     text = normalise(markdown)
     ids = cited_ids(text)
     found = {
         e.evidence_id: e for e in await evidence_service.resolve_many(ids, owner_id=owner_id)
     }
-    titles = await repo.literature_titles([e.literature_id for e in found.values()])
+    lit_ids = [e.literature_id for e in found.values() if e.literature_id]
+    titles = await repo.literature_titles(lit_ids)
+    venues = await work_venue_records(lit_ids)
+    lang = "zh" if (language or "").startswith("zh") else "en"
+
     table: dict[str, dict[str, Any]] = {}
     for eid in ids:
         evidence = found.get(eid)
         if evidence is None:
             continue
-        table[eid] = {
+        level = getattr(evidence.source_level, "value", evidence.source_level)
+        entry: dict[str, Any] = {
             "n": len(table) + 1,
-            "source_level": getattr(evidence.source_level, "value", evidence.source_level),
+            "source_level": level,
             "paper_id": evidence.paper_id,
             "literature_id": evidence.literature_id,
             "title": titles.get(evidence.literature_id, "") or _host(evidence.source_url),
@@ -97,10 +134,46 @@ async def freeze(markdown: str, *, owner_id: str) -> tuple[str, dict[str, dict[s
             "source_url": evidence.source_url,
             "provider": evidence.provider,
         }
+        # Skip the center paper's own full-text passages (the reader already
+        # knows which paper the report is on); attach venue badges to every
+        # other cited work (external papers, abstracts, metadata facts).
+        is_own_fulltext = bool(paper_id and evidence.paper_id == paper_id and level == "fulltext")
+        if not is_own_fulltext and evidence.literature_id in venues:
+            prof, pub_year = venues[evidence.literature_id]
+            v_info = _frozen_venue(prof, pub_year, lang)
+            if v_info is not None:
+                entry["venue"] = v_info
+        table[eid] = entry
     if len(table) < len(ids):
         text = _BRACKETED_RE.sub(lambda m: m.group(0) if m.group(1) in table else "", text)
         text = _ID_RE.sub(lambda m: m.group(0) if m.group(0) in table else "", text)
     return text, table
+
+
+def _format_ref_venue(venue: Any, *, zh: bool) -> str:
+    """Format a frozen `venue` dict for exported Markdown / Zotero references."""
+    if not isinstance(venue, dict):
+        return ""
+    subtrack = str(venue.get("subtrack") or "main")
+    ranks = str(venue.get("ranks") or "").strip()
+    name = str(venue.get("name") or "").strip()
+    year = venue.get("year")
+    warning = str(venue.get("warning") or "").strip()
+
+    if subtrack == "preprint" and not ranks:
+        tag = "[预印本]" if zh else "[preprint]"
+        return f"({year}) {tag}" if year else tag
+
+    if not name and venue.get("badge"):
+        name = str(venue["badge"])
+    if not name:
+        return ""
+    head = f"{name} {year}" if year and str(year) not in name else name
+    inner = f"{head} · {ranks}" if ranks else head
+    out = f"({inner})"
+    if warning:
+        out += f" [{'预警: ' + warning if zh else 'CAS Warning: ' + warning}]"
+    return out
 
 
 def _reference(entry: dict[str, Any], *, paper_id: str, zh: bool) -> str:
@@ -113,16 +186,18 @@ def _reference(entry: dict[str, Any], *, paper_id: str, zh: bool) -> str:
     level = entry.get("source_level", "")
     title = _one_line(entry.get("title", ""), 160)
     url = entry.get("source_url", "")
+    venue_tag = _format_ref_venue(entry.get("venue"), zh=zh)
+    titled = f"{title} {venue_tag}".strip() if (title and venue_tag) else title
 
     if level == "fulltext" and entry.get("paper_id") == paper_id:
         head = where or (title if not zh else "本文")
     elif level in ("fulltext", "abstract"):
         label = "摘要" if zh else "abstract"
-        head = ", ".join(p for p in (title, where if level == "fulltext" else label) if p)
+        head = ", ".join(p for p in (titled, where if level == "fulltext" else label) if p)
     elif level == "metadata":
-        head = " · ".join(p for p in (entry.get("provider", ""), title) if p)
+        head = " · ".join(p for p in (entry.get("provider", ""), titled) if p)
     else:
-        head = title or _host(url)
+        head = titled or _host(url)
     # 「」 carry their own spacing; an English quote needs it.
     line = (" —" if zh else " — ").join(p for p in (head, quoted) if p)
     if url and level in ("metadata", "external_web", "abstract"):

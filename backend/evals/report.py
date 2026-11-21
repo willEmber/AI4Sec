@@ -100,6 +100,12 @@ def render_markdown(
         f"| invented citation ids | {summary['citations_invented']} |",
         f"| grouped markers `[ev_a, ev_b]` (not rendered as badges) "
         f"| {summary.get('grouped_citation_markers', 0)} |",
+        f"| rank claims — answer (supported / uncited / contradicted) "
+        f"| {summary.get('rank_claims', 0)} "
+        f"({_pct(summary.get('rank_support'))} / {summary.get('rank_uncited', 0)} / {summary.get('rank_contradicted', 0)}) |",
+        f"| rank claims — report (supported / uncited / contradicted) "
+        f"| {summary.get('report_rank_claims', 0)} "
+        f"({_pct(summary.get('report_rank_support'))} / {summary.get('report_rank_uncited', 0)} / {summary.get('report_rank_contradicted', 0)}) |",
         f"| tool calls / turn | {_num(cost['tool_calls_mean'])} |",
         f"| model calls / turn | {_num(cost['llm_calls_mean'])} |",
         f"| tokens / turn (mean / p95) "
@@ -125,6 +131,8 @@ def render_markdown(
         for r in regressions:
             if r.get("kind") == "cost":
                 lines.append(f"- **{r['metric']}**: {_num(r['baseline'])} → {_num(r['current'])}")
+            elif r.get("kind") == "count":
+                lines.append(f"- **{r['metric']}**: {r['baseline']} → {r['current']}")
             else:
                 lines.append(f"- **{r['metric']}**: {_pct(r['baseline'])} → {_pct(r['current'])}")
 

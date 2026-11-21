@@ -1,6 +1,6 @@
 "use client";
 
-import { BADGE_BASE, CCF_COLORS, SCI_COLORS } from "@/components/RankBadges";
+import { MultiSystemRankChips } from "@/components/RankBadges";
 import { IconExternal } from "@/components/icons";
 import { useTranslation } from "@/lib/i18n";
 import {
@@ -12,17 +12,18 @@ import {
   type SphereNodeData,
 } from "@/lib/sphere";
 
-/** SCI / CCF chips for one node (shared styling with the header badges). */
+/** Multi-system venue tier, subtrack and warning chips for one node. */
 export function NodeRankChips({ node }: { node: SphereNodeData }) {
+  const { t } = useTranslation();
   return (
-    <>
-      {node.sci_rank && SCI_COLORS[node.sci_rank] && (
-        <span className={`${BADGE_BASE} ${SCI_COLORS[node.sci_rank]}`}>SCI {node.sci_rank}</span>
-      )}
-      {node.ccf_rank && CCF_COLORS[node.ccf_rank] && (
-        <span className={`${BADGE_BASE} ${CCF_COLORS[node.ccf_rank]}`}>CCF {node.ccf_rank}</span>
-      )}
-    </>
+    <MultiSystemRankChips
+      sciRank={node.sci_rank}
+      ccfRank={node.ccf_rank}
+      venueRanks={node.venue_ranks}
+      subtrack={node.venue_subtrack}
+      casWarning={node.cas_warning}
+      warningPrefix={t("snap.sig.cas_warning_prefix")}
+    />
   );
 }
 

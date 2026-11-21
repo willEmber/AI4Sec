@@ -163,6 +163,8 @@ class VenueCatalog:
                     edition_year=ed,
                     top=top,
                     impact_factor=if_val,
+                    source="local_catalog",
+                    verified=True,
                 )
             )
         issns = [normalize_issn(x) for x in (entry.get("i") or []) if normalize_issn(x)]

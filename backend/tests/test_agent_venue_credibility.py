@@ -214,7 +214,7 @@ class AgentVenueCredibilityPureTests(unittest.IsolatedAsyncioTestCase):
         )
         text = _format_papers([bare, ranked, warned], "zh")
         self.assertIn("- Untitled Bare Paper (2024) — paper_id=p_bare, parsed", text)
-        self.assertIn("- Deep Residual Learning (2016, CVPR · CCF A) — paper_id=p_cvpr, parsed", text)
+        self.assertIn("- Deep Residual Learning (2016, CVPR · CCF A / CORE A*) — paper_id=p_cvpr, parsed", text)
         self.assertIn("预警", text)
 
         accepted_preprint = SessionPaper(
@@ -230,7 +230,7 @@ class AgentVenueCredibilityPureTests(unittest.IsolatedAsyncioTestCase):
             venue_ranks={"presentation_tier": "oral", "preprint_file_only": True},
         )
         en_text = _format_papers([accepted_preprint], "en")
-        self.assertIn("ICLR · CCF A / Oral [preprint PDF]", en_text)
+        self.assertIn("ICLR · CCF A / CORE A* / Oral [preprint PDF]", en_text)
 
     def test_snap_signal_facts_includes_multi_system_and_cas_warning(self) -> None:
         facts = snap_signal_facts(

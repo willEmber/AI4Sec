@@ -1,4 +1,4 @@
-import type { Evidence } from "./agent";
+import type { Evidence, EvidenceVenueInfo } from "./agent";
 
 /**
  * A citation of a report written as an answer, frozen when the report was
@@ -19,6 +19,7 @@ export interface FrozenCitation {
   quote: string;
   source_url: string;
   provider: string;
+  venue?: EvidenceVenueInfo;
 }
 
 export type CitationTable = Record<string, FrozenCitation>;
@@ -72,12 +73,13 @@ export function frozenEvidence(evidenceId: string, c: FrozenCitation): Evidence 
       ? {
           literature_id: c.literature_id ?? "",
           title: c.title,
-          year: null,
-          year_known: false,
-          venue: "",
+          year: c.venue?.year ?? null,
+          year_known: c.venue?.year != null,
+          venue: c.venue?.name ?? "",
           doi: "",
           arxiv_id: "",
         }
       : undefined,
+    ...(c.venue ? { venue_info: c.venue } : {}),
   };
 }

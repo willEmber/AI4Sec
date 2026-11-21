@@ -88,8 +88,8 @@ export default function RunPage() {
           }).catch(() => {});
         }
       }).catch(() => {});
-      // Re-fetch paper to pick up venue/rank data from enrich_metadata
-      if (!paper?.venue || (!paper?.sci_rank && !paper?.ccf_rank)) {
+      // Re-fetch paper only until venue enrichment lands
+      if (!paper?.venue) {
         getPaper(paperId).then((p) => setPaper(p)).catch(() => {});
       }
     }, 3000);
@@ -208,7 +208,17 @@ export default function RunPage() {
               <span className="mx-1.5 opacity-40">·</span>
               {runId}
             </span>
-            {paper && <RankBadges venue={paper.venue} year={paper.year} sciRank={paper.sci_rank} ccfRank={paper.ccf_rank} />}
+            {paper && (
+              <RankBadges
+                venue={paper.venue}
+                year={paper.year}
+                sciRank={paper.sci_rank}
+                ccfRank={paper.ccf_rank}
+                venueRanks={paper.venue_ranks?.ranks}
+                subtrack={paper.venue_ranks?.subtrack}
+                casWarning={paper.venue_ranks?.cas_warning}
+              />
+            )}
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-3">

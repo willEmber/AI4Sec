@@ -6,6 +6,20 @@ export interface PaperResponse {
   year: number;
   sci_rank: string;
   ccf_rank: string;
+  venue_ranks?: {
+    canonical_venue?: string;
+    acronym?: string;
+    venue_type?: string;
+    subtrack?: string;
+    peer_reviewed?: boolean;
+    presentation_tier?: string;
+    preprint_file_only?: boolean;
+    ranks?: Record<string, string>;
+    cas_warning?: string;
+    note?: string;
+    source?: string;
+    verification_status?: string;
+  };
   created_at: string;
 }
 

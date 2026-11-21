@@ -53,6 +53,8 @@ class RankingEntry(BaseModel):
     edition_year: str = ""       # e.g. "2026", "2025", "2023"
     top: bool = False            # CAS Top flag
     impact_factor: str = ""      # JCR Impact Factor (preserved as string)
+    source: str = ""             # local_catalog | easyscholar | openalex | llm_websearch | legacy | ""
+    verified: bool = True        # True only for local_catalog / easyscholar
 
     def compact_label(self) -> str:
         label = self.rank
@@ -159,17 +161,46 @@ class VenueProfile(BaseModel):
         return ""
 
     @property
+    def verified_rankings(self) -> list[RankingEntry]:
+        return [r for r in self.rankings if r.verified]
+
+    @property
+    def has_verified_rank(self) -> bool:
+        return bool(
+            self.subtrack not in {"workshop", "companion"}
+            and not self.warning
+            and self.verified_rankings
+        )
+
+    @property
     def has_any_rank(self) -> bool:
         return bool(self.rankings or self.warning or self.note)
 
-    def compact_ranks(self) -> dict[str, str]:
+    def compact_ranks(self, *, verified_only: bool = False) -> dict[str, str]:
         """System -> concise formatted rank string (first/highest entry per system)."""
         out: dict[str, str] = {}
+        pool = self.verified_rankings if verified_only else self.rankings
         # Sort so highest CCF/CORE/JCR/CCF_CN/CAS tier wins when a venue spans multiple categories.
-        ordered = sorted(self.rankings, key=_rank_sort_score, reverse=True)
+        ordered = sorted(pool, key=_rank_sort_score, reverse=True)
         for entry in ordered:
             if entry.ranking_system not in out:
                 out[entry.ranking_system] = entry.compact_label()
+        return out
+
+    def rank_sources_map(self) -> dict[str, str]:
+        """System -> source for the winning entry of each system."""
+        out: dict[str, str] = {}
+        for entry in sorted(self.rankings, key=_rank_sort_score, reverse=True):
+            if entry.ranking_system not in out and entry.source:
+                out[entry.ranking_system] = entry.source
+        return out
+
+    def rank_verified_map(self) -> dict[str, bool]:
+        """System -> verified flag for the winning entry of each system."""
+        out: dict[str, bool] = {}
+        for entry in sorted(self.rankings, key=_rank_sort_score, reverse=True):
+            if entry.ranking_system not in out:
+                out[entry.ranking_system] = bool(entry.verified)
         return out
 
     def agent_summary(self) -> dict[str, Any]:
@@ -193,6 +224,12 @@ class VenueProfile(BaseModel):
         ranks = self.compact_ranks()
         if ranks:
             out["ranks"] = ranks
+            sources = self.rank_sources_map()
+            ver_map = self.rank_verified_map()
+            if any(s != self.source for s in sources.values()):
+                out["rank_sources"] = sources
+            if any(not v for v in ver_map.values()) and any(ver_map.values()):
+                out["rank_verified"] = ver_map
         if self.warning:
             out["cas_warning"] = self.warning
         if self.note:
@@ -204,6 +241,55 @@ class VenueProfile(BaseModel):
             out["verification_status"] = self.verification_status
         return out
 
+    def rank_bits(self, language: str = "zh", *, verified_only: bool = False) -> list[str]:
+        """Concise tier labels (without venue name or year) for badges and references."""
+        zh = language == "zh"
+        entries = self.verified_rankings if verified_only else self.rankings
+        ccf = ""
+        ccf_sc = 0
+        core = ""
+        core_sc = 0
+        sci = ""
+        sci_sc = 0
+        cas = ""
+        cas_top = False
+        ccf_cn = ""
+        for r in entries:
+            val = r.rank.strip()
+            up = val.upper()
+            if r.ranking_system == "CCF" and _CCF_ORDER.get(up, 0) > ccf_sc:
+                ccf, ccf_sc = up, _CCF_ORDER[up]
+            elif r.ranking_system == "CORE" and _CORE_ORDER.get(up, 0) > core_sc:
+                core, core_sc = up, _CORE_ORDER[up]
+            elif r.ranking_system == "JCR" and _JCR_ORDER.get(up, 0) > sci_sc:
+                sci, sci_sc = up, _JCR_ORDER[up]
+            elif r.ranking_system == "CAS" and not cas:
+                cas = val
+                cas_top = r.top
+            elif r.ranking_system == "CCF_CN" and not ccf_cn:
+                ccf_cn = val
+        if cas and not cas_top:
+            cas_top = any(r.ranking_system == "CAS" and r.top for r in entries)
+
+        bits: list[str] = []
+        if ccf:
+            bits.append(f"CCF {ccf}")
+        if core in {"A*", "A", "B", "C"}:
+            bits.append(f"CORE {core}")
+        if ccf_cn and not ccf:
+            bits.append(f"CCF中文 {ccf_cn}" if zh else f"CCF-CN {ccf_cn}")
+        if sci:
+            bits.append(f"JCR {sci}")
+        if cas and not ccf:
+            short_cas = f"{cas} Top" if (cas_top and "top" not in cas.lower()) else cas
+            bits.append(f"中科院{short_cas}" if zh else f"CAS {short_cas}")
+        if self.openreview_tier:
+            bits.append(self.openreview_tier.capitalize())
+        label = self.display_venue or self.canonical_name or self.query_venue
+        if self.subtrack in {"workshop", "companion"} and "workshop" not in label.lower():
+            bits.append("Workshop" if self.subtrack == "workshop" else "Companion")
+        return bits
+
     def prompt_badge(self, language: str = "zh") -> str:
         """Short inline label for `_format_papers` in the reading system prompt."""
         zh = language == "zh"
@@ -212,29 +298,11 @@ class VenueProfile(BaseModel):
         label = self.display_venue or self.canonical_name or self.query_venue
         if not label:
             return ""
-        bits: list[str] = []
-        if self.ccf_rank:
-            bits.append(f"CCF {self.ccf_rank}")
-        elif self.core_rank in {"A*", "A", "B", "C"}:
-            bits.append(f"CORE {self.core_rank}")
-        for r in self.rankings:
-            if r.ranking_system == "CCF_CN" and not self.ccf_rank:
-                bits.append(f"CCF中文 {r.rank}" if zh else f"CCF-CN {r.rank}")
-                break
-        if self.sci_rank:
-            bits.append(f"JCR {self.sci_rank}")
-        if self.cas_rank and not self.ccf_rank:
-            short_cas = self.cas_rank
-            if r_top := any(r.ranking_system == "CAS" and r.top for r in self.rankings):
-                if "top" not in short_cas.lower():
-                    short_cas = f"{short_cas} Top"
-                _ = r_top
-            bits.append(f"中科院{short_cas}" if zh else f"CAS {short_cas}")
-        if self.openreview_tier:
-            bits.append(self.openreview_tier.capitalize())
-        if self.subtrack in {"workshop", "companion"} and "workshop" not in label.lower():
-            bits.append("Workshop" if self.subtrack == "workshop" else "Companion")
+        has_verified = bool(self.verified_rankings)
+        bits = self.rank_bits(language, verified_only=has_verified)
         badge = f"{label} · {' / '.join(bits)}" if bits else label
+        if bits and not has_verified and self.rankings:
+            badge += " (未核实)" if zh else " (unverified)"
         if self.warning:
             badge += f" [{'预警:' + self.warning if zh else 'CAS Warning: ' + self.warning}]"
         if self.is_preprint_file and self.subtrack != "preprint":
@@ -252,17 +320,24 @@ class VenueProfile(BaseModel):
         elif self.subtrack == "preprint":
             clauses.append("preprint (not peer-reviewed)")
 
-        if self.verification_status == "verified" and self.rankings:
-            rank_parts = []
-            for sys_name, label in self.compact_ranks().items():
-                rank_parts.append(f"{sys_name} {label}")
-            if rank_parts:
-                src_label = "venue catalog" if self.source == "local_catalog" else self.source
-                prefix = f"{venue_name}: " if venue_name and self.subtrack == "main" else ""
-                clauses.append(f"{prefix}{', '.join(rank_parts)} (source: {src_label})")
+        verified_map = self.compact_ranks(verified_only=True)
+        if verified_map:
+            rank_parts = [f"{sys_name} {label}" for sys_name, label in verified_map.items()]
+            v_sources = {
+                r.source or self.source
+                for r in self.verified_rankings
+                if (r.source or self.source)
+            }
+            src_labels = sorted(
+                "venue catalog" if s == "local_catalog" else ("EasyScholar" if s == "easyscholar" else s)
+                for s in v_sources
+            )
+            src_text = " / ".join(src_labels) or "venue catalog"
+            prefix = f"{venue_name}: " if venue_name and self.subtrack == "main" else ""
+            clauses.append(f"{prefix}{', '.join(rank_parts)} (source: {src_text})")
 
         if self.warning:
             clauses.append(f"CAS International Journal Early Warning: {self.warning}")
-        if self.note and self.verification_status == "verified":
+        if self.note and (self.verification_status == "verified" or self.verified_rankings):
             clauses.append(self.note)
         return clauses

@@ -10,6 +10,7 @@ from typing import Any
 from evals import judges
 from evals.dataset import EvalCase
 from evals.judges import AskJudge, JudgeError
+from evals.rank_claims import audit_rank_claims, pool_rank_audits
 from evals.statements import Statement, split_statements
 
 POINT_CREDIT = {"stated": 1.0, "partial": 0.5, "missing": 0.0, "contradicted": 0.0}
@@ -176,10 +177,24 @@ def passed(case: EvalCase, record: dict[str, Any], score: dict[str, Any]) -> boo
     return not (tools and not tools["ok"])
 
 
+def _report_evidence(record: dict[str, Any]) -> dict[str, Any]:
+    """Evidence map for auditing a report: session evidence merged with frozen citations."""
+    merged: dict[str, Any] = dict(record.get("evidence") or {})
+    for rep in record.get("reports") or []:
+        cits = rep.get("citations")
+        if isinstance(cits, dict):
+            for eid, entry in cits.items():
+                if eid not in merged and isinstance(entry, dict):
+                    merged[eid] = entry
+    return merged
+
+
 async def score_case(ask: AskJudge, case: EvalCase, record: dict[str, Any]) -> dict[str, Any]:
     """Score one recorded turn. A turn that produced no answer scores zero on
     what it was asked for; it is not dropped, or a crash would raise the mean."""
     answer = record.get("answer") or ""
+    rep_text = scored_report(record)
+    ev_map = record.get("evidence") or {}
     score: dict[str, Any] = {
         "answered": bool(answer.strip()),
         "correctness": None,
@@ -189,6 +204,12 @@ async def score_case(ask: AskJudge, case: EvalCase, record: dict[str, Any]) -> d
         "report_correctness": None,
         "report_points": [],
         "tools": check_tools(case, record),
+        "rank_claims": audit_rank_claims(answer, ev_map) if answer.strip() else audit_rank_claims("", {}),
+        "report_rank_claims": (
+            audit_rank_claims(rep_text, _report_evidence(record))
+            if rep_text
+            else audit_rank_claims("", {})
+        ),
         "judge_errors": 0,
     }
 
@@ -320,6 +341,12 @@ def aggregate(results: list[dict[str, Any]]) -> dict[str, Any]:
         if r["score"].get("report_correctness") is not None
     ]
     outcomes = case_outcomes(results)
+    ans_rank_pool = pool_rank_audits(
+        [r["score"]["rank_claims"] for r in scored if "rank_claims" in r["score"]]
+    )
+    rep_rank_pool = pool_rank_audits(
+        [r["score"]["report_rank_claims"] for r in scored if "report_rank_claims" in r["score"]]
+    )
 
     categories = sorted({r["case"]["category"] for r in answerable})
     summary: dict[str, Any] = {
@@ -353,6 +380,18 @@ def aggregate(results: list[dict[str, Any]]) -> dict[str, Any]:
         "grouped_citation_markers": sum(
             int(r["record"].get("grouped_citation_markers") or 0) for r in scored
         ),
+        "rank_claims": ans_rank_pool["claims"],
+        "rank_support": ans_rank_pool["support_rate"],
+        "rank_supported": ans_rank_pool["supported"],
+        "rank_unsupported": ans_rank_pool["unsupported"],
+        "rank_uncited": ans_rank_pool["uncited"],
+        "rank_contradicted": ans_rank_pool["contradicted"],
+        "report_rank_claims": rep_rank_pool["claims"],
+        "report_rank_support": rep_rank_pool["support_rate"],
+        "report_rank_supported": rep_rank_pool["supported"],
+        "report_rank_unsupported": rep_rank_pool["unsupported"],
+        "report_rank_uncited": rep_rank_pool["uncited"],
+        "report_rank_contradicted": rep_rank_pool["contradicted"],
         "judge_errors": sum(r["score"]["judge_errors"] for r in scored),
         "flaky_cases": sorted(
             case_id for case_id, row in outcomes.items() if 0 < row["passed"] < row["decided"]
@@ -405,6 +444,13 @@ def compare(
             continue
         if before - now > max_drop:
             regressions.append({"metric": name, "baseline": before, "current": now})
+    for count_key in ("rank_contradicted", "report_rank_contradicted"):
+        now_c = int(summary.get(count_key) or 0)
+        before_c = int(baseline.get(count_key) or 0)
+        if now_c > before_c:
+            regressions.append(
+                {"metric": count_key, "baseline": before_c, "current": now_c, "kind": "count"}
+            )
     if max_cost_rise > 0:
         for name in COST_METRICS:
             now = (summary.get("cost") or {}).get(name)

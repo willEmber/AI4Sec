@@ -285,6 +285,28 @@
         "SinSR 没有采用 DDIM inversion，而是让学生网络学习反演（learned inversion），用于一致性保持损失",
         "SinSR 把 DDIM inversion 作为对比对象，认为学习到的反演保真度更好、对 x_T 的估计更准确"
       ]
+    },
+    {
+      "id": "venue-sinsr-systems",
+      "category": "fact",
+      "papers": ["sinsr"],
+      "question": "SinSR 发表在哪？按 CCF、CORE 等不同评价体系分别是什么等级？",
+      "key_points": [
+        "说明论文发表于 CVPR 2024",
+        "CCF 等级为 A（CCF A）",
+        "CORE 等级为 A*（CORE A*）",
+        "把 CCF 与 CORE 作为不同评价体系分开陈述，不合并成一个等级"
+      ]
+    },
+    {
+      "id": "venue-supermark-submission",
+      "category": "fact",
+      "papers": ["supermark"],
+      "question": "SuperMark 发表在哪个正式会议或期刊？它的 CCF 或 JCR 等级是什么？",
+      "key_points": [
+        "如实说明未见正式会议或期刊发表记录（或该文件为匿名投稿/预印本状态）",
+        "说明没有适用的 CCF 或 JCR 等级（不捏造具体等级）"
+      ]
     }
   ]
 }

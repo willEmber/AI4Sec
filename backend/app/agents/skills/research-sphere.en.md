@@ -1,5 +1,5 @@
 ---
-version: 3
+version: 4
 required: Overview | Themes | Timeline | Hubs | Comparison | Gaps | Reading Paths
 ---
 # Research Sphere: method
@@ -42,11 +42,11 @@ Fill a cell only from what an abstract, the metadata or this paper's text says; 
 Three to five gaps: what the landscape leaves open, why it matters, which papers show it — concrete enough to start work on.
 
 ## 7. Reading Paths
-Three numbered lists: **Fast** (3–5 papers to grasp the area), **Deep** (8–12 for a thorough understanding, in reading order) and **Frontier** (5–8 recent ones). Each entry: title, year, and one clause on why (noting venue tier or preprint status where informative).
+Three numbered lists: **Fast** (3–5 papers to grasp the area), **Deep** (8–12 for a thorough understanding, in reading order) and **Frontier** (5–8 recent ones). Each entry: title, year, and one clause on why (when noting venue tier, subtrack or preprint status, write what the map gives for that paper and cite its `metadata_evidence_id`).
 
 ## Rules
 
-1. Every statement about a paper cites its evidence right after the claim, `[E12]`: its abstract for what it does, its metadata for venue and citation count, this paper's passages for what this paper says. A sentence holding facts from different evidence — what a paper does and its venue or citation count — cites each of them, or is split in two. Cite only numbers from your tool results.
+1. Every statement about a paper cites its evidence right after the claim, `[E12]`: its abstract for what it does, its `metadata_evidence_id` for venue, tier, subtrack, warning and citation count (`center.evidence_id` for this paper's own venue and citation count), this paper's passages for what this paper says. A sentence holding facts from different evidence — what a paper does and its venue or citation count — cites each of them, or is split in two. Cite only numbers from your tool results.
 2. Name only papers from the map or your other tool results, with their titles as given. Add none from memory.
 3. The map stands on abstracts and metadata. Say "according to its abstract" where it matters, and claim no detail only a full text would show.
 4. Citation counts are the map's, as of its date; do not set them against another index's counts.

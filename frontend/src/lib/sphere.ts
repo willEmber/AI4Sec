@@ -20,6 +20,10 @@ export interface SphereNodeData {
   cited_by_count: number;
   sci_rank: string;
   ccf_rank: string;
+  venue_ranks?: Record<string, string>;
+  venue_subtrack?: string;
+  cas_warning?: string;
+  venue_verification?: string;
   tier: number;
   quality_score: number;
   relevance: number;

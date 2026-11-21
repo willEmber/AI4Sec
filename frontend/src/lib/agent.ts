@@ -208,6 +208,9 @@ export interface SessionPaper {
   year: number;
   year_known: boolean;
   venue: string;
+  sci_rank?: string;
+  ccf_rank?: string;
+  venue_ranks?: Record<string, unknown>;
   doi: string;
   arxiv_id: string;
   updated_at: string;
@@ -307,6 +310,17 @@ export interface EvidenceLocator {
   page_end_label: number | null;
 }
 
+export interface EvidenceVenueInfo {
+  name: string;
+  ranks: string;
+  badge: string;
+  year: number | null;
+  subtrack: string;
+  peer_reviewed: boolean | null;
+  warning: string;
+  verified: boolean;
+}
+
 export interface Evidence {
   evidence_id: string;
   session_id: string;
@@ -329,6 +343,7 @@ export interface Evidence {
     doi: string;
     arxiv_id: string;
   };
+  venue_info?: EvidenceVenueInfo;
   parse_status?: {
     evidence_id: string;
     parse_version: string;

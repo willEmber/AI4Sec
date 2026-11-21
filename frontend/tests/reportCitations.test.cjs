@@ -55,4 +55,25 @@ test("a frozen citation renders as the evidence it froze", () => {
   });
   assert.equal(web.literature, undefined);
   assert.equal(web.locator.page_index, null);
+  assert.equal(web.venue_info, undefined);
+
+  const ranked = frozenEvidence(A, {
+    n: 4, source_level: "abstract", paper_id: "", literature_id: "lit_1",
+    title: "ResShift", page_label: null, quote: "Residual shifting.",
+    source_url: "https://doi.org/10.5555/resshift", provider: "research_sphere",
+    venue: {
+      name: "NeurIPS",
+      ranks: "CCF A / CORE A*",
+      badge: "NeurIPS · CCF A / CORE A*",
+      year: 2023,
+      subtrack: "main",
+      peer_reviewed: true,
+      warning: "",
+      verified: true,
+    },
+  });
+  assert.equal(ranked.literature.venue, "NeurIPS");
+  assert.equal(ranked.literature.year, 2023);
+  assert.equal(ranked.literature.year_known, true);
+  assert.equal(ranked.venue_info.badge, "NeurIPS · CCF A / CORE A*");
 });

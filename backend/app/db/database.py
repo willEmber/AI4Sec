@@ -119,6 +119,10 @@ async def close_pool() -> None:
     global _pool
     pool, _pool = _pool, None
     if pool is not None:
+        from app.services import paper_metadata, parse_service
+
+        parse_service.cancel_background_tasks()
+        paper_metadata.cancel_enrich_tasks()
         await pool.close()
 
 

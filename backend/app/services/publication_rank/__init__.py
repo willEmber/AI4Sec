@@ -18,6 +18,15 @@ from .llm_rank import (
     resolve_venue_profiles_batch,
 )
 from .models import RankingEntry, VenueLookupInput, VenueProfile
+from .paper_venue import (
+    StoredVenue,
+    paper_venue_profile,
+    parse_compact_rank,
+    pub_rank_from_profile,
+    venue_profile,
+    work_venue_profiles,
+    work_venue_records,
+)
 from .normalizer import (
     classify_subtrack,
     clean_venue_text,
@@ -46,6 +55,7 @@ __all__ = [
     "RankCache",
     "RankingEntry",
     "RateLimiter",
+    "StoredVenue",
     "TavilySearchClient",
     "UnifiedRankClient",
     "VenueCatalog",
@@ -63,11 +73,17 @@ __all__ = [
     "normalize_issn",
     "normalize_name_key",
     "normalize_venue_display",
+    "paper_venue_profile",
+    "parse_compact_rank",
     "parse_openreview_status",
+    "pub_rank_from_profile",
     "query_publication_rank",
     "query_publication_ranks",
     "reset_venue_catalog_cache",
     "resolve_venue_profile",
     "resolve_venue_profiles_batch",
     "strip_venue_decorations",
+    "venue_profile",
+    "work_venue_profiles",
+    "work_venue_records",
 ]

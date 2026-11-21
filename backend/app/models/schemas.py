@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -42,6 +42,7 @@ class PaperResponse(BaseModel):
     year: int = 0
     sci_rank: str = ""
     ccf_rank: str = ""
+    venue_ranks: dict[str, Any] = Field(default_factory=dict)
     created_at: str
 
 

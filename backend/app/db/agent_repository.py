@@ -347,10 +347,17 @@ async def list_project_papers(
         f"""SELECT DISTINCT ON (sp.literature_id)
                    sp.session_id, sp.literature_id, sp.paper_id, sp.availability,
                    sp.added_by, sp.note, sp.updated_at,
-                   li.title, li.year, li.year_known, li.venue, li.doi, li.arxiv_id
+                   li.title, li.year, li.year_known,
+                   COALESCE(NULLIF(p.venue, ''), li.venue) AS venue,
+                   COALESCE(p.sci_rank, '') AS sci_rank,
+                   COALESCE(p.ccf_rank, '') AS ccf_rank,
+                   COALESCE(NULLIF(p.venue_ranks_json, '{{}}'), li.venue_ranks_json, '{{}}') AS venue_ranks_json,
+                   COALESCE(NULLIF(p.doi, ''), li.doi) AS doi,
+                   li.arxiv_id
               FROM session_papers sp
               JOIN agent_sessions s ON s.session_id = sp.session_id
               JOIN literature_items li ON li.literature_id = sp.literature_id
+              LEFT JOIN papers p ON p.paper_id = sp.paper_id AND sp.paper_id <> ''
              WHERE s.project_id = ? AND s.status = 'active'
                AND sp.literature_id NOT IN (
                    SELECT literature_id FROM session_papers WHERE session_id = ?)
@@ -376,10 +383,17 @@ async def list_owner_papers(owner_id: str, *, limit: int = 200) -> list[SessionP
         f"""SELECT DISTINCT ON (sp.literature_id)
                    sp.session_id, sp.literature_id, sp.paper_id, sp.availability,
                    sp.added_by, sp.note, sp.updated_at,
-                   li.title, li.year, li.year_known, li.venue, li.doi, li.arxiv_id
+                   li.title, li.year, li.year_known,
+                   COALESCE(NULLIF(p.venue, ''), li.venue) AS venue,
+                   COALESCE(p.sci_rank, '') AS sci_rank,
+                   COALESCE(p.ccf_rank, '') AS ccf_rank,
+                   COALESCE(NULLIF(p.venue_ranks_json, '{{}}'), li.venue_ranks_json, '{{}}') AS venue_ranks_json,
+                   COALESCE(NULLIF(p.doi, ''), li.doi) AS doi,
+                   li.arxiv_id
               FROM session_papers sp
               JOIN agent_sessions s ON s.session_id = sp.session_id
               JOIN literature_items li ON li.literature_id = sp.literature_id
+              LEFT JOIN papers p ON p.paper_id = sp.paper_id AND sp.paper_id <> ''
              WHERE s.owner_id = ? AND s.status = 'active'
              ORDER BY sp.literature_id, {_AVAILABILITY_RANK}, (sp.paper_id = ''),
                       sp.updated_at DESC""",

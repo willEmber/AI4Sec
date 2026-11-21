@@ -269,8 +269,21 @@ def synthesize_verdict(review: ContentReview, signals: TriageSignals) -> Verdict
         verdict.overrides.append("strong_content_thin_record")
 
     # --- drivers, strongest first --------------------------------------
-    if signals.sci_rank or signals.ccf_rank:
+    has_verified_rank = False
+    if signals.venue_subtrack not in {"workshop", "companion"} and not signals.cas_warning:
+        if signals.rank_verified:
+            has_verified_rank = any(signals.rank_verified.values())
+        elif signals.venue_verification != "unverified":
+            has_verified_rank = bool(signals.sci_rank or signals.ccf_rank or signals.venue_ranks)
+
+    if has_verified_rank:
         verdict.drivers.append("venue_rank")
+    if signals.cas_warning:
+        verdict.drivers.append("cas_warning")
+    if signals.venue_subtrack in {"workshop", "companion"}:
+        verdict.drivers.append("workshop_track")
+    elif signals.venue_subtrack == "findings":
+        verdict.drivers.append("findings_track")
     if signals.citations_known and signals.citation_score >= 0.5:
         verdict.drivers.append("citation_impact")
     if signals.has_official_code:

@@ -148,10 +148,15 @@ def compute_venue_component(
     *,
     venue_ranks: dict[str, str] | None = None,
     cas_warning: str = "",
+    venue_subtrack: str = "main",
 ) -> float:
     """Venue quality in [0,1]. Authoritative ranks win; CAS warning penalizes; keyword heuristic as fallback."""
     if cas_warning:
         return 0.1
+    if venue_subtrack in {"workshop", "companion"}:
+        return 0.2
+    if venue_subtrack == "findings":
+        return 0.65
 
     # When explicit ranks were not pre-populated (e.g. Research Sphere neighbor nodes),
     # resolve deterministically in <0.05ms against the in-process 23.9k-venue catalog!
@@ -210,7 +215,14 @@ def compute_quality_score(
     an uncited recent paper must earn its place via venue rank or the
     relevance gate, never via absence of citations."""
     s_citation = compute_citation_component(node.cited_by_count, node.year, current_year)
-    s_venue = compute_venue_component(node.venue, node.sci_rank, node.ccf_rank)
+    s_venue = compute_venue_component(
+        node.venue,
+        node.sci_rank,
+        node.ccf_rank,
+        venue_ranks=node.venue_ranks,
+        cas_warning=node.cas_warning,
+        venue_subtrack=node.venue_subtrack,
+    )
     s_recency = compute_recency_component(node.year, current_year)
 
     quality = (

@@ -109,9 +109,21 @@ class SphereNode(BaseModel):
 
     # Quality signals
     quality_score: float = 0.0  # [0,1] citations/venue/recency composite
-    sci_rank: str = ""          # e.g. "Q1" (EasyScholar)
-    ccf_rank: str = ""          # e.g. "A" (EasyScholar)
+    sci_rank: str = ""          # e.g. "Q1" (JCR)
+    ccf_rank: str = ""          # e.g. "A" (CCF)
+    venue_ranks: dict[str, str] = Field(default_factory=dict)
+    venue_subtrack: str = "main"
+    cas_warning: str = ""
+    venue_verification: str = ""
     influential: bool = False   # S2 isInfluential citation flag
+
+    @property
+    def has_verified_rank(self) -> bool:
+        if self.venue_subtrack in {"workshop", "companion"} or self.cas_warning:
+            return False
+        if self.venue_verification == "unverified":
+            return False
+        return bool(self.sci_rank or self.ccf_rank or self.venue_ranks)
 
     # Graph + final ranking scores
     score_graph: float = 0.0    # PageRank on the similarity graph

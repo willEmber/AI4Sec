@@ -20,6 +20,7 @@ conversation's mode tools reach it through `paper_ir_loader.ensure_pub_rank`.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import re
@@ -48,7 +49,12 @@ _REFERENCES_RE = re.compile(
 
 
 def _is_reference(block: Any) -> bool:
-    """A block of the reference list, whose identifiers are other papers'."""
+    """A block of the reference list, whose identifiers are other papers'.
+
+    The CVF copy of Gaussian Shading has no arXiv stamp, and the scan used to
+    take the arXiv id of its second reference: the paper was stored as ICLR
+    2018, with that paper's rank.
+    """
     if block.type == "ref_text":
         return True
     last = (block.section_path or "").rsplit("/", 1)[-1].strip()
@@ -159,7 +165,7 @@ async def _published_year(doi: str, fallback: int) -> int:
 
 async def _s2_lookup(doi: str = "", arxiv_id: str = "", title: str = "") -> dict[str, Any]:
     """Query Semantic Scholar for venue and year. Tries DOI -> arXiv -> title match."""
-    fields = "venue,year,externalIds,publicationVenue"
+    fields = "title,venue,year,externalIds,publicationVenue"
 
     from app.services.paper_search.credentials import s2_headers
     from app.services.paper_search.ratelimit import S2_LIMITER
@@ -192,20 +198,41 @@ async def _s2_lookup(doi: str = "", arxiv_id: str = "", title: str = "") -> dict
                 logger.warning("S2 arXiv lookup failed: %s", e)
 
         if title:
+            from app.services.paper_search import jaccard_similarity, normalize_whitespace
+
+            clean_query = re.sub(r"([A-Za-z])-\s*([A-Za-z])", r"\1\2", title)
             try:
                 await S2_LIMITER.wait()
                 resp = await client.get(
                     "https://api.semanticscholar.org/graph/v1/paper/search/match",
-                    params={"query": title[:200], "fields": fields},
+                    params={"query": clean_query[:200], "fields": fields},
                 )
                 if resp.status_code == 200:
                     matches = resp.json().get("data", [])
                     if matches:
-                        return {**_parse_s2_response(matches[0]), **_parse_s2_venue_extras(matches[0])}
+                        candidate = matches[0]
+                        cand_title = normalize_whitespace(candidate.get("title") or "")
+                        if (
+                            not cand_title
+                            or jaccard_similarity(normalize_whitespace(clean_query), cand_title) >= 0.6
+                            or jaccard_similarity(normalize_whitespace(title), cand_title) >= 0.6
+                        ):
+                            return {**_parse_s2_response(candidate), **_parse_s2_venue_extras(candidate)}
             except Exception as e:
                 logger.warning("S2 title match failed: %s", e)
 
     return {}
+
+
+_enrich_tasks: dict[str, asyncio.Task[dict[str, Any]]] = {}
+
+
+def cancel_enrich_tasks() -> None:
+    """Cancel in-flight singleflight tasks when shutting down the DB pool."""
+    for task in list(_enrich_tasks.values()):
+        if not task.done():
+            task.cancel()
+    _enrich_tasks.clear()
 
 
 async def enrich_metadata(
@@ -218,48 +245,99 @@ async def enrich_metadata(
 ) -> dict[str, Any]:
     """The paper's venue record: `venue`, `year`, `sci`, `ccf`, `doi` (and
     `arxiv_id` and multi-system `ranks` when resolved).
+
+    Concurrent default calls (`reuse_stored=True, persist=True`) for the same
+    `paper_id` join one in-flight lookup so `parse_service`'s background task
+    and `get_triage_signals` never double-query Crossref and Semantic Scholar.
     """
+    if not (reuse_stored and persist):
+        return await _enrich_metadata_once(
+            paper_id,
+            paper_ir_json=paper_ir_json,
+            pdf_path=pdf_path,
+            reuse_stored=reuse_stored,
+            persist=persist,
+        )
+
+    loop = asyncio.get_running_loop()
+    task = _enrich_tasks.get(paper_id)
+    if task is None or task.done() or task.get_loop() is not loop:
+        async def _run() -> dict[str, Any]:
+            try:
+                return await _enrich_metadata_once(
+                    paper_id,
+                    paper_ir_json=paper_ir_json,
+                    pdf_path=pdf_path,
+                    reuse_stored=True,
+                    persist=True,
+                )
+            finally:
+                if _enrich_tasks.get(paper_id) is task:
+                    _enrich_tasks.pop(paper_id, None)
+
+        task = asyncio.ensure_future(_run())
+        _enrich_tasks[paper_id] = task
+    return dict(await asyncio.shield(task))
+
+
+async def _enrich_metadata_once(
+    paper_id: str,
+    *,
+    paper_ir_json: str = "",
+    pdf_path: str = "",
+    reuse_stored: bool = True,
+    persist: bool = True,
+) -> dict[str, Any]:
+    from app.services.publication_rank.paper_venue import (
+        StoredVenue,
+        _loads_extra,
+        paper_venue_row,
+        pub_rank_from_profile,
+        venue_profile,
+    )
+
     t0 = time.perf_counter()
 
     try:
         existing = None
         if reuse_stored:
-            try:
-                existing = await db.fetch_one(
-                    "SELECT doi, venue, year, sci_rank, ccf_rank, venue_ranks_json FROM papers WHERE paper_id = ?",
-                    (paper_id,),
-                )
-            except Exception:
-                existing = await db.fetch_one(
-                    "SELECT doi, venue, year, sci_rank, ccf_rank FROM papers WHERE paper_id = ?",
-                    (paper_id,),
-                )
+            existing = await paper_venue_row(paper_id)
         if (
             existing
             and existing.get("venue")
             and not is_umbrella_series(existing["venue"])
-            and (existing.get("sci_rank") or existing.get("ccf_rank"))
         ):
-            pub_rank = {
-                "venue": existing["venue"],
-                "year": existing.get("year", 0) or 0,
-                "sci": existing.get("sci_rank", ""),
-                "ccf": existing.get("ccf_rank", ""),
-                "doi": existing.get("doi", "") or "",
-            }
-            try:
-                extra_stored = json.loads(existing.get("venue_ranks_json") or "{}")
-            except Exception:
-                extra_stored = {}
-            for k in ("ranks", "subtrack", "cas_warning", "source", "verification_status"):
-                if extra_stored.get(k):
-                    pub_rank[k] = extra_stored[k]
-            logger.info(
-                "[%s] enrich_metadata: CACHED from DB (venue=%s sci=%s ccf=%s) in %.2fs",
-                paper_id, existing["venue"], existing.get("sci_rank", "-"), existing.get("ccf_rank", "-"),
-                time.perf_counter() - t0,
+            eff_doi = existing.get("effective_doi") or existing.get("doi") or ""
+            eff_arxiv = existing.get("arxiv_id") or ""
+            cached_prof = venue_profile(
+                StoredVenue(
+                    venue=existing["venue"],
+                    sci_rank=existing.get("sci_rank") or "",
+                    ccf_rank=existing.get("ccf_rank") or "",
+                    extra=_loads_extra(existing.get("venue_ranks_json")),
+                    doi=eff_doi,
+                    arxiv_id=eff_arxiv,
+                )
             )
-            return pub_rank
+            if (
+                cached_prof.has_any_rank
+                or cached_prof.subtrack in {"workshop", "companion", "findings"}
+                or existing.get("sci_rank")
+                or existing.get("ccf_rank")
+            ):
+                pub_rank = pub_rank_from_profile(
+                    cached_prof,
+                    raw_venue=existing["venue"],
+                    year=int(existing.get("year") or 0),
+                    doi=eff_doi,
+                    arxiv_id=eff_arxiv,
+                )
+                logger.info(
+                    "[%s] enrich_metadata: CACHED from DB (venue=%s sci=%s ccf=%s) in %.2fs",
+                    paper_id, existing["venue"], pub_rank.get("sci") or "-", pub_rank.get("ccf") or "-",
+                    time.perf_counter() - t0,
+                )
+                return pub_rank
 
         doi = ""
         arxiv_id = ""
@@ -393,29 +471,36 @@ async def enrich_metadata(
                 except Exception:
                     pass
             if venue:
-                from app.services.paper_catalog import record_published_year
+                from app.services.paper_catalog import (
+                    record_published_venue_ranks,
+                    record_published_year,
+                )
 
                 await record_published_year(paper_id, doi=doi, year=year)
+                try:
+                    await record_published_venue_ranks(
+                        paper_id, doi=doi, venue=venue, venue_ranks=venue_summary or None
+                    )
+                except Exception:
+                    pass
 
-        pub_rank: dict[str, Any] = {
-            "venue": venue,
-            "year": year,
-            "sci": sci_rank,
-            "ccf": ccf_rank,
-            "doi": doi,
-            "arxiv_id": arxiv_id,
-        }
-        if venue_summary:
-            if venue_summary.get("ranks"):
-                pub_rank["ranks"] = venue_summary["ranks"]
-            if venue_summary.get("subtrack"):
-                pub_rank["subtrack"] = venue_summary["subtrack"]
-            if venue_summary.get("cas_warning"):
-                pub_rank["cas_warning"] = venue_summary["cas_warning"]
-            if venue_summary.get("source"):
-                pub_rank["source"] = venue_summary["source"]
-            if venue_summary.get("verification_status"):
-                pub_rank["verification_status"] = venue_summary["verification_status"]
+        resolved_prof = venue_profile(
+            StoredVenue(
+                venue=venue,
+                sci_rank=sci_rank,
+                ccf_rank=ccf_rank,
+                extra=venue_summary,
+                doi=doi,
+                arxiv_id=arxiv_id,
+            )
+        )
+        pub_rank = pub_rank_from_profile(
+            resolved_prof,
+            raw_venue=venue,
+            year=year,
+            doi=doi,
+            arxiv_id=arxiv_id,
+        )
         elapsed = time.perf_counter() - t0
         logger.info(
             "[%s] enrich_metadata: DONE in %.1fs — venue=%s year=%d sci=%s ccf=%s",

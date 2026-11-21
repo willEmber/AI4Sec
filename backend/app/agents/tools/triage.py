@@ -112,24 +112,67 @@ def snap_signal_facts(signals: dict[str, Any], title: str) -> list[tuple[str, st
 
     venue = str(signals.get("venue") or "").strip()
     short = str(signals.get("venue_normalized") or "").strip()
+    subtrack = str(signals.get("venue_subtrack") or "main").strip().lower()
     if venue and "venue" not in missing:
         where = venue + (f" ({short})" if short and short.lower() != venue.lower() else "")
         year = signals.get("year")
+        subtrack_note = ""
+        if subtrack in {"workshop", "companion"}:
+            subtrack_note = f" ({subtrack} track; main-venue tier does not apply)"
+        elif subtrack == "findings":
+            subtrack_note = " (peer-reviewed Findings track, distinct from main conference)"
         facts.append((
-            f"{name} — published at {where}" + (f", {year}" if year else ""),
-            str(provenance.get("venue") or ""),
+            f"{name} — published at {where}" + (f", {year}" if year else "") + subtrack_note,
+            str(provenance.get("venue") or ("Venue Catalog" if subtrack_note else "")),
         ))
     label = short or venue or "Its venue"
-    if signals.get("ccf_rank") and "ccf_rank" not in missing:
-        facts.append((f"{label} — CCF {signals['ccf_rank']}", str(provenance.get("ccf_rank") or "")))
-    if signals.get("sci_rank") and "sci_rank" not in missing:
-        facts.append((f"{label} — JCR {signals['sci_rank']}", str(provenance.get("sci_rank") or "")))
-    extra_ranks = signals.get("venue_ranks") or {}
-    if isinstance(extra_ranks, dict):
-        rank_prov = str(provenance.get("venue_ranks") or provenance.get("ccf_rank") or provenance.get("sci_rank") or "")
-        for sys_key in ("CORE", "CAS", "TH_CPL", "CAAI", "CCF_CN"):
-            if extra_ranks.get(sys_key):
-                facts.append((f"{label} — {sys_key} {extra_ranks[sys_key]}", rank_prov))
+    extra_ranks = signals.get("venue_ranks") if isinstance(signals.get("venue_ranks"), dict) else {}
+    rank_sources = signals.get("rank_sources") if isinstance(signals.get("rank_sources"), dict) else {}
+    rank_verified = signals.get("rank_verified") if isinstance(signals.get("rank_verified"), dict) else {}
+    if subtrack not in {"workshop", "companion"}:
+        for sys_key in ("CCF", "JCR", "CORE", "CAS", "TH_CPL", "CAAI", "CCF_CN"):
+            if sys_key == "CCF" and "ccf_rank" in missing:
+                continue
+            if sys_key == "JCR" and "sci_rank" in missing:
+                continue
+            val = str(extra_ranks.get(sys_key) or "").strip()
+            if not val and sys_key == "CCF":
+                val = str(signals.get("ccf_rank") or "").strip()
+            elif not val and sys_key == "JCR":
+                val = str(signals.get("sci_rank") or "").strip()
+            if not val:
+                continue
+            fallback_prov_key = (
+                "ccf_rank" if sys_key == "CCF" else ("sci_rank" if sys_key == "JCR" else "venue_ranks")
+            )
+            sys_prov = str(
+                provenance.get(f"rank:{sys_key}")
+                or provenance.get(fallback_prov_key)
+                or provenance.get("venue_ranks")
+                or provenance.get("ccf_rank")
+                or provenance.get("sci_rank")
+                or ""
+            )
+            src_code = str(rank_sources.get(sys_key) or "").lower()
+            is_unverified = (
+                (sys_key in rank_verified and not rank_verified[sys_key])
+                or (
+                    sys_key not in rank_verified
+                    and (
+                        signals.get("venue_verification") == "unverified"
+                        or "unverified" in sys_prov.lower()
+                    )
+                )
+            )
+            if is_unverified:
+                unv_reason = (
+                    "unverified (web search)"
+                    if (src_code == "llm_websearch" or "web" in sys_prov.lower())
+                    else "unverified (stored record)"
+                )
+                facts.append((f"{label} — {sys_key} {val} [{unv_reason}]", sys_prov))
+            else:
+                facts.append((f"{label} — {sys_key} {val}", sys_prov))
     if signals.get("cas_warning"):
         facts.append((
             f"{label} — CAS International Journal Early Warning: {signals['cas_warning']}",
@@ -218,12 +261,13 @@ def _hand_to_report(ctx: AgentContext, paper_id: str, **parts: Any) -> None:
 async def get_triage_signals(runtime: ToolRuntime[AgentContext], paper_id: str = "") -> str:
     """Look a parsed paper up in the bibliographic indexes, each fact citable.
 
-    Returns where it was published (with its CCF / JCR tier), its citation
-    counts per index and how citing papers use it, whether an open-access copy
-    exists, whether it was retracted, and code repositories linked in it. Each
-    fact carries an evidence number; a fact an index could not supply is listed
-    under `unavailable` rather than guessed. Omit paper_id when the session
-    holds one paper.
+    Returns where it was published — with its separate ranking-system tiers
+    (CCF, CORE, JCR, CAS, TH-CPL, CAAI, CCF-CN), subtrack (`workshop` /
+    `findings`) and CAS early-warning flags — its citation counts per index and
+    how citing papers use it, whether an open-access copy exists, whether it was
+    retracted, and code repositories linked in it. Each fact carries an evidence
+    number; a fact an index could not supply is listed under `unavailable`
+    rather than guessed. Omit paper_id when the session holds one paper.
     """
     ctx = runtime.context
     paper_id, paper_ir, denial = await _paper(ctx, paper_id)

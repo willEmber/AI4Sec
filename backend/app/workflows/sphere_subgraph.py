@@ -1103,6 +1103,14 @@ def _merge_duplicate_nodes(sphere: SphereState) -> int:
                 survivor.sci_rank = node.sci_rank
             if node.ccf_rank:
                 survivor.ccf_rank = node.ccf_rank
+            if node.venue_ranks:
+                survivor.venue_ranks = dict(node.venue_ranks)
+            if node.venue_subtrack and node.venue_subtrack != "main":
+                survivor.venue_subtrack = node.venue_subtrack
+            if node.cas_warning:
+                survivor.cas_warning = node.cas_warning
+            if node.venue_verification:
+                survivor.venue_verification = node.venue_verification
         elif (
             version_merge
             and node.year and survivor.year and node.year < survivor.year
@@ -1208,9 +1216,14 @@ async def step_score_and_rank(
     #    normalized names: EasyScholar's CCF table keys on "CVPR", not
     #    "2021 IEEE/CVF Conference on Computer Vision and Pattern Recognition" ──
     venue_rank_hits = 0
-    if config.venue_rank_enabled and cands:
+    nodes_for_venue = list(cands)
+    if sphere.center_node is not None and sphere.center_node.venue:
+        nodes_for_venue.append(sphere.center_node)
+
+    rank_map: dict[str, Any] = {}
+    if config.venue_rank_enabled and nodes_for_venue:
         venue_count: dict[str, int] = {}
-        for n in cands:
+        for n in nodes_for_venue:
             v = normalize_venue(n.venue)
             if v and not is_preprint_venue(v):
                 venue_count[v] = venue_count.get(v, 0) + 1
@@ -1225,19 +1238,57 @@ async def step_score_and_rank(
                     v: r for v, r in zip(venues, results)
                     if r is not None and r.success
                 }
-                for n in cands:
-                    r = rank_map.get(normalize_venue(n.venue))
-                    if r:
-                        n.sci_rank = (r.sci or "").strip()
-                        n.ccf_rank = (r.ccf or "").strip()
-                        if n.sci_rank or n.ccf_rank:
-                            venue_rank_hits += 1
-                logger.info(
-                    f"[{paper_id}] sphere score: venue ranks for {venue_rank_hits} nodes "
-                    f"({len(venues)} distinct venues queried)"
-                )
             except Exception as e:
                 logger.warning(f"[{paper_id}] sphere score: venue rank lookup failed: {e}")
+
+    if nodes_for_venue:
+        from app.services.publication_rank.paper_venue import StoredVenue, venue_profile
+
+        center_id = sphere.center_node.node_id if sphere.center_node else ""
+        for n in nodes_for_venue:
+            r = rank_map.get(normalize_venue(n.venue)) if n.venue else None
+            if r is not None:
+                prof = r.to_venue_profile(query_venue=n.venue)
+                prof = venue_profile(
+                    StoredVenue(
+                        venue=n.venue,
+                        sci_rank=prof.sci_rank,
+                        ccf_rank=prof.ccf_rank,
+                        extra=prof.agent_summary(),
+                        doi=n.doi,
+                        arxiv_id=n.arxiv_id,
+                    )
+                )
+            else:
+                prof = venue_profile(
+                    StoredVenue(
+                        venue=n.venue,
+                        sci_rank=n.sci_rank,
+                        ccf_rank=n.ccf_rank,
+                        doi=n.doi,
+                        arxiv_id=n.arxiv_id,
+                    )
+                )
+            n.venue_subtrack = prof.subtrack
+            n.cas_warning = prof.warning
+            n.venue_verification = (
+                prof.verification_status if prof.verification_status != "unknown" else ""
+            )
+            if prof.subtrack in {"workshop", "companion"}:
+                n.sci_rank = ""
+                n.ccf_rank = ""
+                n.venue_ranks = {}
+            else:
+                n.sci_rank = prof.sci_rank
+                n.ccf_rank = prof.ccf_rank
+                n.venue_ranks = prof.compact_ranks()
+            if n.node_id != center_id and n.has_verified_rank:
+                venue_rank_hits += 1
+        if rank_map:
+            logger.info(
+                f"[{paper_id}] sphere score: venue ranks for {venue_rank_hits} nodes "
+                f"({len(rank_map)} distinct venues resolved)"
+            )
 
     # ── Quality scores ──
     year_now = _current_year()
@@ -1250,8 +1301,7 @@ async def step_score_and_rank(
         n for n in cands
         if n.tier >= 3
         and n.cited_by_count < config.t3_min_citations
-        and not n.sci_rank
-        and not n.ccf_rank
+        and not n.has_verified_rank
     ]
     _drop_nodes(sphere, {n.node_id for n in t3_dropped_nodes})
 
@@ -1594,7 +1644,7 @@ async def step_select_core_set(
             and (n.year > center_year if center_year else n.year > 0)
             and (
                 n.cited_by_count >= config.frontier_min_citations
-                or n.sci_rank or n.ccf_rank
+                or n.has_verified_rank
             )
         ],
         config.quota_frontier, "frontier",
@@ -1696,7 +1746,7 @@ def _partition_for(node: SphereNode, center_year: int, config: SphereConfig) -> 
         center_year and node.year > center_year
         and (
             node.cited_by_count >= config.frontier_min_citations
-            or node.sci_rank or node.ccf_rank
+            or node.has_verified_rank
         )
     ):
         # Same impact floor as the frontier quota — backfill must not smuggle
@@ -1717,11 +1767,23 @@ _RELATION_LABELS_ZH = {
 
 
 def _rank_badge(node: SphereNode) -> str:
+    if node.venue_subtrack in {"workshop", "companion"}:
+        return "Workshop" if node.venue_subtrack == "workshop" else "Companion"
+    if node.venue_subtrack == "findings":
+        return "Findings"
     bits = []
     if node.sci_rank:
         bits.append(f"SCI-{node.sci_rank}")
     if node.ccf_rank:
         bits.append(f"CCF-{node.ccf_rank}")
+    elif node.venue_ranks.get("CORE"):
+        core_head = node.venue_ranks["CORE"].split("(", 1)[0].strip()
+        bits.append(f"CORE-{core_head}")
+    if not node.sci_rank and node.venue_ranks.get("CAS"):
+        cas_head = node.venue_ranks["CAS"].split("(", 1)[0].strip()
+        bits.append(f"CAS-{cas_head}")
+    if node.cas_warning:
+        bits.append("CAS-Warning")
     return "/".join(bits)
 
 
@@ -1995,6 +2057,10 @@ def _node_payload(node: SphereNode) -> dict[str, Any]:
         "cited_by_count": node.cited_by_count,
         "sci_rank": node.sci_rank,
         "ccf_rank": node.ccf_rank,
+        "venue_ranks": dict(node.venue_ranks),
+        "venue_subtrack": node.venue_subtrack,
+        "cas_warning": node.cas_warning,
+        "venue_verification": node.venue_verification,
         "tier": node.tier,
         "quality_score": round(node.quality_score, 3),
         "relevance": node.relevance,

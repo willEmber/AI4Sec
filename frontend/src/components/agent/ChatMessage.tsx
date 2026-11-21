@@ -2,7 +2,7 @@
 
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import type { Evidence } from "@/lib/agent";
+import type { Evidence, EvidenceVenueInfo } from "@/lib/agent";
 import { loadEvidence } from "@/lib/evidenceCache";
 import { useTranslation } from "@/lib/i18n";
 import { citationNumbers } from "@/lib/turns";
@@ -115,6 +115,47 @@ function hostOf(url: string): string {
   }
 }
 
+function formatCitationVenue(
+  v: EvidenceVenueInfo | undefined,
+  warningPrefix: string,
+): { label: string; className: string } | null {
+  if (!v) return null;
+  const isMuted =
+    v.subtrack === "workshop" ||
+    v.subtrack === "companion" ||
+    (v.subtrack === "preprint" && !v.ranks);
+  let label = "";
+  if (v.subtrack === "preprint" && !v.ranks) {
+    label = v.year ? `${v.badge} (${v.year})` : v.badge;
+  } else {
+    const head =
+      v.name && v.year && !v.name.includes(String(v.year))
+        ? `${v.name} ${v.year}`
+        : v.name || v.badge;
+    label = v.ranks && v.name ? `${head} · ${v.ranks}` : head;
+  }
+  if (v.warning) {
+    label = label ? `${label} · ${warningPrefix}: ${v.warning}` : `${warningPrefix}: ${v.warning}`;
+  }
+  if (!label) return null;
+  if (v.warning) {
+    return {
+      label,
+      className: "border-destructive/35 bg-destructive/10 font-semibold text-destructive",
+    };
+  }
+  if (isMuted || !v.ranks) {
+    return {
+      label,
+      className: "border-border bg-muted text-muted-foreground",
+    };
+  }
+  return {
+    label,
+    className: "border-primary/30 bg-accent/60 font-medium text-foreground/90",
+  };
+}
+
 const POPOVER_WIDTH = 336;
 const POPOVER_GAP = 6;
 
@@ -217,6 +258,10 @@ export function CitationBadge({
     evidence && evidence.source_level !== "fulltext"
       ? t(`chat.cite.level.${evidence.source_level}`)
       : "";
+  const venueChip = formatCitationVenue(
+    evidence?.venue_info,
+    t("snap.sig.cas_warning_prefix"),
+  );
 
   return (
     <>
@@ -269,6 +314,15 @@ export function CitationBadge({
                       evidence.paper_id.slice(0, 12)}
                   </span>
                 </span>
+                {venueChip && (
+                  <span className="mb-1.5 flex flex-wrap items-center gap-1">
+                    <span
+                      className={`inline-flex items-center rounded-md border px-1.5 py-[1px] text-[0.68rem] ${venueChip.className}`}
+                    >
+                      {venueChip.label}
+                    </span>
+                  </span>
+                )}
                 <span className="mb-2 flex flex-wrap items-center gap-1.5 text-[0.7rem] text-muted-foreground">
                   {evidence.locator.section_path && (
                     <span className="max-w-full truncate">{evidence.locator.section_path}</span>
