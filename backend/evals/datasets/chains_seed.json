@@ -1,7 +1,7 @@
 {
   "name": "chains_seed",
-  "version": "2",
-  "description": "Whole-paper reports and the chains around them: each of the three modes on request and unprompted, a question answered after a report (the step a folded-in report could drop), a report asked to weigh a specific concern, and a paper found and fetched before it is read. Same two papers as reading_seed. Costly: every attempt makes its reports anew, and the acquisition case downloads and parses a paper. v2 (P16): a report case passes with the report written as the answer (begin_report) or made by the tool, its citations are scored, and the follow-up must not write it again (nor look the Snap signals up again, nor rebuild the Sphere literature map).",
+  "version": "3",
+  "description": "Whole-paper reports and the chains around them: each of the three modes on request and unprompted, a question answered after a report (the step a folded-in report could drop), a report asked to weigh a specific concern, and a paper found and fetched before it is read. Same two papers as reading_seed. Costly: every attempt makes its reports anew, and the acquisition case downloads and parses a paper. v2 (P16): a report case passes with the report written as the answer (begin_report) or made by the tool, its citations are scored, and the follow-up must not write it again (nor look the Snap signals up again, nor rebuild the Sphere literature map). v3: the numbers follow-up may verify against the table passages the report turn read, already in the conversation; it no longer has to read again.",
   "repeats": 3,
   "papers": {
     "sinsr": {
@@ -103,7 +103,6 @@
       "papers": ["sinsr"],
       "setup": [{"question": "详细讲讲这篇论文的方法。", "mode": "lens"}],
       "question": "报告里提到单步模型在 ImageNet-Test 上的结果。请对照原文表格核实 SinSR 单步模型的 PSNR、LPIPS 和 MUSIQ 具体是多少。",
-      "expect_any_tools": ["read_paper_section", "search_paper_content"],
       "forbid_tools": ["run_logic_lens", "begin_report"],
       "key_points": [
         "SinSR-1 的 PSNR 为 24.56",
