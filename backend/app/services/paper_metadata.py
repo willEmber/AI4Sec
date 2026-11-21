@@ -6,6 +6,12 @@ from Crossref by DOI, then Semantic Scholar by DOI, arXiv id or title; the
 venue's SCI / CCF rank from `publication_rank`. What is found is stored on the
 `papers` row, so the next report on the same file asks nobody.
 
+Semantic Scholar's `year` is when a paper first appeared, while its venue is
+where it was published: a conference paper posted to arXiv first gets the
+preprint's year (SinSR: 2023, at CVPR 2024). When S2 names the venue and lists
+the published version's DOI, that DOI is kept and the year is Crossref's.
+Rows stored before this are looked up again by `refresh_metadata`.
+
 Moved out of the upload pipeline's graph (P16), which was its only home; the
 conversation's mode tools reach it through `paper_ir_loader.ensure_pub_rank`.
 """
@@ -26,46 +32,46 @@ logger = logging.getLogger("scholar.paper_metadata")
 
 _DOI_RE = re.compile(r"\b(10\.\d{4,9}/[^\s,;\"')\]>]+)", re.ASCII)
 _ARXIV_RE = re.compile(r"arXiv[:\s]*(\d{4}\.\d{4,5}(?:v\d+)?)", re.IGNORECASE)
+_REFERENCES_RE = re.compile(
+    r"^(?:(?:\d+(?:\.\d+)*|[A-Z])\.?\s+)?(?:references?|bibliography|参考文献)$", re.IGNORECASE
+)
+
+
+def _is_reference(block: Any) -> bool:
+    """A block of the reference list, whose identifiers are other papers'.
+
+    The CVF copy of Gaussian Shading has no arXiv stamp, and the scan used to
+    take the arXiv id of its second reference: the paper was stored as ICLR
+    2018, with that paper's rank.
+    """
+    if block.type == "ref_text":
+        return True
+    last = (block.section_path or "").rsplit("/", 1)[-1].strip()
+    return bool(_REFERENCES_RE.match(last))
+
+
+def _first_match(paper_ir_json: str, pattern: re.Pattern[str]) -> str:
+    """The first match outside the references, the first four pages first."""
+    from app.models.paper_ir import PaperIR
+
+    ir = PaperIR.model_validate_json(paper_ir_json)
+    blocks = [b for b in ir.blocks if not _is_reference(b)]
+    early = sorted((b for b in blocks if b.page_idx <= 3), key=lambda b: (b.page_idx, b.order_idx))
+    for block in [*early, *(b for b in blocks if b.page_idx > 3)]:
+        m = pattern.search(block.text)
+        if m:
+            return m.group(1)
+    return ""
 
 
 async def _extract_doi_from_ir(paper_ir_json: str) -> str:
-    """Extract DOI from paper text blocks (prefer first few pages)."""
-    from app.models.paper_ir import PaperIR
-
-    ir = PaperIR.model_validate_json(paper_ir_json)
-    # Search text blocks from early pages first
-    for block in sorted(ir.blocks, key=lambda b: (b.page_idx, b.order_idx)):
-        if block.page_idx > 3:
-            break
-        m = _DOI_RE.search(block.text)
-        if m:
-            doi = m.group(1).rstrip(".")
-            return doi
-    # Fallback: scan all blocks
-    for block in ir.blocks:
-        m = _DOI_RE.search(block.text)
-        if m:
-            doi = m.group(1).rstrip(".")
-            return doi
-    return ""
+    """The paper's own DOI from its text, if printed (e.g. a journal's header)."""
+    return _first_match(paper_ir_json, _DOI_RE).rstrip(".")
 
 
 async def _extract_arxiv_id_from_ir(paper_ir_json: str) -> str:
-    """Extract arXiv ID (e.g. 2301.12345) from paper text blocks."""
-    from app.models.paper_ir import PaperIR
-
-    ir = PaperIR.model_validate_json(paper_ir_json)
-    for block in sorted(ir.blocks, key=lambda b: (b.page_idx, b.order_idx)):
-        if block.page_idx > 3:
-            break
-        m = _ARXIV_RE.search(block.text)
-        if m:
-            return m.group(1)
-    for block in ir.blocks:
-        m = _ARXIV_RE.search(block.text)
-        if m:
-            return m.group(1)
-    return ""
+    """The paper's own arXiv id (e.g. 2301.12345), usually its first-page stamp."""
+    return _first_match(paper_ir_json, _ARXIV_RE)
 
 
 async def _crossref_lookup(doi: str) -> dict[str, Any]:
@@ -97,15 +103,30 @@ async def _crossref_lookup(doi: str) -> dict[str, Any]:
         return {}
 
 
+_ARXIV_DOI_PREFIX = "10.48550/"
+
+
 def _parse_s2_response(data: dict) -> dict[str, Any]:
-    """Extract venue + year from Semantic Scholar paper record."""
+    """Venue, year and the published version's DOI from an S2 paper record.
+
+    arXiv's own DataCite DOI (`10.48550/arXiv.…`) is not a published version,
+    and Crossref does not know it, so it is left out.
+    """
     venue = ""
     pub_venue = data.get("publicationVenue") or {}
     if pub_venue.get("name"):
         venue = pub_venue["name"]
     if not venue:
         venue = data.get("venue", "")
-    return {"venue": venue, "year": data.get("year", 0)}
+    doi = str((data.get("externalIds") or {}).get("DOI") or "").strip()
+    if doi.casefold().startswith(_ARXIV_DOI_PREFIX):
+        doi = ""
+    return {"venue": venue, "year": data.get("year", 0) or 0, "doi": doi}
+
+
+async def _published_year(doi: str, fallback: int) -> int:
+    """The year of the version `doi` names, by Crossref; `fallback` without one."""
+    return (await _crossref_lookup(doi)).get("year", 0) or fallback
 
 
 async def _s2_lookup(doi: str = "", arxiv_id: str = "", title: str = "") -> dict[str, Any]:
@@ -158,7 +179,12 @@ async def _s2_lookup(doi: str = "", arxiv_id: str = "", title: str = "") -> dict
 
 
 async def enrich_metadata(
-    paper_id: str, *, paper_ir_json: str = "", pdf_path: str = ""
+    paper_id: str,
+    *,
+    paper_ir_json: str = "",
+    pdf_path: str = "",
+    reuse_stored: bool = True,
+    persist: bool = True,
 ) -> dict[str, Any]:
     """The paper's venue record: `venue`, `year`, `sci`, `ccf`, `doi` (and
     `arxiv_id` when it was looked up). Extracts DOI/arXiv from the paper text,
@@ -172,14 +198,21 @@ async def enrich_metadata(
 
     Fault-tolerant: any failure logs a warning and returns `{}`; a venue is a
     nicety for a report, never a reason to fail one.
+
+    `reuse_stored=False` ignores what the row holds and `persist=False` writes
+    nothing: together they say what a lookup finds today (`refresh_metadata`).
     """
     t0 = time.perf_counter()
 
     try:
         # 1. Check if paper already has full rank data (venue + at least one rank)
-        existing = await db.fetch_one(
-            "SELECT doi, venue, year, sci_rank, ccf_rank FROM papers WHERE paper_id = ?",
-            (paper_id,),
+        existing = (
+            await db.fetch_one(
+                "SELECT doi, venue, year, sci_rank, ccf_rank FROM papers WHERE paper_id = ?",
+                (paper_id,),
+            )
+            if reuse_stored
+            else None
         )
         if existing and existing.get("venue") and (existing.get("sci_rank") or existing.get("ccf_rank")):
             pub_rank = {
@@ -258,6 +291,10 @@ async def enrich_metadata(
                 if s2.get("venue"):
                     venue = s2["venue"]
                     year = s2.get("year", 0) or year
+                    if not doi and s2.get("doi"):
+                        # S2's year is the preprint's; the venue's is on its DOI.
+                        doi = s2["doi"]
+                        year = await _published_year(doi, year)
                     logger.info("[%s] enrich_metadata: S2 -> venue=%s year=%d", paper_id, venue, year)
                 elif s2.get("year"):
                     year = s2["year"] or year
@@ -293,7 +330,7 @@ async def enrich_metadata(
             logger.info("[%s] enrich_metadata: No venue found, skipping publication_rank query", paper_id)
 
         # 5. Persist to DB
-        if doi or venue or arxiv_id:
+        if persist and (doi or venue or arxiv_id):
             await db.execute(
                 "UPDATE papers SET doi = ?, venue = ?, year = ?, sci_rank = ?, ccf_rank = ? WHERE paper_id = ?",
                 (doi, venue, year, sci_rank, ccf_rank, paper_id),
@@ -316,3 +353,51 @@ async def enrich_metadata(
         elapsed = time.perf_counter() - t0
         logger.warning("[%s] enrich_metadata: FAILED in %.1fs — %s (non-blocking)", paper_id, elapsed, e)
         return {}
+
+
+_FIELDS = ("doi", "venue", "year", "sci_rank", "ccf_rank")
+
+
+async def refresh_metadata(paper_id: str, *, apply: bool = False) -> dict[str, Any] | None:
+    """Look a stored venue record up again; the fields that changed.
+
+    Rows whose venue came without a DOI are the ones that can be wrong and are
+    never looked up again (a stored row is reused): a conference paper posted
+    to arXiv first kept the preprint's year, and a paper without an arXiv
+    stamp could carry a reference's venue. Returns `{field: (stored, found)}`
+    for what differs (`{}` when nothing does), `None` when the row is not one
+    of those or the lookup found no venue (a provider down): that changes
+    nothing rather than blanking a row. With `apply` the new record is written
+    and the paper's cached signals dropped, being computed from the old one.
+    """
+    row = await db.fetch_one(
+        "SELECT doi, venue, year, sci_rank, ccf_rank FROM papers WHERE paper_id = ?", (paper_id,)
+    )
+    if not row or not row.get("venue") or row.get("doi"):
+        return None
+    from app.services.paper_ir_loader import load_paper_ir
+
+    paper_ir = await load_paper_ir(paper_id)
+    found = await enrich_metadata(
+        paper_id, paper_ir_json=paper_ir.model_dump_json(), reuse_stored=False, persist=False
+    )
+    if not found.get("venue"):
+        return None
+    now = {
+        "doi": found.get("doi") or "",
+        "venue": found["venue"],
+        "year": int(found.get("year") or 0),
+        "sci_rank": found.get("sci") or "",
+        "ccf_rank": found.get("ccf") or "",
+    }
+    was = {key: row.get(key) or ("" if key != "year" else 0) for key in _FIELDS}
+    changed = {key: (was[key], now[key]) for key in _FIELDS if was[key] != now[key]}
+    if changed and apply:
+        async with db.transaction() as tx:
+            await tx.execute(
+                "UPDATE papers SET doi = ?, venue = ?, year = ?, sci_rank = ?, ccf_rank = ? "
+                "WHERE paper_id = ?",
+                (*(now[key] for key in _FIELDS), paper_id),
+            )
+            await tx.execute("DELETE FROM paper_signals WHERE paper_id = ?", (paper_id,))
+    return changed
