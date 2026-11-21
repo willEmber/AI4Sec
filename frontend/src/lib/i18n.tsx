@@ -102,13 +102,11 @@ const translations: Record<Locale, Record<string, string>> = {
     "recent.history_header": "Recent runs ({count})",
     "recent.starting": "Starting...",
     "recent.resumed_toast": "Reconnected — showing latest progress",
-    "recent.dismiss": "Cancel",
-    "run.cancel": "Cancel",
     "run.delete": "Delete report",
     "run.delete_confirm": "Delete this report? Links to it will stop working.",
     "run.not_owner": "Only whoever started this run can do that.",
     "run.status.cancelled_label": "Analysis Cancelled",
-    "run.status.cancelled_hint": "This run was stopped before it finished. Start a new one from the upload page.",
+    "run.status.cancelled_hint": "This report was stopped before it finished. Ask for it again in the conversation.",
 
     // Run page
     "run.mode": "Mode",
@@ -122,7 +120,7 @@ const translations: Record<Locale, Record<string, string>> = {
     "run.export_zotero_title": "Download a Zotero import bundle (.zip): item + report note + PDF. Unzip, then File → Import the .rdf into your local Zotero.",
     "run.your_question": "Your question:",
     "run.detected_intent": "Detected intent:",
-    "run.pdf_ready_hint": "The PDF is ready on the right — feel free to start reading while the analysis runs.",
+    "run.writing_in_chat": "This report is being written in its conversation — follow it, or stop it, there. The PDF is on the right meanwhile.",
     "run.ask_agent": "Ask the agent",
     "run.back_to_chat": "Back to the conversation",
 
@@ -848,13 +846,11 @@ const translations: Record<Locale, Record<string, string>> = {
     "recent.history_header": "最近运行（{count}）",
     "recent.starting": "启动中...",
     "recent.resumed_toast": "已重新连接 — 已显示最新进度",
-    "recent.dismiss": "取消",
-    "run.cancel": "取消",
     "run.delete": "删除报告",
     "run.delete_confirm": "删除这份报告？指向它的链接将失效。",
     "run.not_owner": "只有发起这次分析的人可以执行此操作。",
     "run.status.cancelled_label": "分析已取消",
-    "run.status.cancelled_hint": "这次分析在完成前被停止。可以从上传页重新发起。",
+    "run.status.cancelled_hint": "这份报告在完成前被停止。可以回到对话重新请求。",
 
     // Run page
     "run.mode": "模式",
@@ -868,7 +864,7 @@ const translations: Record<Locale, Record<string, string>> = {
     "run.export_zotero_title": "下载 Zotero 导入包（.zip）：条目 + 报告笔记 + PDF。解压后在 Zotero 中“文件 → 导入”该 .rdf，即可导入本地库（无需 Zotero 云账户）。",
     "run.your_question": "您的问题：",
     "run.detected_intent": "识别意图：",
-    "run.pdf_ready_hint": "右侧已加载论文原文，AI 分析期间可先行阅读。",
+    "run.writing_in_chat": "报告正在对话中生成，回到对话查看进度或停止。右侧可先阅读原文。",
     "run.ask_agent": "继续提问",
     "run.back_to_chat": "返回对话",
 

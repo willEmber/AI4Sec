@@ -1,19 +1,19 @@
-"""Reading, exporting, stopping and deleting mode reports.
+"""Reading, exporting and deleting mode reports.
 
-A report is made inside a conversation (`agents/tools/modes.py`); there is no
-endpoint that starts one on its own any more (P16). Reading a run is open to
-anyone holding its id — that is how a report is shared — while stopping and
-deleting are the owner's.
+A report is written as a conversation turn's answer (P16), so starting,
+following and stopping one are the conversation's: there is no endpoint that
+starts a report, streams its progress or cancels it. Reading a run is open to
+anyone holding its id — that is how a report is shared — while deleting it is
+the owner's.
 """
 
 from __future__ import annotations
 
-import asyncio
 import json
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import Response, StreamingResponse
+from fastapi.responses import Response
 
 from app.api.deps import optional_caller
 from app.config import get_settings
@@ -241,42 +241,6 @@ async def _owned_run(run_id: str, caller: Caller | None, owner_token: str) -> di
     return row
 
 
-async def _cancel_owned(run_id: str, caller: Caller | None, owner_token: str) -> RunResponse:
-    await _owned_run(run_id, caller, owner_token)
-    await mode_runs.cancel(run_id)
-    updated = await db.fetch_one("SELECT * FROM runs WHERE run_id = ?", (run_id,))
-    return RunResponse(**updated)
-
-
-@router.post("/runs/{run_id}/cancel", response_model=RunResponse)
-@limiter.limit("30/minute")
-async def cancel_run(
-    request: Request,
-    run_id: str,
-    owner_token: str = "",
-    caller: Caller | None = Depends(optional_caller),
-):
-    """Stop a pending/running run. Only its owner may.
-
-    The run is closed as `cancelled` and whoever is executing it is
-    interrupted — on this replica at once, on another at its next heartbeat.
-    A run that already finished is returned unchanged.
-    """
-    return await _cancel_owned(run_id, caller, owner_token)
-
-
-@router.post("/runs/{run_id}/dismiss", response_model=RunResponse)
-@limiter.limit("30/minute")
-async def dismiss_run(
-    request: Request,
-    run_id: str,
-    owner_token: str = "",
-    caller: Caller | None = Depends(optional_caller),
-):
-    """The earlier name of `cancel`, kept for clients that still call it."""
-    return await _cancel_owned(run_id, caller, owner_token)
-
-
 @router.delete("/runs/{run_id}")
 @limiter.limit("30/minute")
 async def delete_run(
@@ -289,83 +253,6 @@ async def delete_run(
     await _owned_run(run_id, caller, owner_token)
     await mode_runs.delete(run_id)
     return {"deleted": run_id}
-
-
-# How often the stream looks at the run's row, and how long it stays open.
-_STREAM_POLL_SECONDS = 1.0
-_STREAM_MAX_SECONDS = 1800.0
-
-
-@router.get("/runs/{run_id}/stream")
-@limiter.limit("10/minute")
-async def stream_run(request: Request, run_id: str):
-    """SSE endpoint for streaming run progress.
-
-    The stream follows the run's row rather than anything in this process: it
-    replays the steps recorded so far, then reports new ones until the run
-    ends. So it can be opened on any replica, at any point in the run, and
-    again after a reload.
-    """
-    if not await db.fetch_one("SELECT 1 AS hit FROM runs WHERE run_id = ?", (run_id,)):
-        raise HTTPException(status_code=404, detail="Run not found")
-
-    def frame(event: str, data: dict[str, Any] | None = None) -> str:
-        body: dict[str, Any] = {"event": event}
-        if data is not None:
-            body["data"] = data
-        return f"data: {json.dumps(body)}\n\n"
-
-    async def event_generator():
-        sent = 0
-        announced_running = False
-        deadline = asyncio.get_running_loop().time() + _STREAM_MAX_SECONDS
-        while True:
-            row = await db.fetch_one(
-                "SELECT status, error_msg, progress_json FROM runs WHERE run_id = ?", (run_id,)
-            )
-            if row is None:   # deleted while we watched
-                yield frame("error", {"error": "Run not found"})
-                yield frame("end")
-                return
-            try:
-                steps = json.loads(row["progress_json"] or "[]")
-            except (TypeError, ValueError):
-                steps = []
-            if len(steps) < sent:   # a second attempt started the list over
-                sent = 0
-            if row["status"] == "running" and not announced_running:
-                announced_running = True
-                yield frame("status", {"status": "running"})
-            for step in steps[sent:]:
-                yield frame("progress", step)
-            sent = len(steps)
-
-            status = row["status"]
-            if status == "done":
-                yield frame("done", {"run_id": run_id, "status": "done"})
-            elif status == "cancelled":
-                yield frame("cancelled", {"run_id": run_id, "status": "cancelled"})
-            elif status not in mode_runs.ACTIVE_STATUSES:
-                yield frame("error", {"error": row["error_msg"] or "Run failed"})
-            if status not in mode_runs.ACTIVE_STATUSES:
-                yield frame("end")
-                return
-            if asyncio.get_running_loop().time() > deadline:
-                yield frame("timeout")
-                return
-            if await request.is_disconnected():
-                return
-            await asyncio.sleep(_STREAM_POLL_SECONDS)
-
-    return StreamingResponse(
-        event_generator(),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-            "X-Accel-Buffering": "no",
-        },
-    )
 
 
 @router.get("/papers/{paper_id}/runs", response_model=list[RunResponse])

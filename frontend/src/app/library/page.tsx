@@ -7,7 +7,6 @@ import { describeApiError, listOwnerPapers } from "@/lib/agent";
 import type { SessionPaper } from "@/lib/agent";
 import {
   askLibrary,
-  cancelRun,
   deleteRun,
   getLibraryMarkdown,
   getMarkdownExportUrl,
@@ -178,16 +177,6 @@ function LibraryHub() {
     });
   }, []);
 
-  const handleCancelRun = useCallback(
-    (runId: string) => {
-      setRuns((prev) => prev.filter((r) => r.run_id !== runId));
-      cancelRun(runId)
-        .then(() => refreshRuns())
-        .catch(() => {});
-    },
-    [refreshRuns],
-  );
-
   const handleDeleteRun = useCallback(
     (runId: string) => {
       if (!window.confirm(t("run.delete_confirm"))) return;
@@ -308,8 +297,13 @@ function LibraryHub() {
                         key={run.run_id}
                         className="flex items-center rounded-xl bg-card/80 px-3 py-2 transition-colors hover:bg-card"
                       >
+                        {/* A report is written, and stopped, in its conversation. */}
                         <Link
-                          href={`/paper/${run.paper_id}/run/${run.run_id}`}
+                          href={
+                            run.agent_session_id
+                              ? `/chat/${run.agent_session_id}`
+                              : `/paper/${run.paper_id}/run/${run.run_id}`
+                          }
                           className="flex min-w-0 flex-1 items-center gap-3"
                         >
                           <span className="h-3.5 w-3.5 shrink-0 animate-spin rounded-full border-2 border-primary border-t-transparent" />
@@ -323,15 +317,6 @@ function LibraryHub() {
                           </span>
                           <IconArrowRight className="shrink-0 text-sm text-muted-foreground" />
                         </Link>
-                        <button
-                          type="button"
-                          onClick={() => handleCancelRun(run.run_id)}
-                          title={t("recent.dismiss")}
-                          aria-label={t("recent.dismiss")}
-                          className="ml-2 flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-                        >
-                          <IconX className="text-[13px]" />
-                        </button>
                       </li>
                     );
                   })}

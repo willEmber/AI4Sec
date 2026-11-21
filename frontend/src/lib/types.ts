@@ -66,11 +66,6 @@ export interface RunOutputResponse {
   json_data: string;
 }
 
-export interface SSEEvent {
-  event: string;
-  data: Record<string, unknown>;
-}
-
 // --- Knowledge base (Dify) ---
 
 export type SearchMethod = "semantic_search" | "full_text_search" | "hybrid_search";

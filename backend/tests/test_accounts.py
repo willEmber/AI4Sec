@@ -407,7 +407,7 @@ class LoginFlowTests(_AppTestCase):
         with self._new_client() as stranger:
             ids = {r["run_id"] for r in stranger.get("/api/runs/recent", params={"owner_token": "tok-1"}).json()}
             self.assertEqual(ids, set())
-            self.assertEqual(stranger.post("/api/runs/mine/dismiss").status_code, 404)
+            self.assertEqual(stranger.delete("/api/runs/mine").status_code, 404)
 
     def test_stream_ticket_opens_only_its_run(self) -> None:
         session_id = self.client.post("/api/agent/sessions", json={}).json()["session_id"]

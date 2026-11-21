@@ -18,11 +18,6 @@ import { getOwnerToken } from "./owner";
 
 const API_BASE = "/api";
 
-// SSE/EventSource must connect directly to backend — Next.js rewrite proxy
-// buffers streaming responses, preventing real-time SSE delivery.
-const BACKEND_SSE_BASE =
-  process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8001";
-
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, init);
   if (!res.ok) throw await apiErrorFrom(res);
@@ -79,12 +74,6 @@ export async function listRecentRuns(
   return request(`/runs/recent?${qs.toString()}`);
 }
 
-/** Stop a pending/running run. Only its owner may; anyone else gets a 404. */
-export async function cancelRun(runId: string): Promise<RunResponse> {
-  const qs = new URLSearchParams({ owner_token: getOwnerToken() });
-  return request(`/runs/${runId}/cancel?${qs.toString()}`, { method: "POST" });
-}
-
 /** Delete a run and its report. Links to it stop working. */
 export async function deleteRun(runId: string): Promise<void> {
   const qs = new URLSearchParams({ owner_token: getOwnerToken() });
@@ -104,10 +93,6 @@ export function getZoteroBundleUrl(runId: string): string {
 // object-storage URLs (uploading on demand) when R2 is configured.
 export function getMarkdownExportUrl(runId: string): string {
   return `${API_BASE}/runs/${runId}/markdown`;
-}
-
-export function getRunStreamUrl(runId: string): string {
-  return `${BACKEND_SSE_BASE}/api/runs/${runId}/stream`;
 }
 
 // --- Knowledge base (Dify) ---

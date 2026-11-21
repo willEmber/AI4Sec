@@ -1,7 +1,7 @@
 """Integration tests for per-browser owner_token isolation on /runs endpoints.
 
 Runs are inserted directly into a temporary database so no LLM/MinerU
-background work or network access is triggered; only the read/dismiss
+background work or network access is triggered; only the read/delete
 endpoints (the owner-scoping logic) are exercised.
 """
 from __future__ import annotations
@@ -114,19 +114,6 @@ class RunOwnerIsolationTests(unittest.TestCase):
         resp = self.client.post("/api/runs", json={"paper_id": "paperX", "mode": "snap"})
         self.assertIn(resp.status_code, (404, 405), resp.text)
 
-    def test_dismiss_requires_ownership(self) -> None:
-        # Wrong owner cannot dismiss (and cannot learn the run exists).
-        resp = self.client.post("/api/runs/r_a/dismiss", params={"owner_token": "B"})
-        self.assertEqual(resp.status_code, 404, resp.text)
-        self.assertEqual(self._status("r_a"), "pending")
-
-        # Owner can dismiss.
-        resp = self.client.post("/api/runs/r_a/dismiss", params={"owner_token": "A"})
-        self.assertEqual(resp.status_code, 200, resp.text)
-        body = resp.json()
-        self.assertEqual(body["status"], "cancelled")
-        self.assertEqual(body["error_msg"], "Cancelled by user")
-
     def test_delete_requires_ownership_and_removes_the_report(self) -> None:
         with psycopg.connect(self.db_url) as con:
             con.execute("INSERT INTO run_outputs (run_id, markdown) VALUES ('r_a', '# report')")
@@ -140,10 +127,10 @@ class RunOwnerIsolationTests(unittest.TestCase):
         self.assertEqual(self.client.get("/api/runs/r_a/output").status_code, 404)
         self.assertEqual(self._status("r_b"), "pending")
 
-    def test_legacy_run_dismissible_by_anyone(self) -> None:
-        resp = self.client.post("/api/runs/r_legacy/dismiss", params={"owner_token": "whoever"})
+    def test_a_legacy_run_can_be_deleted_by_anyone(self) -> None:
+        resp = self.client.delete("/api/runs/r_legacy", params={"owner_token": "whoever"})
         self.assertEqual(resp.status_code, 200, resp.text)
-        self.assertEqual(self._status("r_legacy"), "cancelled")
+        self.assertEqual(self.client.get("/api/runs/r_legacy").status_code, 404)
 
 
 if __name__ == "__main__":
@@ -171,7 +158,7 @@ class RunProgressAndDismissTests(RunOwnerIsolationTests):
             ],
         )
 
-    def test_dismiss_stops_the_report_being_made(self) -> None:
+    def test_deleting_a_report_being_written_stops_it(self) -> None:
         import asyncio
         import time
         from unittest import mock
@@ -183,7 +170,7 @@ class RunProgressAndDismissTests(RunOwnerIsolationTests):
         seen: dict[str, bool] = {}
 
         async def make_report() -> None:
-            # What a mode tool does while it writes a report: beat, and be
+            # What a turn does while it writes a report: beat, and be
             # interrupted once the row is closed — on whichever replica.
             try:
                 async with mode_runs.heartbeating("r_a"):
@@ -197,29 +184,8 @@ class RunProgressAndDismissTests(RunOwnerIsolationTests):
             deadline = time.monotonic() + 2
             while not seen.get("started") and time.monotonic() < deadline:
                 time.sleep(0.01)
-            dismissed = self.client.post("/api/runs/r_a/dismiss", params={"owner_token": "A"})
-            self.assertEqual(dismissed.status_code, 200, dismissed.text)
+            deleted = self.client.delete("/api/runs/r_a", params={"owner_token": "A"})
+            self.assertEqual(deleted.status_code, 200, deleted.text)
             made.result(timeout=2)
         self.assertEqual(seen, {"started": True, "cancelled": True})
-        after = self.client.get("/api/runs/r_a").json()
-        self.assertEqual((after["status"], after["error_msg"]), ("cancelled", "Cancelled by user"))
-
-    def test_the_stream_replays_recorded_steps_and_ends_with_the_run(self) -> None:
-        import json
-
-        from app.workflows.progress import emit_progress
-
-        self.client.portal.call(emit_progress, "r_a", "mineru_parse", "done")
-        self.client.post("/api/runs/r_a/cancel", params={"owner_token": "A"})
-
-        body = self.client.get("/api/runs/r_a/stream").text
-        events = [json.loads(line[6:]) for line in body.splitlines() if line.startswith("data: ")]
-        self.assertEqual(
-            events,
-            [
-                {"event": "progress", "data": {"step": "mineru_parse", "status": "done"}},
-                {"event": "cancelled", "data": {"run_id": "r_a", "status": "cancelled"}},
-                {"event": "end"},
-            ],
-        )
-        self.assertEqual(self.client.get("/api/runs/nope/stream").status_code, 404)
+        self.assertEqual(self.client.get("/api/runs/r_a").status_code, 404)

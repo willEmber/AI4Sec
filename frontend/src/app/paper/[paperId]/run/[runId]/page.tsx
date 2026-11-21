@@ -3,8 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { cancelRun, deleteRun, getRun, getRunOutput, getPaperPdfUrl, getPaper, getZoteroBundleUrl, getMarkdownExportUrl } from "@/lib/api";
-import { useRunStream } from "@/hooks/useRunStream";
+import { deleteRun, getRun, getRunOutput, getPaperPdfUrl, getPaper, getZoteroBundleUrl, getMarkdownExportUrl } from "@/lib/api";
 import { useTranslation } from "@/lib/i18n";
 import { useChatShell } from "@/components/agent/ChatShell";
 import MarkdownRenderer from "@/components/MarkdownRenderer";
@@ -14,13 +13,13 @@ import RankBadges from "@/components/RankBadges";
 import SphereReport from "@/components/sphere/SphereReport";
 import SnapReport from "@/components/snap/SnapReport";
 import LensReport from "@/components/lens/LensReport";
-import { IconCards, IconCheck, IconDocument, IconDownload, IconSparkles, IconStop } from "@/components/icons";
+import { IconCards, IconCheck, IconDocument, IconDownload, IconSparkles } from "@/components/icons";
 import { parseSphereData } from "@/lib/sphere";
 import { parseSnapData } from "@/lib/snap";
 import { defaultLensView, parseLensData } from "@/lib/lens";
 import { parseCitationTable } from "@/lib/reportCitations";
 import { useFrozenCitations } from "@/components/report/FrozenCitations";
-import type { RunResponse, PaperResponse, SSEEvent, ProgressEntry } from "@/lib/types";
+import type { RunResponse, PaperResponse, ProgressEntry } from "@/lib/types";
 
 export default function RunPage() {
   const params = useParams();
@@ -40,9 +39,6 @@ export default function RunPage() {
   const [viewChoice, setStructuredView] = useState<"structured" | "markdown" | null>(null);
   const [targetPage, setTargetPage] = useState<number | undefined>(undefined);
   const [pdfCollapsed, setPdfCollapsed] = useState(false);
-  const [pageLoadTime] = useState(() => performance.now());
-
-  const { events, isConnected, isDone, error, connect } = useRunStream();
 
   const stepLabel = useCallback(
     (step: string) => t(`step.${step}`) || step,
@@ -74,29 +70,8 @@ export default function RunPage() {
     }).catch(() => {});
   }, [runId]);
 
-  // Connect to SSE stream (direct to backend, bypasses Next.js proxy)
-  useEffect(() => {
-    console.log(`[RunPage] Mounting, connecting SSE for run=${runId} (page loaded ${(performance.now() - pageLoadTime).toFixed(0)}ms ago)`);
-    connect(runId);
-  }, [runId, connect, pageLoadTime]);
-
-  // When SSE reports done, fetch output immediately
-  useEffect(() => {
-    if (!isDone) return;
-    const t0 = performance.now();
-    getRun(runId).then((r) => {
-      console.log(`[RunPage] SSE done -> getRun: ${(performance.now() - t0).toFixed(0)}ms status=${r.status}`);
-      setRun(r);
-    });
-    getRunOutput(runId).then((o) => {
-      console.log(`[RunPage] SSE done -> getRunOutput: ${(performance.now() - t0).toFixed(0)}ms markdown=${o.markdown.length} chars`);
-      console.log(`[RunPage] Total time from page load to output: ${((performance.now() - pageLoadTime) / 1000).toFixed(1)}s`);
-      setMarkdown(o.markdown);
-      setJsonData(o.json_data);
-    }).catch(() => {});
-  }, [isDone, runId, pageLoadTime]);
-
-  // Always-on backup polling — runs regardless of SSE state until we have results
+  // A report is written in its conversation (P16), which streams it; this
+  // page only polls the row until the report is there.
   useEffect(() => {
     if (markdown) return; // Already got results, stop polling
     if (run?.status === "failed" || run?.status === "cancelled") return; // Run ended, stop polling
@@ -159,10 +134,8 @@ export default function RunPage() {
     a.remove();
   }, [runId]);
 
-  // Progress steps merged from two sources:
-  //   1. persisted `run.progress_json` (full history, even if SSE wasn't connected)
-  //   2. live SSE events received this session
-  // Deduplicate by step name, keeping the latest status per step.
+  // The steps recorded on the row (a Sphere report's literature map writes
+  // them), deduplicated by step name, keeping the latest status per step.
   const progressSteps = (() => {
     const persisted: ProgressEntry[] = (() => {
       if (!run?.progress_json) return [];
@@ -174,12 +147,8 @@ export default function RunPage() {
       }
     })();
 
-    const live = events
-      .filter((e: SSEEvent) => e.event === "progress")
-      .map((e: SSEEvent) => e.data as ProgressEntry);
-
     const map = new Map<string, ProgressEntry>();
-    for (const s of [...persisted, ...live]) {
+    for (const s of persisted) {
       if (s && typeof s.step === "string") map.set(s.step, s);
     }
     return Array.from(map.values());
@@ -202,25 +171,18 @@ export default function RunPage() {
   const structuredView = viewChoice ?? defaultLensView(lensData);
   const showStructured = structuredData !== null && structuredView === "structured";
 
-  const isComplete = run?.status === "done" || (isDone && markdown);
+  const isComplete = run?.status === "done";
   const isCancelled = run?.status === "cancelled" && !isComplete;
-  const isFailed = (run?.status === "failed" || !!error) && !isComplete && !isCancelled;
+  const isFailed = run?.status === "failed" && !isComplete && !isCancelled;
   const isRunning =
-    (run?.status === "running" || run?.status === "pending" || isConnected) &&
+    (run?.status === "running" || run?.status === "pending") &&
     !isComplete && !isFailed && !isCancelled;
+  // Where the report is being written, and where it is stopped.
+  const chatHref = run?.agent_session_id ? `/chat/${run.agent_session_id}` : `/chat?paper=${paperId}`;
 
-  // Stopping and deleting are the owner's. Anyone can open a shared report, so
-  // a refusal is shown rather than hidden behind a button that does nothing.
+  // Deleting is the owner's. Anyone can open a shared report, so a refusal is
+  // shown rather than hidden behind a button that does nothing.
   const [actionError, setActionError] = useState("");
-  const [cancelling, setCancelling] = useState(false);
-  const handleCancel = useCallback(() => {
-    setCancelling(true);
-    setActionError("");
-    cancelRun(runId)
-      .then((r) => setRun(r))
-      .catch(() => setActionError(t("run.not_owner")))
-      .finally(() => setCancelling(false));
-  }, [runId, t]);
   const handleDelete = useCallback(() => {
     if (!window.confirm(t("run.delete_confirm"))) return;
     setActionError("");
@@ -279,24 +241,13 @@ export default function RunPage() {
               reading the same paper. A report made inside a conversation
               leads back to that conversation rather than starting another. */}
           <Link
-            href={run?.agent_session_id ? `/chat/${run.agent_session_id}` : `/chat?paper=${paperId}`}
+            href={chatHref}
             className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-sm transition-colors hover:bg-muted"
           >
             <IconSparkles className="text-[15px]" />
             {run?.agent_session_id ? t("run.back_to_chat") : t("run.ask_agent")}
           </Link>
           {actionError && <span className="text-xs text-destructive">{actionError}</span>}
-          {isRunning && (
-            <button
-              onClick={handleCancel}
-              disabled={cancelling}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-sm transition-colors hover:bg-muted disabled:opacity-50"
-              title={t("run.cancel")}
-            >
-              <IconStop className="text-[15px]" />
-              {t("run.cancel")}
-            </button>
-          )}
           {!isRunning && run && (
             <button
               onClick={handleDelete}
@@ -340,7 +291,7 @@ export default function RunPage() {
           )}
           {isFailed && (
             <span className="text-sm text-destructive">
-              {error || run?.error_msg || t("run.status.unknown")}
+              {run?.error_msg || t("run.status.unknown")}
             </span>
           )}
         </div>
@@ -416,7 +367,7 @@ export default function RunPage() {
                 <div className="max-w-md rounded-2xl border border-destructive/25 bg-destructive/5 p-8 text-center">
                   <p className="mb-2 font-semibold text-destructive">{t("run.status.failed_label")}</p>
                   <p className="text-sm text-muted-foreground">
-                    {error || run?.error_msg || t("run.status.unknown")}
+                    {run?.error_msg || t("run.status.unknown")}
                   </p>
                 </div>
               </div>
@@ -428,8 +379,15 @@ export default function RunPage() {
                     {currentStep ? stepLabel(currentStep.step) : t("run.starting")}
                   </p>
                   <p className="mt-2 text-xs text-muted-foreground">
-                    {t("run.pdf_ready_hint")}
+                    {t("run.writing_in_chat")}
                   </p>
+                  <Link
+                    href={chatHref}
+                    className="mt-4 inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-sm transition-colors hover:bg-muted"
+                  >
+                    <IconSparkles className="text-[15px]" />
+                    {t("run.back_to_chat")}
+                  </Link>
                   {progressSteps.length > 0 && (
                     <div className="mx-auto mt-7 max-w-xs space-y-0.5 text-left">
                       {progressSteps.map((step, i) => {

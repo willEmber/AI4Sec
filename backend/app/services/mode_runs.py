@@ -32,8 +32,6 @@ from app.services.agent_worker import HEARTBEAT_SECONDS, RUN_STALE_SECONDS, WORK
 
 logger = logging.getLogger("scholar.runs")
 
-ACTIVE_STATUSES = ("pending", "running")
-
 INTERRUPTED = "Interrupted (the worker executing this run stopped)"
 
 
