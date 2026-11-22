@@ -194,6 +194,26 @@ def _outline_entry(view: SectionView) -> dict[str, Any]:
     return entry
 
 
+async def prompt_outlines(paper_ids: list[str], *, max_depth: int = 3) -> dict[str, list[dict[str, Any]]]:
+    """The outline `get_paper_outline` returns, for each of these papers.
+
+    For the system prompt, so the first step of a turn can already read a
+    section. A paper whose outline cannot be loaded is left out: the tool is
+    still there for it.
+    """
+    outlines: dict[str, list[dict[str, Any]]] = {}
+    for paper_id in paper_ids:
+        try:
+            nodes = await load_section_nodes(paper_id)
+        except Exception:  # noqa: BLE001 — the prompt goes on without it
+            logger.warning("No outline for the prompt of paper %s", paper_id, exc_info=True)
+            continue
+        views = [v for v in section_views(nodes) if not v.folded and v.level <= max_depth]
+        if views:
+            outlines[paper_id] = [_outline_entry(v) for v in views]
+    return outlines
+
+
 @tool(parse_docstring=False)
 async def get_paper_outline(
     runtime: ToolRuntime[AgentContext],

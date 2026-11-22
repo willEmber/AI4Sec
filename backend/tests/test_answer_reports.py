@@ -228,7 +228,7 @@ class ToolAndPromptTests(unittest.TestCase):
         none = build_system_prompt(language="zh")
         self.assertNotIn("## 三种整篇报告模式", none)
         self.assertIn("相反结论。\n\n## 长期记忆", none)
-        self.assertEqual(current_prompt_version(frozenset()), "p18-venue-1")
+        self.assertEqual(current_prompt_version(frozenset()), "p18-venue-1+outline1")
 
         lens = build_system_prompt(language="en", answer_modes=frozenset({"lens"}))
         self.assertIn('`begin_report(mode="lens")`', lens)

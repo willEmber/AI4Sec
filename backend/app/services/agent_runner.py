@@ -50,6 +50,7 @@ from app.agents.model_factory import build_chat_model, fallback_model_name
 from app.agents.prompts import PROMPT_VERSION, build_system_prompt
 from app.agents.tool_events import ToolCallTracker, preview_of, summarise_input
 from app.agents.tools import agent_tools
+from app.agents.tools.reading import prompt_outlines
 from app.agents.tools.report import composer_note, start_report
 from app.config import get_settings
 from app.db import agent_repository as repo
@@ -58,6 +59,7 @@ from app.models.agent_models import (
     AgentProject,
     AgentRun,
     AgentSession,
+    Availability,
     ErrorCode,
     EventType,
     MessageRole,
@@ -627,6 +629,7 @@ async def _execute_turn(
         started = time.perf_counter()
 
         papers = await repo.list_session_papers(session.session_id)
+        outlines = await _prompt_outlines(papers, settings.agent_prompt_outline_papers)
         project, project_papers = await _project_context(session)
         memories = await repo.list_memories_for_prompt(
             session.owner_id,
@@ -684,6 +687,7 @@ async def _execute_turn(
                 project=project,
                 project_papers=project_papers,
                 answer_modes=answer_modes,
+                outlines=outlines,
             ),
             model=chat_model,
             context_schema=AgentContext,
@@ -975,6 +979,23 @@ async def _save_report(
         return
     if artifact is not None:
         await stream.emit(EventType.ARTIFACT_CREATED, artifact)
+
+
+async def _prompt_outlines(
+    papers: list[SessionPaper], limit: int
+) -> dict[str, list[dict[str, Any]]]:
+    """The outlines of the first `limit` parsed papers, for the prompt.
+
+    In session order, so the prompt does not change from turn to turn while
+    the papers do not. A paper parsed during the turn is not among them; the
+    outline tool covers it.
+    """
+    if limit <= 0:
+        return {}
+    parsed = [
+        p.paper_id for p in papers if p.paper_id and p.availability == Availability.PARSED
+    ]
+    return await prompt_outlines(list(dict.fromkeys(parsed))[:limit])
 
 
 async def _project_context(

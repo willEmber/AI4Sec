@@ -30,6 +30,8 @@ each tool is for; the prompt says what good reading looks like.
 
 from __future__ import annotations
 
+from typing import Any
+
 from app.models.agent_models import (
     AgentMemory,
     AgentProject,
@@ -40,6 +42,9 @@ from app.models.agent_models import (
 # Recorded on every run so an evaluation can tell which prompt produced a result.
 # A turn with report modes written as answers records more (`current_prompt_version`).
 PROMPT_VERSION = "p18-venue-1"
+# Appended while parsed papers' outlines are in the prompt
+# (`AGENT_PROMPT_OUTLINE_PAPERS`); with them off the prompt is the base one.
+OUTLINE_VERSION = "outline1"
 
 
 _ZH = """你是论文阅读助手。你通过工具读取论文原文来回答问题，而不是凭记忆作答。
@@ -342,13 +347,51 @@ def _paper_venue_badge(paper: SessionPaper, language: str) -> str:
     ).prompt_badge(language)
 
 
-def _format_papers(papers: list[SessionPaper], language: str) -> str:
+# Sections listed per paper in the prompt; past this the outline says how many
+# more there are and the tool lists them all.
+PROMPT_OUTLINE_MAX_SECTIONS = 40
+
+
+def _format_outline(entries: list[dict[str, Any]], language: str) -> str:
+    """A paper's outline under its line in the paper list: id, title, pages."""
+    zh = language == "zh"
+    lines = []
+    for entry in entries[:PROMPT_OUTLINE_MAX_SECTIONS]:
+        pages = f"p.{entry['page']}"
+        if entry.get("page_end"):
+            pages += f"–{entry['page_end']}"
+        line = f"{'  ' * int(entry.get('depth') or 1)}- `{entry['section_id']}` {entry['title']} ({pages})"
+        if entry.get("folded_subsections"):
+            line += (
+                f"（含 {entry['folded_subsections']} 个子节）"
+                if zh
+                else f" ({entry['folded_subsections']} subsections)"
+            )
+        lines.append(line)
+    rest = len(entries) - PROMPT_OUTLINE_MAX_SECTIONS
+    if rest > 0:
+        lines.append(
+            f"  - ……另有 {rest} 节，用 `get_paper_outline` 查看"
+            if zh
+            else f"  - … {rest} more sections: `get_paper_outline` lists them"
+        )
+    head = "  目录：" if zh else "  Outline:"
+    return "\n" + head + "\n" + "\n".join(lines)
+
+
+def _format_papers(
+    papers: list[SessionPaper],
+    language: str,
+    outlines: dict[str, list[dict[str, Any]]] | None = None,
+) -> str:
     """Render the session's papers so the model need not ask which exist.
 
     Supplied as context rather than as a tool: the list is small, it is needed
     on essentially every turn, and a tool call to fetch it would be pure
-    latency.
+    latency. `outlines` are the parsed papers' outlines, by paper_id, for the
+    same reason: without one the first step of nearly every turn fetched it.
     """
+    outlines = outlines or {}
     if not papers:
         return (
             "\n\n## 本会话的论文\n\n当前没有论文。用户上传或指定论文后才能开始阅读。"
@@ -376,7 +419,13 @@ def _format_papers(papers: list[SessionPaper], language: str) -> str:
             handle = f"paper_id={paper.paper_id}"
         else:
             handle = f"literature_id={paper.literature_id}"
-        lines.append(f"- {title} ({meta_label}) — {handle}, {paper.availability.value}")
+        line = f"- {title} ({meta_label}) — {handle}, {paper.availability.value}"
+        if paper.paper_id in outlines and paper.availability == Availability.PARSED:
+            line += _format_outline(outlines[paper.paper_id], language)
+        lines.append(line)
+    outlined = any(
+        p.paper_id in outlines and p.availability == Availability.PARSED for p in papers
+    )
 
     body = "\n".join(lines) or ("（无）" if language == "zh" else "(none)")
     if mapped:
@@ -392,13 +441,30 @@ def _format_papers(papers: list[SessionPaper], language: str) -> str:
             else f"\n\nLiterature-map candidates ({len(mapped)}, metadata and abstract only):\n{listed}"
         )
     if language == "zh":
+        outline_note = (
+            "\n\n列出了目录的论文，目录里的 `section_id` 可以直接交给 `read_paper_section`。"
+            "问题明显落在某几节时（方法、实验设置、结果表），第一步就读这几节，与检索同时发出；"
+            "这些论文不必再调用 `get_paper_outline`。没有列出目录的论文仍用它查看目录。"
+            if outlined
+            else ""
+        )
         return (
             "\n\n## 本会话的论文\n\n"
             f"{body}\n\n"
             "只有 `parsed` 状态的论文可以读取原文。`candidate` 只有元数据，"
             "`pdf_ready` 需要先解析，`unavailable` 表示全文取不到。"
             "需要读全文时按状态去下载或解析；取不到就说明证据层级，不要假装读过全文。"
+            f"{outline_note}"
         )
+    outline_note = (
+        "\n\nFor papers listed with an outline, pass its `section_id` straight to "
+        "`read_paper_section`. When a question plainly falls in certain sections "
+        "(method, experimental setup, results tables), read them in the first "
+        "step, together with any search; these papers need no "
+        "`get_paper_outline` call. Use it for papers listed without an outline."
+        if outlined
+        else ""
+    )
     return (
         "\n\n## Papers in this session\n\n"
         f"{body}\n\n"
@@ -407,6 +473,7 @@ def _format_papers(papers: list[SessionPaper], language: str) -> str:
         "text could not be obtained. Download or parse as the state requires; "
         "when the text cannot be had, say which evidence level you are working "
         "from rather than implying you read the paper."
+        f"{outline_note}"
     )
 
 
@@ -517,10 +584,15 @@ def current_prompt_version(answer_modes: frozenset[str] | None = None) -> str:
     methods it was offered when any mode is written as an answer."""
     from app.agents import skills
 
+    from app.config import get_settings
+
+    version = PROMPT_VERSION
+    if get_settings().agent_prompt_outline_papers > 0:
+        version += f"+{OUTLINE_VERSION}"
     modes = skills.enabled_modes() if answer_modes is None else answer_modes
     if not modes:
-        return PROMPT_VERSION
-    return f"{PROMPT_VERSION}+answer:{skills.version_tag(modes)}"
+        return version
+    return f"{version}+answer:{skills.version_tag(modes)}"
 
 
 # How many of a project's other papers the prompt lists. Each is one short
@@ -581,14 +653,16 @@ def build_system_prompt(
     project_papers: list[SessionPaper] | None = None,
     memories_omitted: int = 0,
     answer_modes: frozenset[str] = frozenset(),
+    outlines: dict[str, list[dict[str, Any]]] | None = None,
 ) -> str:
     """Assemble the run's system prompt: reading rules, the session's papers,
     its project, the reader's memories. `answer_modes` are the report modes
-    written as the answer (P16)."""
+    written as the answer (P16); `outlines` the parsed papers' outlines, by
+    paper_id (`tools.reading.prompt_outlines`)."""
     base = _with_answer_modes(_ZH if language == "zh" else _EN, language, answer_modes)
     return (
         base
-        + _format_papers(papers or [], language)
+        + _format_papers(papers or [], language, outlines)
         + _format_project(project, project_papers or [], language)
         + _format_memories(memories or [], language, memories_omitted)
     )

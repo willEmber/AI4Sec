@@ -223,6 +223,11 @@ class AppSettings(BaseSettings):
     # which is where a reader's first-stated preferences sit. Past the ceiling
     # the prompt says how many were left out.
     agent_memory_max_items: int = Field(default=100, alias="AGENT_MEMORY_MAX_ITEMS")
+    # How many of the session's parsed papers have their outline (section ids,
+    # titles, pages) in the prompt, so a turn can read a section in its first
+    # step rather than spend one fetching the outline. A paper's outline is a
+    # few hundred tokens. 0 = none: the prompt is as before.
+    agent_prompt_outline_papers: int = Field(default=5, alias="AGENT_PROMPT_OUTLINE_PAPERS")
 
     # --- GROBID (structured header extraction fallback) ---
     # Base URL of a GROBID server, e.g. http://localhost:8070. Empty disables it;
