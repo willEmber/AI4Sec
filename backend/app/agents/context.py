@@ -126,6 +126,8 @@ class BudgetUsage:
     # were dropped; and brackets holding several citations, which were split.
     citations_dropped: int = 0
     citation_groups_expanded: int = 0
+    # Model calls made again on the same model after its stream stalled.
+    stall_retries: int = 0
     # Tokens spent when the wrap-up began; `None` while the turn still gathers.
     tokens_at_wrapup: int | None = None
 
@@ -147,6 +149,7 @@ class BudgetUsage:
             "model_used": self.model_used,
             "citations_dropped": self.citations_dropped,
             "citation_groups_expanded": self.citation_groups_expanded,
+            "stall_retries": self.stall_retries,
         }
 
     def exceeded(self, budget: RunBudget) -> str:

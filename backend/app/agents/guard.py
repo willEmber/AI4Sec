@@ -47,7 +47,7 @@ from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
 from app.agents.context import AgentContext
-from app.agents.errors import EmptyModelResponse, classify_error
+from app.agents.errors import EmptyModelResponse, classify_error, is_stream_stall
 from app.agents.model_factory import STREAM_PROBE, StreamProbe
 from app.config import get_settings
 from app.models.agent_models import ErrorCode, EventType, ToolResult
@@ -472,7 +472,13 @@ class TurnGuardMiddleware(AgentMiddleware):
         request: ModelRequest,
         handler: Callable[[ModelRequest], Awaitable[ModelResponse]],
     ) -> ModelResponse:
-        """One model call, moved to the fallback model if it fails unwritten."""
+        """One model call, moved to the fallback model if it fails unwritten.
+
+        A stream the gateway stalled on before the reader saw anything is made
+        once more on the same model when no fallback would take it over: the
+        request had been accepted, so the SDK's retries never saw the failure,
+        and nothing streamed can appear twice.
+        """
         if ctx.on_fallback and self._fallback is not None:
             request = request.override(model=self._fallback)
         probe = StreamProbe()
@@ -484,6 +490,8 @@ class TurnGuardMiddleware(AgentMiddleware):
             except asyncio.CancelledError:
                 raise
             except Exception as exc:  # noqa: BLE001 — decided just below
+                if self._may_ask_again(ctx, probe, exc):
+                    return await self._ask_again(ctx, request, handler)
                 if (
                     self._fallback is None
                     or ctx.on_fallback
@@ -504,9 +512,36 @@ class TurnGuardMiddleware(AgentMiddleware):
                     {"from": ctx.llm_model, "to": self._fallback_name, "code": code.value},
                 )
                 ctx.usage.llm_calls += 1
-                return await handler(request.override(model=self._fallback))
+                handed_over = request.override(model=self._fallback)
+                probe.text = probe.tool_call = False
+                try:
+                    return await handler(handed_over)
+                except Exception as again:  # noqa: BLE001 — the fallback stalling too
+                    if self._may_ask_again(ctx, probe, again):
+                        return await self._ask_again(ctx, handed_over, handler)
+                    raise
         finally:
             STREAM_PROBE.reset(token)
+
+    def _may_ask_again(self, ctx: AgentContext, probe: StreamProbe, exc: Exception) -> bool:
+        """A stall the reader saw nothing of, with no other model to take it."""
+        nobody_else = self._fallback is None or ctx.on_fallback
+        return nobody_else and not probe.shown and is_stream_stall(exc)
+
+    async def _ask_again(
+        self,
+        ctx: AgentContext,
+        request: ModelRequest,
+        handler: Callable[[ModelRequest], Awaitable[ModelResponse]],
+    ) -> ModelResponse:
+        """The stalled call once more, on the model it was made on."""
+        logger.warning(
+            "Run %s: %s stalled before writing; asking it once more",
+            ctx.run_id, ctx.usage.model_used or ctx.llm_model, exc_info=True,
+        )
+        ctx.usage.stall_retries += 1
+        ctx.usage.llm_calls += 1
+        return await handler(request)
 
     async def awrap_model_call(  # type: ignore[override]
         self,

@@ -53,9 +53,19 @@ class StreamProbe:
     cannot, because the reader has already seen its first half (P13 §4.5). A
     context variable because the guard and the model run in the same task and
     nothing else connects them.
+
+    `tool_call` records a streamed tool-call fragment: the reader sees a call
+    announced once its arguments parse, so a call that streamed one is not
+    "unwritten" either. Reasoning is never shown and counts as neither.
     """
 
     text: bool = False
+    tool_call: bool = False
+
+    @property
+    def shown(self) -> bool:
+        """Whether the reader may have seen anything of this call."""
+        return self.text or self.tool_call
 
 
 STREAM_PROBE: ContextVar[StreamProbe | None] = ContextVar("scholar_stream_probe", default=None)
@@ -132,8 +142,11 @@ class ScholarChatModel(ChatOpenAI):
     async def _astream(self, *args: Any, **kwargs: Any) -> AsyncIterator[Any]:
         probe = STREAM_PROBE.get()
         async for chunk in super()._astream(*args, **kwargs):
-            if probe is not None and not probe.text and _has_text(chunk.message.content):
-                probe.text = True
+            if probe is not None:
+                if not probe.text and _has_text(chunk.message.content):
+                    probe.text = True
+                if not probe.tool_call and getattr(chunk.message, "tool_call_chunks", None):
+                    probe.tool_call = True
             yield chunk
 
 

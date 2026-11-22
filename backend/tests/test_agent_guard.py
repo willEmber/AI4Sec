@@ -39,8 +39,9 @@ class StepModel(BaseChatModel):
     """Plays a list of steps, one per model call.
 
     A step is `("tools", [(name, args), ...], prose)`, `("text", str)`,
-    `("empty",)`, `("cut", str, metadata)`, `("raise", exc)` or
-    `("raise_after_text", exc)`. A call made without tools — the closing call —
+    `("empty",)`, `("cut", str, metadata)`, `("raise", exc)`,
+    `("raise_after_text", exc)` or `("raise_after_tool_call", exc)`. A call
+    made without tools — the closing call —
     answers `closing` instead of taking a step, unless `ignores_closing`.
     """
 
@@ -89,12 +90,15 @@ class StepModel(BaseChatModel):
             return self._result(AIMessage(content=""))
         if kind == "cut":
             return self._result(AIMessage(content=step[1], response_metadata=step[2]))
-        if kind == "raise_after_text":
+        if kind in {"raise_after_text", "raise_after_tool_call"}:
             from app.agents.model_factory import STREAM_PROBE
 
             probe = STREAM_PROBE.get()
             if probe is not None:
-                probe.text = True
+                if kind == "raise_after_text":
+                    probe.text = True
+                else:
+                    probe.tool_call = True
             raise step[1]
         raise step[1]
 
@@ -134,6 +138,13 @@ class StreamingStepModel(StepModel):
                 response_metadata=message.response_metadata,
             )
         )
+
+
+def _stall() -> Exception:
+    """What langchain-openai raises when a stream goes quiet for 120 s."""
+    from langchain_openai import StreamChunkTimeoutError
+
+    return StreamChunkTimeoutError(120.0, model_name="qwen-test", chunks_received=83)
 
 
 def _envelope(**data: Any) -> str:
@@ -609,6 +620,88 @@ class ModelFaultTests(GuardTestCase):
         finished = await self._finished(run)
         self.assertEqual(finished.error_code, "content_filtered")
         self.assertFalse(fallback.state.get("calls"))
+
+    async def test_a_stalled_stream_that_showed_nothing_is_asked_once_more(self) -> None:
+        run, model = await self._turn([("raise", _stall()), ("text", "Answer after the stall.")])
+
+        finished = await self._finished(run)
+        self.assertEqual(finished.status.value, "done")
+        self.assertEqual((await self._answer(run)).content, "Answer after the stall.")
+        self.assertEqual(finished.usage["stall_retries"], 1)
+        self.assertEqual(finished.usage["llm_calls"], 2)
+        self.assertEqual(len(model.state["calls"]), 2)
+        self.assertFalse(await self._events(run, "model.fallback"))
+
+    async def test_a_stall_after_text_is_not_asked_again(self) -> None:
+        run, model = await self._turn([("raise_after_text", _stall()), ("text", "never")])
+
+        finished = await self._finished(run)
+        self.assertEqual(finished.status.value, "failed")
+        self.assertEqual(finished.error_code, "timeout")
+        self.assertEqual(finished.usage["stall_retries"], 0)
+        self.assertEqual(len(model.state["calls"]), 1)
+
+    async def test_a_stall_after_a_tool_call_fragment_is_not_asked_again(self) -> None:
+        # The reader may have seen the call announced; a second call would
+        # leave that one hanging beside its own.
+        run, model = await self._turn([("raise_after_tool_call", _stall()), ("text", "never")])
+
+        self.assertEqual((await self._finished(run)).status.value, "failed")
+        self.assertEqual(len(model.state["calls"]), 1)
+
+    async def test_a_second_stall_fails_the_turn(self) -> None:
+        run, model = await self._turn([("raise", _stall()), ("raise", _stall()), ("text", "never")])
+
+        finished = await self._finished(run)
+        self.assertEqual(finished.status.value, "failed")
+        self.assertEqual(finished.error_code, "timeout")
+        self.assertEqual(finished.usage["stall_retries"], 1)
+        self.assertEqual(len(model.state["calls"]), 2)
+
+    async def test_other_unwritten_failures_are_not_asked_again(self) -> None:
+        # The SDK has already retried a request that did not go through.
+        run, model = await self._turn([("raise", GatewayDown()), ("text", "never")])
+
+        self.assertEqual((await self._finished(run)).status.value, "failed")
+        self.assertEqual(len(model.state["calls"]), 1)
+
+    async def test_with_a_fallback_a_stall_hands_over_instead(self) -> None:
+        fallback = StepModel(steps=[("text", "Answer from the fallback.")], state={})
+        self._runner._fallback_model = lambda _name: (fallback, "backup-model")
+        run, model = await self._turn([("raise", _stall()), ("text", "primary again")])
+
+        finished = await self._finished(run)
+        self.assertEqual((await self._answer(run)).content, "Answer from the fallback.")
+        self.assertEqual(finished.usage["stall_retries"], 0)
+        self.assertEqual(len(model.state["calls"]), 1)
+        self.assertEqual((await self._events(run, "model.fallback"))[0].payload["code"], "timeout")
+
+    async def test_a_stall_on_the_fallback_is_asked_once_more(self) -> None:
+        fallback = StepModel(
+            steps=[("raise", _stall()), ("text", "Fallback after its stall.")], state={}
+        )
+        self._runner._fallback_model = lambda _name: (fallback, "backup-model")
+        run, _ = await self._turn([("raise", GatewayDown())])
+
+        finished = await self._finished(run)
+        self.assertEqual(finished.status.value, "done")
+        self.assertEqual((await self._answer(run)).content, "Fallback after its stall.")
+        self.assertEqual(finished.usage["stall_retries"], 1)
+        self.assertEqual(len(fallback.state["calls"]), 2)
+
+    def test_a_stall_is_recognised_through_wrapping(self) -> None:
+        from app.agents.errors import classify_error, is_stream_stall
+
+        try:
+            try:
+                raise _stall()
+            except TimeoutError as inner:
+                raise RuntimeError("graph step failed") from inner
+        except RuntimeError as wrapped:
+            self.assertTrue(is_stream_stall(wrapped))
+        self.assertEqual(classify_error(_stall()).value, "timeout")
+        self.assertFalse(is_stream_stall(TimeoutError()))
+        self.assertFalse(is_stream_stall(GatewayDown()))
 
     def test_a48_a_fallback_that_is_not_a_conversation_model_is_refused(self) -> None:
         from app.agents.model_factory import fallback_model_name

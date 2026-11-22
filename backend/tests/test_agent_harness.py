@@ -224,6 +224,51 @@ class ModelFactoryTest(unittest.TestCase):
         self.assertTrue(model.use_responses_api)
         self.assertEqual(model._get_ls_params()["ls_provider"], SCHOLAR_PROVIDER)
 
+    def test_stream_probe_sees_text_and_tool_calls_but_not_reasoning(self) -> None:
+        from unittest import mock
+
+        from langchain_core.messages import AIMessageChunk
+        from langchain_core.outputs import ChatGenerationChunk
+        from langchain_openai import ChatOpenAI
+
+        from app.agents.model_factory import STREAM_PROBE, StreamProbe
+
+        model = ScholarChatModel(
+            model="qwen3.8-flash", base_url="https://example.invalid/v1", api_key="test-key"
+        )
+
+        def chunks(*messages: AIMessageChunk):
+            async def fake(self, *args: Any, **kwargs: Any):
+                for message in messages:
+                    yield ChatGenerationChunk(message=message)
+
+            return fake
+
+        reasoning = AIMessageChunk(content=[{"type": "reasoning", "summary": [{"text": "hmm"}]}])
+        tool_fragment = AIMessageChunk(
+            content="", tool_call_chunks=[{"name": "get_paper_outline", "args": "{", "id": "c1", "index": 0}]
+        )
+        cases = [
+            ((reasoning,), (False, False)),
+            ((reasoning, AIMessageChunk(content="Hello")), (True, False)),
+            ((reasoning, tool_fragment), (False, True)),
+        ]
+        for messages, (text, tool_call) in cases:
+            probe = StreamProbe()
+            token = STREAM_PROBE.set(probe)
+            try:
+                with mock.patch.object(ChatOpenAI, "_astream", chunks(*messages)):
+
+                    async def drain() -> None:
+                        async for _ in model._astream([]):
+                            pass
+
+                    asyncio.run(drain())
+            finally:
+                STREAM_PROBE.reset(token)
+            self.assertEqual((probe.text, probe.tool_call), (text, tool_call), messages)
+            self.assertEqual(probe.shown, text or tool_call)
+
 
 if __name__ == "__main__":
     unittest.main()

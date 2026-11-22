@@ -57,6 +57,16 @@ def _chain(exc: BaseException) -> list[BaseException]:
     return seen
 
 
+def is_stream_stall(exc: BaseException) -> bool:
+    """The gateway stopped sending a stream it had accepted.
+
+    langchain-openai raises `StreamChunkTimeoutError` when no chunk arrives
+    for `stream_chunk_timeout` (120 s). The request got through, so the SDK's
+    own retries, which cover a request that never started, do not see it.
+    """
+    return any(type(e).__name__ == "StreamChunkTimeoutError" for e in _chain(exc))
+
+
 def classify_error(exc: BaseException) -> ErrorCode:
     """The code a failed turn is closed with.
 
