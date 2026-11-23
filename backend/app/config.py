@@ -62,6 +62,12 @@ class AppSettings(BaseSettings):
         default="",
         validation_alias=AliasChoices("FIRECRAWL_API_KEYS", "FIRECRAWL_API_KEY"),
     )
+    # Opt-in: Keenable is the last provider on every search route, asked only
+    # when the ones before it did not search.
+    keenable_api_keys: str = Field(
+        default="",
+        validation_alias=AliasChoices("KEENABLE_API_KEYS", "KEENABLE_API_KEY"),
+    )
     # Off stops every web search and page read: queries leave the machine for
     # third-party services, which some deployments must not allow.
     web_search_enabled: bool = Field(default=True, alias="WEB_SEARCH_ENABLED")

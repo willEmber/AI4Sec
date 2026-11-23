@@ -106,6 +106,7 @@ cp .env.example .env
 |---|---|
 | `BASE_MODELNAME` / `RERANK_MODELNAME` | 内部轻量辅助任务模型（意图分类、摘要抽取、上下文压缩等，默认关闭思考）与检索重排序模型 |
 | `TAVILY_API_KEYS` / `EXA_API_KEYS` / `FIRECRAWL_API_KEYS` | 智能体通用网页检索、网页正文抓取与期刊分区兜底查询（支持逗号分隔的多 Key 轮换池） |
+| `KEENABLE_API_KEYS` | 可选，仅用于网页检索：排在检索链最后，前面的服务都未完成检索时才调用（同样支持逗号分隔的多 Key 轮换池） |
 | `EASYSCHOLAR_SECRET_KEY` | 期刊/会议分级查询（SCI / CCF / CSCD 分区） |
 | `S2_API_KEY` / `OPENALEX_KEY` / `PAPERSEARCH_IEEE_API_KEY` | 提升学术检索配额与速率上限，启用 IEEE Xplore 检索；配置 `OPENREVIEW_USERNAME` / `OPENREVIEW_PASSWORD` 可读取同行评审全文 |
 | `UNPAYWALL_EMAIL` / `CORE_API_KEY` / `ELSEVIER_API_KEY` / `ELSEVIER_INSTTOKEN` / `WILEY_TDM_TOKEN` | 扩展论文全文自动获取渠道（未配置时仍支持 arXiv 与检索源自带 OA 链接下载） |

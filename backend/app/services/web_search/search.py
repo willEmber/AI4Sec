@@ -18,7 +18,7 @@ from typing import Awaitable, Callable, Mapping
 import httpx
 
 from app.services.paper_search.models import PlatformStatus
-from app.services.web_search.credentials import EXA, FIRECRAWL, TAVILY, web_search_enabled
+from app.services.web_search.credentials import EXA, FIRECRAWL, KEENABLE, TAVILY, web_search_enabled
 from app.services.web_search.http import new_client
 from app.services.web_search.keypool import KeyPool, resolve_pool
 from app.services.web_search.models import (
@@ -28,7 +28,7 @@ from app.services.web_search.models import (
     WebSearchOutcome,
     WebSearchRequest,
 )
-from app.services.web_search.providers import exa, firecrawl, tavily
+from app.services.web_search.providers import exa, firecrawl, keenable, tavily
 from app.services.web_search.urls import domain_matches
 
 Searcher = Callable[
@@ -39,15 +39,18 @@ SEARCHERS: dict[str, Searcher] = {
     TAVILY: tavily.search,
     EXA: exa.search,
     FIRECRAWL: firecrawl.search,
+    KEENABLE: keenable.search,
 }
 
 # Tavily first for general and news (date filters, news index, cheap basic
 # depth); Exa first for "find the page about X", where embedding search beats
-# keyword search. Firecrawl is last everywhere: scarcest credit, slowest limit.
+# keyword search. Firecrawl is after both: scarcest credit, slowest limit.
+# Keenable is opt-in and last: without KEENABLE_API_KEYS it is skipped, and
+# with it, it is asked only when none of the others searched.
 ROUTES: dict[str, tuple[str, ...]] = {
-    "general": (TAVILY, EXA, FIRECRAWL),
-    "news": (TAVILY, EXA, FIRECRAWL),
-    "technical": (EXA, TAVILY, FIRECRAWL),
+    "general": (TAVILY, EXA, FIRECRAWL, KEENABLE),
+    "news": (TAVILY, EXA, FIRECRAWL, KEENABLE),
+    "technical": (EXA, TAVILY, FIRECRAWL, KEENABLE),
 }
 
 # Reciprocal-rank-fusion constant; 60 is the value from the original paper and

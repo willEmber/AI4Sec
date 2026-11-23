@@ -15,6 +15,7 @@ from app.config import get_settings
 TAVILY = "Tavily"
 EXA = "Exa"
 FIRECRAWL = "Firecrawl"
+KEENABLE = "Keenable"
 
 _SEPARATORS = re.compile(r"[,;\s]+")
 
@@ -39,6 +40,7 @@ def provider_keys(provider: str) -> tuple[str, ...]:
         TAVILY: settings.tavily_api_keys,
         EXA: settings.exa_api_keys,
         FIRECRAWL: settings.firecrawl_api_keys,
+        KEENABLE: settings.keenable_api_keys,
     }.get(provider, "")
     return parse_key_list(raw)
 

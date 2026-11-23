@@ -106,6 +106,7 @@ cp .env.example .env
 |---|---|
 | `BASE_MODELNAME` / `RERANK_MODELNAME` | Fast utility model for internal passes (intent classification, digests, context summarization; called with thinking off) and rerank model for search/web chunks |
 | `TAVILY_API_KEYS` / `EXA_API_KEYS` / `FIRECRAWL_API_KEYS` | Open-web search, web page reading, and venue-rank web fallback (each accepts a single key or a comma-separated rotation pool) |
+| `KEENABLE_API_KEYS` | Optional, web search only: asked last on every route, when none of the providers above searched (single key or comma-separated rotation pool) |
 | `EASYSCHOLAR_SECRET_KEY` | Venue ranking lookup (SCI / CCF / CSCD tiers) |
 | `S2_API_KEY` / `OPENALEX_KEY` / `PAPERSEARCH_IEEE_API_KEY` | Higher rate limits/quotas for Semantic Scholar & OpenAlex, plus IEEE Xplore search; set `OPENREVIEW_USERNAME` / `OPENREVIEW_PASSWORD` to fetch full peer reviews |
 | `UNPAYWALL_EMAIL` / `CORE_API_KEY` / `ELSEVIER_API_KEY` / `ELSEVIER_INSTTOKEN` / `WILEY_TDM_TOKEN` | Additional full-text PDF acquisition routes beyond arXiv and provider OA links |

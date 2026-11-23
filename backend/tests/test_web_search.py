@@ -19,7 +19,7 @@ from unittest import mock
 import httpx
 
 from app.services.web_search import chunking, http as web_http
-from app.services.web_search.credentials import EXA, FIRECRAWL, TAVILY, parse_key_list
+from app.services.web_search.credentials import EXA, FIRECRAWL, KEENABLE, TAVILY, parse_key_list
 from app.services.web_search.fetch import fetch_page
 from app.services.web_search.keypool import KeyPool
 from app.services.web_search.models import WebSearchRequest
@@ -83,11 +83,17 @@ def exa_results(*items: tuple[str, str | None]) -> dict[str, Any]:
     }
 
 
-def pools(tavily: tuple[str, ...] = ("tv-1",), exa: tuple[str, ...] = ("ex-1",), firecrawl: tuple[str, ...] = ("fc-1",)):
+def pools(
+    tavily: tuple[str, ...] = ("tv-1",),
+    exa: tuple[str, ...] = ("ex-1",),
+    firecrawl: tuple[str, ...] = ("fc-1",),
+    keenable: tuple[str, ...] = (),
+):
     return {
         TAVILY: KeyPool(TAVILY, tavily),
         EXA: KeyPool(EXA, exa),
         FIRECRAWL: KeyPool(FIRECRAWL, firecrawl),
+        KEENABLE: KeyPool(KEENABLE, keenable),
     }
 
 
@@ -122,12 +128,13 @@ class CredentialTests(unittest.TestCase):
     def test_singular_spellings_are_read(self) -> None:
         from app.config import AppSettings
 
-        env = {"TAVILY_KEY": "t1,t2", "EXA_API_KEY": "e1", "FIRECRAWL_API_KEY": "f1"}
+        env = {"TAVILY_KEY": "t1,t2", "EXA_API_KEY": "e1", "FIRECRAWL_API_KEY": "f1", "KEENABLE_API_KEY": "k1"}
         with mock.patch.dict(os.environ, env, clear=True):
             s = AppSettings(_env_file=None)
         self.assertEqual(s.tavily_api_keys, "t1,t2")
         self.assertEqual(s.exa_api_keys, "e1")
         self.assertEqual(s.firecrawl_api_keys, "f1")
+        self.assertEqual(s.keenable_api_keys, "k1")
 
     def test_plural_name_wins_over_singular(self) -> None:
         from app.config import AppSettings
@@ -287,9 +294,73 @@ class SearchTests(_Base):
         outcome = await search_web(
             WebSearchRequest(query="q"), client=self.client(router), pools=pools((), (), ())
         )
-        self.assertEqual([p.status for p in outcome.providers], ["skipped_no_key"] * 3)
+        self.assertEqual([p.status for p in outcome.providers], ["skipped_no_key"] * 4)
         self.assertFalse(outcome.searched)
         self.assertEqual(router.calls, [])
+
+    async def test_keenable_is_asked_last_with_filters_when_keyed(self) -> None:
+        router = Router(
+            {
+                "api.tavily.com/search": reply(401),
+                "api.exa.ai/search": reply(402),
+                "api.firecrawl.dev": reply(401),
+                "api.keenable.ai/v1/search": reply(
+                    data={
+                        "results": [
+                            {
+                                "url": "https://github.com/org/repo",
+                                "title": "org/repo",
+                                "snippet": "README text",
+                                "description": "",
+                                "published_at": "2025-03-04T00:00:00Z",
+                            },
+                            {"title": "no url"},
+                        ]
+                    }
+                ),
+            }
+        )
+        req = WebSearchRequest(
+            query="q",
+            max_results=80,
+            start_date=date(2025, 1, 1),
+            end_date=date(2025, 12, 31),
+            include_domains=("github.com",),
+            exclude_domains=("pinterest.com",),
+        )
+        outcome = await search_web(req, client=self.client(router), pools=pools(keenable=("kn-1",)))
+
+        self.assertEqual(
+            [(p.platform, p.status) for p in outcome.providers][-1], (KEENABLE, "ok")
+        )
+        url, headers, body = router.to("keenable")[0]
+        self.assertEqual(headers["x-api-key"], "kn-1")
+        self.assertEqual(headers["x-keenable-title"], "AI4Sec")
+        self.assertEqual(
+            body,
+            {
+                "query": "q",
+                "max_results": 50,
+                "snippet_max_length": 1500,
+                "disable_cards": True,
+                "published_after": "2025-01-01",
+                "published_before": "2025-12-31",
+                "site": "github.com",
+                "exclude_domains": ["pinterest.com"],
+            },
+        )
+        self.assertEqual(len(outcome.results), 1)
+        self.assertEqual(outcome.results[0].url, "https://github.com/org/repo")
+        self.assertEqual(outcome.results[0].snippet, "README text")
+        self.assertEqual(outcome.results[0].published_date, "2025-03-04")
+        self.assertEqual(outcome.results[0].provider, KEENABLE)
+
+    async def test_keenable_without_a_key_is_never_called(self) -> None:
+        router = Router({"api.tavily.com/search": reply(401), "api.exa.ai/search": reply(401), "api.firecrawl.dev": reply(401)})
+        outcome = await search_web(WebSearchRequest(query="q"), client=self.client(router), pools=pools())
+        self.assertEqual(outcome.providers[-1].platform, KEENABLE)
+        self.assertEqual(outcome.providers[-1].status, "skipped_no_key")
+        self.assertEqual(router.to("keenable"), [])
 
     async def test_server_error_is_retried_once(self) -> None:
         router = Router(
